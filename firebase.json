@@ -1,0 +1,53 @@
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "venv",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "runtime": "python313"
+    }
+  ],
+  "apphosting": [
+    {
+      "backendId": "penni-ai-platform-backend",
+      "rootDir": "/",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "functions"
+      ]
+    }
+  ],
+  "emulators": {
+    "apphosting": {
+      "startCommand": "bun run --bun dev",
+      "rootDirectory": "./",
+      "port": 5002,
+      "host": "127.0.0.1"
+    },
+    "functions": {
+      "port": 6200
+    },
+    "firestore": {
+      "port": 6201
+    },
+    "ui": {
+      "enabled": true,
+      "port": 6202
+    },
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9100
+    },
+    "singleProjectMode": true
+  }
+}

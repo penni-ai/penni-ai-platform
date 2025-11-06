@@ -1,14 +1,17 @@
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ params }) => {
-	const messages = [
-		{ role: 'assistant', content: 'Tell me about your campaign.', created_at: '2025-01-10T09:00:00Z', kind: 'bubble' },
-		{ role: 'user', content: 'We are launching a campus pop-up and need foodie creators.', created_at: '2025-01-10T09:02:00Z', kind: 'bubble' },
-		{ role: 'assistant', content: 'Great! I will outline suggested influencers, outreach copy, and next steps.', created_at: '2025-01-10T09:03:00Z', kind: 'bubble' }
-	];
+export const load: PageLoad = async ({ parent, params, fetch }) => {
+	await parent();
+	const res = await fetch(`/api/campaigns/${params.id}`);
+	if (!res.ok) {
+		return {
+			campaign: null as const,
+			error: await res.text()
+		};
+	}
 
+	const campaign = await res.json();
 	return {
-		campaign: { id: params.id, name: 'Student AI Campaign' },
-		messages
+		campaign
 	};
 };

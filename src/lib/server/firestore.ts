@@ -1,5 +1,5 @@
 import { adminDb } from '$lib/firebase/admin';
-import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue, type Firestore, type DocumentReference, type CollectionReference } from 'firebase-admin/firestore';
 
 export const firestore: Firestore = adminDb;
 
@@ -26,6 +26,28 @@ export function webhookEventDocRef(eventId: string) {
 export function stripeCustomerDocRef(customerId: string) {
 	return firestore.collection('stripeCustomers').doc(customerId);
 }
+
+export function siteDocRef(uid: string, hostname: string) {
+	return userDocRef(uid).collection('sites').doc(hostname);
+}
+
+export function campaignDocRef(uid: string, campaignId: string) {
+	return userDocRef(uid).collection('campaigns').doc(campaignId);
+}
+
+export function conversationCollectionRef(uid: string): CollectionReference {
+	return userDocRef(uid).collection('conversations');
+}
+
+export function conversationDocRef(uid: string, conversationId: string): DocumentReference {
+	return conversationCollectionRef(uid).doc(conversationId);
+}
+
+export function conversationMessagesCollectionRef(uid: string, conversationId: string): CollectionReference {
+	return conversationDocRef(uid, conversationId).collection('messages');
+}
+
+export const serverTimestamp = () => FieldValue.serverTimestamp();
 
 export interface SubscriptionSnapshot {
 	stripeSubscriptionId: string;
@@ -85,4 +107,15 @@ export interface AddonRecord {
 	invoiceId: string | null;
 	purchasedAt: number;
 	expiresAt: number | null;
+}
+
+export interface CampaignRecord {
+	id: string;
+	createdAt: number;
+	website?: string | null;
+	audience?: string | null;
+	locations?: string | null;
+	followers?: string | null;
+	businessSummary?: string | null;
+	sourceConversationId: string;
 }

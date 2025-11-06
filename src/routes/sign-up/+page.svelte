@@ -5,37 +5,67 @@
 	import { firebaseAuth } from '$lib/firebase/client';
 	import { goto } from '$app/navigation';
 
-	let email = $state('');
-	let password = $state('');
-	let confirmPassword = $state('');
-	let termsAccepted = $state(false);
-	let loading = $state(false);
-	let errorMessage = $state<string | null>(null);
+let email = $state('');
+let password = $state('');
+let confirmPassword = $state('');
+let termsAccepted = $state(false);
+let loading = $state(false);
+let errorMessage = $state<string | null>(null);
+let showPassword = $state(false);
+let showConfirmPassword = $state(false);
+
+function isValidPassword(value: string) {
+	return value.trim().length >= 8;
+}
+
+function passwordsMatch(a: string, b: string) {
+	return a.trim().length > 0 && a.trim() === b.trim();
+}
+
+function canSubmit() {
+	return termsAccepted && isValidPassword(password) && passwordsMatch(password, confirmPassword);
+}
+
+function passwordInputType() {
+	return showPassword ? 'text' : 'password';
+}
+
+function confirmInputType() {
+	return showConfirmPassword ? 'text' : 'password';
+}
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
 		if (loading) return;
 
-		if (!termsAccepted) {
-			errorMessage = 'Please accept the terms to continue.';
-			return;
-		}
+	if (!termsAccepted) {
+		errorMessage = 'Please accept the terms to continue.';
+		return;
+	}
 
-		if (password !== confirmPassword) {
-			errorMessage = 'Passwords do not match.';
-			return;
-		}
+	if (!passwordsMatch(password, confirmPassword)) {
+		errorMessage = 'Passwords do not match.';
+		return;
+	}
+
+	if (!isValidPassword(password)) {
+		errorMessage = 'Password must be at least 8 characters.';
+		return;
+	}
 
 		errorMessage = null;
 		loading = true;
 
-		try {
-			const credential = await createUserWithEmailAndPassword(firebaseAuth, email, password);
-			await sendEmailVerification(credential.user, {
-				url: `${window.location.origin}/auth/verify`
-			});
-			await signOut(firebaseAuth);
-			await goto(`/sign-up/confirm?email=${encodeURIComponent(email)}`);
+	const accountEmail = email.trim();
+	const accountPassword = password.trim();
+
+	try {
+		const credential = await createUserWithEmailAndPassword(firebaseAuth, accountEmail, accountPassword);
+		await sendEmailVerification(credential.user, {
+			url: `${window.location.origin}/auth/verify`
+		});
+		await signOut(firebaseAuth);
+		await goto(`/sign-up/confirm?email=${encodeURIComponent(accountEmail)}`);
 		} catch (error) {
 			console.error('[auth] sign-up failed', error);
 			if (error instanceof Error) {
@@ -78,57 +108,90 @@
 						bind:value={email}
 					/>
 				</div>
-				<div class="space-y-2">
-					<label for="signup-password" class="text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Password</label>
-					<div class="relative">
-						<input
-							id="signup-password"
-							type="password"
-							required minlength="8"
-							placeholder="Create your password"
-							class="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#FF6F61]"
-						bind:value={password}
-						/>
-						<span class="pointer-events-none absolute inset-y-0 right-4 flex items-center text-gray-400">
-							<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7Z" />
-								<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-							</svg>
-						</span>
-					</div>
-				</div>
-				<div class="space-y-2">
-					<label for="signup-confirm" class="text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Confirm password</label>
-					<div class="relative">
-						<input
-							id="signup-confirm"
-							type="password"
-							required minlength="8"
-							placeholder="Re-create your password"
-							class="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#FF6F61]"
-						bind:value={confirmPassword}
-						/>
-						<span class="pointer-events-none absolute inset-y-0 right-4 flex items-center text-gray-400">
-							<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7Z" />
-								<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-							</svg>
-						</span>
-					</div>
-				</div>
+		<div class="space-y-2">
+			<label for="signup-password" class="text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Password</label>
+			<div class="relative">
+				<input
+					id="signup-password"
+					type={passwordInputType()}
+					required minlength="8"
+					placeholder="Create your password"
+					class="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#FF6F61]"
+				bind:value={password}
+				/>
+				<button
+					type="button"
+					class="absolute inset-y-0 right-4 flex items-center text-gray-400 hover:text-gray-600"
+					onclick={() => (showPassword = !showPassword)}
+					aria-label={showPassword ? 'Hide password' : 'Show password'}
+					aria-pressed={showPassword}
+				>
+					{#if showPassword}
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.45 10.45 0 0 0 1.75 12c2.205 4.478 6.656 7.5 11.25 7.5 1.625 0 3.187-.337 4.622-.95m3.628-3.073A10.478 10.478 0 0 0 22.25 12c-2.205-4.478-6.656-7.5-11.25-7.5a11.42 11.42 0 0 0-4.258.79" />
+							<path stroke-linecap="round" stroke-linejoin="round" d="M9.53 9.53a3 3 0 0 0 4.24 4.24" />
+							<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 0 0-3-3" />
+							<path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" />
+						</svg>
+					{:else}
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7Z" />
+							<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+						</svg>
+					{/if}
+				</button>
+			</div>
+		</div>
+		<div class="space-y-2">
+			<label for="signup-confirm" class="text-left text-xs font-semibold uppercase tracking-wide text-gray-400">Confirm password</label>
+			<div class="relative">
+				<input
+					id="signup-confirm"
+					type={confirmInputType()}
+					required minlength="8"
+					placeholder="Re-create your password"
+					class="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#FF6F61]"
+				bind:value={confirmPassword}
+				/>
+				<button
+					type="button"
+					class="absolute inset-y-0 right-4 flex items-center text-gray-400 hover:text-gray-600"
+					onclick={() => (showConfirmPassword = !showConfirmPassword)}
+					aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+					aria-pressed={showConfirmPassword}
+				>
+					{#if showConfirmPassword}
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.45 10.45 0 0 0 1.75 12c2.205 4.478 6.656 7.5 11.25 7.5 1.625 0 3.187-.337 4.622-.95m3.628-3.073A10.478 10.478 0 0 0 22.25 12c-2.205-4.478-6.656-7.5-11.25-7.5a11.42 11.42 0 0 0-4.258.79" />
+							<path stroke-linecap="round" stroke-linejoin="round" d="M9.53 9.53a3 3 0 0 0 4.24 4.24" />
+							<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 0 0-3-3" />
+							<path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" />
+						</svg>
+					{:else}
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7Z" />
+							<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+						</svg>
+					{/if}
+				</button>
+			</div>
+		</div>
 				<label class="flex items-start gap-3 text-sm text-gray-600">
 					<input type="checkbox" bind:checked={termsAccepted} class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#FF6F61] focus:ring-[#FF6F61]" />
 					<span>I agree to the <a href="/terms" class="font-medium text-gray-900 underline">Terms of Service</a> and <a href="/privacy" class="font-medium text-gray-900 underline">Privacy Policy</a>.</span>
 				</label>
 
-				<Button
-					type="submit"
-					size="lg"
-					class="w-full justify-center rounded-2xl bg-[#FF8073] text-white transition disabled:opacity-60 disabled:cursor-not-allowed"
-					disabled={loading || !termsAccepted || password.length < 8 || password !== confirmPassword}
-				>
-					{loading ? 'Creating account…' : 'Create Account'}
-				</Button>
+		<button
+			type="submit"
+			class="flex w-full items-center justify-center rounded-2xl bg-[#FF8073] px-8 py-4 text-lg font-medium text-white transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FF6F61] disabled:cursor-not-allowed disabled:opacity-60"
+			disabled={loading || !canSubmit()}
+			data-can-submit={canSubmit()}
+			data-terms={termsAccepted}
+			data-password-ok={isValidPassword(password)}
+			data-match={passwordsMatch(password, confirmPassword)}
+		>
+			{loading ? 'Creating account…' : 'Create Account'}
+		</button>
 			</form>
 
 			<div class="relative">

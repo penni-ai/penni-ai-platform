@@ -7,9 +7,9 @@ import {
 	PUBLIC_FIREBASE_PROJECT_ID,
 	PUBLIC_FIREBASE_STORAGE_BUCKET,
 	PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-	PUBLIC_FIREBASE_APP_ID,
-	PUBLIC_FIREBASE_AUTH_EMULATOR_HOST
+	PUBLIC_FIREBASE_APP_ID
 } from '$env/static/public';
+import { env as publicEnv } from '$env/dynamic/public';
 
 const firebaseConfig = {
 	apiKey: PUBLIC_FIREBASE_API_KEY,
@@ -30,7 +30,7 @@ function createFirebaseApp(): FirebaseApp {
 function configureAuth(app: FirebaseApp): Auth {
 	const auth = getAuth(app);
 	if (browser && import.meta.env.DEV) {
-		const emulatorHost = PUBLIC_FIREBASE_AUTH_EMULATOR_HOST || 'http://127.0.0.1:9100';
+		const emulatorHost = publicEnv.PUBLIC_FIREBASE_AUTH_EMULATOR_HOST || 'http://127.0.0.1:9100';
 		connectAuthEmulator(auth, emulatorHost, { disableWarnings: true });
 	}
 	return auth;

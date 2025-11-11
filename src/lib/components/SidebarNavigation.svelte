@@ -25,11 +25,7 @@
 	];
 
 	let {
-		campaigns = [
-			{ id: 'student-ai-campaign', name: 'Student AI Campaign' },
-			{ id: 'july-fourth-campaign', name: 'July Fourth Campaign' },
-			{ id: 'club-free-drinks-campaign', name: 'Club Free Drinks Campaign' }
-		],
+		campaigns = [],
 		selectedCampaignId = null
 	}: Props = $props();
 </script>
@@ -42,24 +38,37 @@
 		>
 			New Campaign
 		</Button>
+		<Button
+			href="/dev/search-test"
+			class="mt-3 w-full justify-center border border-gray-200 text-gray-700 hover:bg-gray-50"
+		>
+			Manual Search
+		</Button>
 	</div>
 
 	<div class="px-6 py-5 space-y-3 border-t border-gray-100">
 		<p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Campaign</p>
-		<div class="space-y-2">
-			{#each campaigns as campaign}
-				<a
-					href={campaign.href ?? `/campaign/${campaign.id}`}
-					class={`flex items-center justify-between rounded-xl px-4 py-2.5 text-sm transition ${
-						selectedCampaignId === campaign.id
-							? 'bg-[#FFF1ED] text-gray-900 shadow-sm'
-							: 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-					}`}
-				>
-					<span class="font-medium">{campaign.name}</span>
-				</a>
-			{/each}
-		</div>
+		{#if campaigns.length}
+			<div class="space-y-2">
+				{#each campaigns as campaign}
+					<a
+						href={campaign.href ?? `/campaign/${campaign.id}`}
+						class={`flex items-center justify-between rounded-xl px-4 py-2.5 text-sm transition ${
+							selectedCampaignId === campaign.id
+								? 'bg-[#FFF1ED] text-gray-900 shadow-sm'
+								: 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+						}`}
+					>
+						<span class="font-medium">{campaign.name}</span>
+					</a>
+				{/each}
+			</div>
+		{:else}
+			<div class="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500">
+				<p class="font-medium text-gray-600">No campaigns setup</p>
+				<p class="mt-1 text-[11px] text-gray-500">Start a chat to create your first campaign.</p>
+			</div>
+		{/if}
 	</div>
 
 	<nav class="px-6 py-5 mt-auto border-t border-gray-100 space-y-1">

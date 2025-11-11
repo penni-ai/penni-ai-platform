@@ -1,67 +1,117 @@
-import { json } from '@sveltejs/kit';
+import { randomUUID } from 'crypto';
 import {
 	getConversation,
 	registerUserMessage,
 	handleAssistantTurn
 } from '$lib/server/chat-assistant';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
 
-export const GET = async ({ locals, params }) => {
-	const uid = locals.user?.uid ?? null;
-	if (!uid) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
-
-	const conversationId = params.conversationId;
+export const GET = handleApiRoute(async (event) => {
+	const user = requireUser(event);
+	const conversationId = event.params.conversationId;
 	if (!conversationId) {
-		return json({ error: 'Conversation ID required' }, { status: 400 });
+		throw new ApiProblem({
+			status: 400,
+			code: 'CONVERSATION_ID_REQUIRED',
+			message: 'Conversation ID is required.'
+		});
 	}
 
-	const conversation = await getConversation(uid, conversationId);
+	const conversation = await getConversation(user.uid, conversationId);
 	if (!conversation) {
-		return json({ error: 'Conversation not found' }, { status: 404 });
+		throw new ApiProblem({
+			status: 404,
+			code: 'CONVERSATION_NOT_FOUND',
+			message: 'Conversation not found.'
+		});
 	}
 
-	return json({ conversation });
-};
+	return apiOk({ conversation });
+}, { component: 'chat' });
 
-export const POST = async ({ locals, params, request }) => {
-	const uid = locals.user?.uid ?? null;
-	if (!uid) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+export const POST = handleApiRoute(async (event) => {
+	const user = requireUser(event);
+	assertSameOrigin(event);
 
-	const conversationId = params.conversationId;
+	const conversationId = event.params.conversationId;
 	if (!conversationId) {
-		return json({ error: 'Conversation ID required' }, { status: 400 });
+		throw new ApiProblem({
+			status: 400,
+			code: 'CONVERSATION_ID_REQUIRED',
+			message: 'Conversation ID is required.'
+		});
 	}
 
 	let body: unknown;
 	try {
-		body = await request.json();
+		body = await event.request.json();
 	} catch (error) {
-		return json({ error: 'Invalid JSON body' }, { status: 400 });
+		throw new ApiProblem({
+			status: 400,
+			code: 'INVALID_JSON',
+			message: 'Request body must be valid JSON.',
+			cause: error
+		});
 	}
 
-	const message = typeof (body as Record<string, unknown>)?.message === 'string'
-		? (body as Record<string, unknown>).message
-		: null;
-
-	if (!message) {
-		return json({ error: 'Message text is required' }, { status: 400 });
+	if (!body || typeof body !== 'object') {
+		throw new ApiProblem({
+			status: 400,
+			code: 'INVALID_PAYLOAD',
+			message: 'Request body must be an object.',
+			hint: 'Send a JSON payload with a "message" field.'
+		});
 	}
+
+	const payload = body as Record<string, unknown>;
+	const messageRaw = typeof payload.message === 'string' ? payload.message : '';
+
+	const trimmed = messageRaw.trim();
+
+	if (!trimmed) {
+		throw new ApiProblem({
+			status: 400,
+			code: 'MESSAGE_REQUIRED',
+			message: 'A message is required to continue the conversation.',
+			hint: 'Provide the message content as a string in the "message" field.'
+		});
+	}
+
+	const turnId = randomUUID();
+	const logger = event.locals.logger.child({
+		conversationId,
+		turnId
+	});
 
 	try {
-		const userMessage = await registerUserMessage(uid, conversationId, message);
-		const assistantTurn = await handleAssistantTurn(uid, conversationId, message);
+		const userMessage = await registerUserMessage(user.uid, conversationId, trimmed, {
+			logger,
+			turnId
+		});
+		const assistantTurn = await handleAssistantTurn(user.uid, conversationId, trimmed, {
+			logger,
+			turnId
+		});
 
-		return json({
+		logger.info('Assistant turn completed', {
+			assistantMessages: assistantTurn.assistantMessages.length,
+			status: assistantTurn.snapshot.status
+		});
+
+		return apiOk({
 			conversationId,
 			userMessage,
 			assistantMessages: assistantTurn.assistantMessages,
 			conversation: assistantTurn.snapshot
 		});
 	} catch (error) {
-		console.error('[chat] failed to process message', error);
-		return json({ error: 'Failed to process message' }, { status: 500 });
+		logger.error('Failed to process assistant turn', { error });
+		throw new ApiProblem({
+			status: 500,
+			code: 'ASSISTANT_TURN_FAILED',
+			message: 'Failed to process the assistant turn.',
+			hint: 'Retry in a few moments. If the issue continues, contact support.',
+			cause: error
+		});
 	}
-};
+}, { component: 'chat' });

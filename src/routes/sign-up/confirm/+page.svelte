@@ -18,7 +18,7 @@
 		resendMessage = null;
 		isResending = true;
 		try {
-			const response = await fetch('/api/auth/send-verification', {
+			const response = await fetch('/api/public/auth/send-verification', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ email })

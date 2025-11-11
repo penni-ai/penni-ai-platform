@@ -18,6 +18,23 @@
 			}
 
 			await applyActionCode(firebaseAuth, oobCode);
+			try {
+				if (firebaseAuth.currentUser) {
+					await firebaseAuth.currentUser.reload();
+					if (firebaseAuth.currentUser.emailVerified) {
+						const idToken = await firebaseAuth.currentUser.getIdToken(true);
+						await fetch('/api/public/session', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify({ idToken, remember: true })
+						});
+					}
+				}
+			} catch (sessionError) {
+				console.warn('[auth] session refresh after verification failed', sessionError);
+			}
 			status = 'success';
 			message = 'Email verified! You can sign in now.';
 			setTimeout(() => {

@@ -2,13 +2,6 @@ import { initializeApp, getApp, getApps, type App, cert } from 'firebase-admin/a
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 
-const emulatorHost =
-	process.env.FIREBASE_AUTH_EMULATOR_HOST || (process.env.NODE_ENV !== 'production' ? '127.0.0.1:9100' : undefined);
-
-if (emulatorHost && !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
-	process.env.FIREBASE_AUTH_EMULATOR_HOST = emulatorHost;
-}
-
 function createAdminApp(): App {
 	if (getApps().length) {
 		return getApp();
@@ -39,3 +32,8 @@ function createAdminApp(): App {
 export const adminApp = createAdminApp();
 export const adminAuth = getAuth(adminApp);
 export const adminDb = getFirestore(adminApp);
+
+const firestoreEmulatorHost = process.env.FIRESTORE_EMULATOR_HOST;
+if (firestoreEmulatorHost) {
+	console.info(`Using Firestore emulator at ${firestoreEmulatorHost}`);
+}

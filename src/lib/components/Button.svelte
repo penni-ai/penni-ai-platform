@@ -35,8 +35,17 @@
 		lg: 'px-8 py-4 text-lg'
 	};
 
-	const disabledStyles = disabled ? 'opacity-60 pointer-events-none' : '';
-	const classes = `${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${disabledStyles} ${className}`;
+	const classes = $derived(
+		[
+			baseStyles,
+			variantStyles[variant],
+			sizeStyles[size],
+			disabled ? 'opacity-60 pointer-events-none' : '',
+			className
+		]
+			.filter(Boolean)
+			.join(' ')
+	);
 </script>
 
 {#if href}

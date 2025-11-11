@@ -1,18 +1,25 @@
-rules_version='2'
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPipelineOwner() {
+      return isSignedIn() && request.auth.uid == resource.data.userId;
+    }
+
+    match /search_pipeline_runs/{docId} {
+      // Status + stage documents live in the same collection; only the owner may read them.
+      allow read: if isPipelineOwner();
+      // Pipeline writes originate from Cloud Functions via the Admin SDK, which bypasses rules.
+      allow write: if false;
+    }
+
+    // Deny access to all other collections by default.
     match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2025, 11, 30);
+      allow read, write: if false;
     }
   }
 }

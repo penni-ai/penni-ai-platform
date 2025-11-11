@@ -20,8 +20,8 @@
 					<div class="w-14 h-14 rounded-full bg-orange-500 text-white flex items-center justify-center text-xl font-bold mb-4">
 						01
 					</div>
-					<h3 class="text-2xl font-bold mb-3">Share your website + audience</h3>
-					<p class="text-gray-600">Tell us your brand and who you're trying to reach.</p>
+					<h3 class="text-2xl font-bold mb-3">Share your website + influencer types</h3>
+					<p class="text-gray-600">Tell us your brand, the kinds of creators you want, and any location needs.</p>
 				</div>
 
 				<!-- Step 02 -->

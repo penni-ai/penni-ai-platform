@@ -1,63 +1,82 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import Button from '$lib/components/Button.svelte';
-	import Logo from '$lib/components/Logo.svelte';
-	import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
-	import { firebaseAuth } from '$lib/firebase/client';
-	import { onMount } from 'svelte';
+import { goto } from '$app/navigation';
+import Button from '$lib/components/Button.svelte';
+import Logo from '$lib/components/Logo.svelte';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { firebaseAuth } from '$lib/firebase/client';
+import { onMount } from 'svelte';
 
-	let email = $state('');
-	let password = $state('');
-	let remember = $state(true);
-	let loading = $state(false);
-	let errorMessage = $state<string | null>(null);
-	let verifiedNotice = $state(false);
+let email = $state('');
+let password = $state('');
+let remember = $state(true);
+let loading = $state(false);
+let errorMessage = $state<string | null>(null);
+let verifiedNotice = $state(false);
+
+const TEST_USER = {
+	email: 'search-tester@example.com',
+	password: 'TestPass123!'
+};
 
 	onMount(() => {
 		const params = new URL(window.location.href).searchParams;
 		verifiedNotice = params.get('verified') === '1';
 	});
 
-	async function handleSubmit(event: SubmitEvent) {
-		event.preventDefault();
-		if (loading) return;
+async function authenticate() {
+	if (loading) return;
+	errorMessage = null;
+	loading = true;
 
-		errorMessage = null;
-		loading = true;
+	try {
+		const credential = await signInWithEmailAndPassword(firebaseAuth, email, password);
+		await credential.user.reload();
+		const idToken = await credential.user.getIdToken(true);
 
-		try {
-			const credential = await signInWithEmailAndPassword(firebaseAuth, email, password);
-			const idToken = await credential.user.getIdToken();
+		const response = await fetch('/api/public/session', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ idToken, remember })
+		});
 
-			const response = await fetch('/api/session', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({ idToken, remember })
-			});
-
-			if (!response.ok) {
-				const payload = await response.json().catch(() => ({}));
-				if (response.status === 403) {
-					await signOut(firebaseAuth);
-				}
-				throw new Error(payload?.error ?? 'Unable to start session.');
+		if (!response.ok) {
+			const payload = await response.json().catch(() => ({}));
+			if (response.status === 403) {
+				await signOut(firebaseAuth);
 			}
-
-			await goto('/dashboard', { invalidateAll: true });
-		} catch (error) {
-			console.error('[auth] sign-in failed', error);
-			await signOut(firebaseAuth);
-			if (error instanceof Error) {
-				errorMessage = error.message;
-			} else {
-				errorMessage = 'Unexpected error during sign-in.';
-			}
-		} finally {
-			loading = false;
+			const code = typeof payload?.error?.code === 'string' ? payload.error.code : null;
+			const message = typeof payload?.error?.message === 'string' ? payload.error.message : 'Unable to start session.';
+			const combined = code ? `${code}: ${message}` : message;
+			throw new Error(combined);
 		}
+
+		await goto('/dashboard', { invalidateAll: true });
+	} catch (error) {
+		console.error('[auth] sign-in failed', error);
+		await signOut(firebaseAuth);
+		if (error instanceof Error) {
+			errorMessage = error.message;
+		} else {
+			errorMessage = 'Unexpected error during sign-in.';
+		}
+	} finally {
+		loading = false;
 	}
+}
+
+async function handleSubmit(event: SubmitEvent) {
+	event.preventDefault();
+	await authenticate();
+}
+
+async function loginAsTestUser() {
+	email = TEST_USER.email;
+	password = TEST_USER.password;
+	remember = true;
+	await authenticate();
+}
 </script>
 
 <div class="flex min-h-screen flex-col bg-gradient-to-b from-white via-[#FFECEC] to-[#FFD6D6]">
@@ -122,15 +141,25 @@
 					</label>
 					<a href="/forgot-password" class="text-[#FF6F61] font-medium">Forgot password?</a>
 				</div>
-				<Button
-					type="submit"
-					size="lg"
-					class="w-full justify-center rounded-2xl bg-[#FF8073] text-white hover:bg-[#ff9488] disabled:opacity-70"
-					disabled={loading}
-				>
-					{loading ? 'Signing in…' : 'Sign in'}
-				</Button>
-			</form>
+		<Button
+			type="submit"
+			size="lg"
+			class="w-full justify-center rounded-2xl bg-[#FF8073] text-white hover:bg-[#ff9488] disabled:opacity-70"
+			disabled={loading}
+		>
+			{loading ? 'Signing in…' : 'Sign in'}
+		</Button>
+		<Button
+			type="button"
+			variant="outline"
+			size="lg"
+			class="w-full justify-center rounded-2xl border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+			onclick={loginAsTestUser}
+			disabled={loading}
+		>
+			Log in as test user
+		</Button>
+		</form>
 
 			<div class="relative">
 				<div class="absolute inset-0 flex items-center" aria-hidden="true">

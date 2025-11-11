@@ -9,7 +9,7 @@
 		},
 		{
 			title: '2. Source perfectly matched influencers',
-			description: 'From your brief, Penny searches our curated network and suggests creators that match your audience, platform, and tone.'
+			description: 'From your brief, Penny searches our curated network and suggests creators that match your influencer types, platform, and tone.'
 		},
 		{
 			title: '3. Launch outreach & collaborate',

@@ -5,7 +5,7 @@ export const load: PageLoad = async ({ parent, params, fetch }) => {
 	const res = await fetch(`/api/campaigns/${params.id}`);
 	if (!res.ok) {
 		return {
-			campaign: null as const,
+			campaign: null,
 			error: await res.text()
 		};
 	}

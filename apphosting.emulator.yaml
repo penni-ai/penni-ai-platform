@@ -1,0 +1,82 @@
+# Settings for Backend (on Cloud Run).
+# See https://firebase.google.com/docs/app-hosting/configure#cloud-run
+runConfig:
+  minInstances: 0
+  # maxInstances: 100
+  # concurrency: 80
+  # cpu: 1
+  # memoryMiB: 512
+
+env:
+  # Firebase client config exposed to the browser.
+  - variable: PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyC1cwbO_aXWxtu1tMTOZUHHwhgP3_v-YsY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: penni-ai-platform.firebaseapp.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: PUBLIC_FIREBASE_PROJECT_ID
+    value: penni-ai-platform
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: penni-ai-platform.firebasestorage.app
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "562451436384"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: PUBLIC_FIREBASE_APP_ID
+    value: 1:562451436384:web:78af9bd13de3321eea4405
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: G-MWC7SQS1KH
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Server-side configuration.
+  - variable: FIREBASE_PROJECT_ID
+    value: penni-ai-platform
+    availability:
+      - RUNTIME
+  - variable: PUBLIC_FIREBASE_AUTH_EMULATOR_HOST
+    value: http://127.0.0.1:9100
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIREBASE_AUTH_EMULATOR_HOST
+    value: 127.0.0.1:9100
+    availability:
+      - RUNTIME
+  - variable: FIREBASE_FUNCTIONS_EMULATOR_ORIGIN
+    value: http://127.0.0.1:6200
+    availability:
+      - RUNTIME
+  - variable: FIRESTORE_EMULATOR_HOST
+    value: 127.0.0.1:6201
+    availability:
+      - RUNTIME
+  - variable: PUBLIC_SITE_URL
+    value: http://localhost:5002
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # OpenAI configuration. API keys are loaded from .env (see .env.example) during local runs.
+  - variable: OPENAI_MODEL
+    value: gpt-4o-mini
+    availability:
+      - RUNTIME
+
+  # Stripe keys and product metadata are loaded from your local .env (git-ignored) when running the emulator.

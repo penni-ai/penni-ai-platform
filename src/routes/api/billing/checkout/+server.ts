@@ -1,36 +1,61 @@
-import { json } from '@sveltejs/kit';
-import { getPlanConfig, getOrCreateStripeCustomer, getStripeClient } from '$lib/server/stripe';
-import { PUBLIC_SITE_URL } from '$env/static/public';
+import { createHash } from 'crypto';
+import { env as publicEnv } from '$env/dynamic/public';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
 import { checkoutSessionDocRef, userDocRef } from '$lib/server/firestore';
+import { getPlanConfig, getOrCreateStripeCustomer, getStripeClient } from '$lib/server/stripe';
 
-const redirectOrigin = (url: URL) => {
-	return PUBLIC_SITE_URL?.trim() || `${url.protocol}//${url.host}`;
+type CheckoutBody = {
+	plan?: string;
+	idempotencyKey?: string;
 };
 
-export const POST = async ({ request, locals, url }) => {
-	const { user } = locals;
+const redirectOrigin = (url: URL) => publicEnv.PUBLIC_SITE_URL?.trim() || `${url.protocol}//${url.host}`;
 
-	if (!user?.uid || !user.email) {
-		return json({ error: 'You must be signed in before starting checkout.' }, { status: 401 });
+const deriveKey = (body: CheckoutBody, userId: string, planKey: string, suffix: string) => {
+	if (typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim()) {
+		return `${body.idempotencyKey.trim()}::${suffix}`;
 	}
+	return createHash('sha256').update(`${userId}:${planKey}:${suffix}`).digest('hex');
+};
 
-	let planKey: string | null = null;
+const titleCase = (value: string | null) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : null);
+
+export const POST = handleApiRoute(async (event) => {
+	const user = requireUser(event);
+	assertSameOrigin(event);
+
+	let body: CheckoutBody;
 	try {
-		const body = await request.json();
-		planKey = typeof body.plan === 'string' ? body.plan : null;
+		body = await event.request.json();
 	} catch (error) {
-		return json({ error: 'Invalid request body.' }, { status: 400 });
+		throw new ApiProblem({
+			status: 400,
+			code: 'INVALID_JSON',
+			message: 'Request body must be valid JSON.',
+			hint: 'Send a JSON payload with a "plan" field.',
+			cause: error
+		});
 	}
 
-	const plan = getPlanConfig(planKey);
+	const plan = getPlanConfig(typeof body.plan === 'string' ? body.plan : null);
 	if (!plan) {
-		return json({ error: 'Plan not found.' }, { status: 400 });
+		throw new ApiProblem({
+			status: 400,
+			code: 'PLAN_NOT_FOUND',
+			message: 'Requested plan was not found.'
+		});
 	}
+
+	const logger = event.locals.logger.child({
+		component: 'billing',
+		action: 'start_checkout',
+		plan: plan.plan
+	});
 
 	try {
 		const stripe = getStripeClient();
-		const customer = await getOrCreateStripeCustomer(user.uid, user.email);
-		const origin = redirectOrigin(url);
+		const customer = await getOrCreateStripeCustomer(user.uid, user.email ?? '');
+		const origin = redirectOrigin(event.url);
 		const successUrl = `${origin}/billing/success?plan=${plan.plan}&session_id={CHECKOUT_SESSION_ID}`;
 		const cancelUrl = `${origin}/pricing?plan=${plan.plan}&cancelled=1`;
 
@@ -42,6 +67,7 @@ export const POST = async ({ request, locals, url }) => {
 		const accountSnapshot = await userDocRef(user.uid).get();
 		const currentPlan = accountSnapshot.data()?.currentPlan as { planKey?: string } | undefined;
 		const currentPlanKey = currentPlan?.planKey ?? null;
+
 		const subscriptionSnapshot = await userDocRef(user.uid)
 			.collection('subscriptions')
 			.orderBy('updatedAt', 'desc')
@@ -68,17 +94,22 @@ export const POST = async ({ request, locals, url }) => {
 					throw new Error('Subscription has no items to update.');
 				}
 
-				const updatedSubscription = await stripe.subscriptions.update(subscription.id, {
-					items: [
-						{
-							id: primaryItem.id,
-							price: plan.priceId,
-							quantity: primaryItem.quantity ?? 1
-						}
-					],
-					proration_behavior: 'create_prorations',
-					metadata
-				});
+				const subscriptionIdempotencyKey = deriveKey(body, user.uid, plan.plan, 'subscription-update');
+				const updatedSubscription = await stripe.subscriptions.update(
+					subscription.id,
+					{
+						items: [
+							{
+								id: primaryItem.id,
+								price: plan.priceId,
+								quantity: primaryItem.quantity ?? 1
+							}
+						],
+						proration_behavior: 'create_prorations',
+						metadata
+					},
+					{ idempotencyKey: subscriptionIdempotencyKey }
+				);
 
 				let upcomingInvoiceSummary: {
 					amount_due: number;
@@ -113,72 +144,83 @@ export const POST = async ({ request, locals, url }) => {
 						};
 					}
 				} catch (invoiceError) {
-					console.warn('[stripe] retrieveUpcoming invoice failed', invoiceError);
+					logger.warn('retrieveUpcoming invoice failed', { invoiceError });
 				}
 
-				return json({
+				logger.info('Subscription upgraded without checkout', {
+					subscriptionId: subscription.id
+				});
+
+				return apiOk({
 					status: 'updated',
 					subscriptionId: updatedSubscription.id,
 					currentPlan: plan.plan,
 					upcomingInvoice: upcomingInvoiceSummary
 				});
 			} catch (error) {
-				console.error('[stripe] subscription upgrade failed, falling back to checkout', error);
+				logger.warn('Subscription upgrade via API failed, falling back to checkout', { error });
 			}
 		}
 
-		const titleCase = (value: string | null) =>
-			value ? value.charAt(0).toUpperCase() + value.slice(1) : null;
 		const changeKind = metadata.changeType ?? null;
 		const changeVerb = changeKind === 'upgrade' ? 'upgrading' : changeKind ? 'changing' : null;
 		const changeTitle = changeKind === 'upgrade' ? 'Upgrade' : changeKind ? 'Change' : null;
 
-		const session = await stripe.checkout.sessions.create({
-			mode: plan.mode,
-			customer: customer.id,
-			line_items: [
-				{
-					price: plan.priceId,
-					quantity: 1
-				}
-			],
-			success_url: successUrl,
-			cancel_url: cancelUrl,
-			allow_promotion_codes: plan.mode === 'subscription',
-			customer_update: {
-				address: 'auto'
-			},
-			automatic_tax: { enabled: false },
-			metadata,
-			custom_text:
-				changeKind && currentPlanKey && changeVerb
-					? {
-						submit: {
-							message: `You're ${changeVerb} from ${titleCase(currentPlanKey)} to ${titleCase(plan.plan)}. Any remaining balance is prorated automatically.`
+		const sessionIdempotencyKey = deriveKey(body, user.uid, plan.plan, 'checkout-session');
+		const session = await stripe.checkout.sessions.create(
+			{
+				mode: plan.mode,
+				customer: customer.id,
+				line_items: [
+					{
+						price: plan.priceId,
+						quantity: 1
+					}
+				],
+				success_url: successUrl,
+				cancel_url: cancelUrl,
+				allow_promotion_codes: plan.mode === 'subscription',
+				customer_update: {
+					address: 'auto'
+				},
+				automatic_tax: { enabled: false },
+				metadata,
+				custom_text:
+					changeKind && currentPlanKey && changeVerb
+						? {
+							submit: {
+								message: `You're ${changeVerb} from ${titleCase(currentPlanKey)} to ${titleCase(plan.plan)}. Any remaining balance is prorated automatically.`
+							}
 						}
-					}
-					: undefined,
-			subscription_data:
-				isSubscription
-					? {
-						metadata,
-						trial_period_days: !isPlanChange ? plan.trialPeriodDays : undefined,
-						description:
-							changeTitle && currentPlanKey
-								? `${changeTitle} from ${titleCase(currentPlanKey)} to ${titleCase(plan.plan)}`
+						: undefined,
+				subscription_data:
+					isSubscription
+						? {
+							metadata,
+							trial_period_days: !isPlanChange ? plan.trialPeriodDays : undefined,
+							description:
+								changeTitle && currentPlanKey
+									? `${changeTitle} from ${titleCase(currentPlanKey)} to ${titleCase(plan.plan)}`
 								: undefined
-					}
-					: undefined,
-			payment_intent_data:
-				plan.mode === 'payment'
-					? {
-						metadata
-					}
-					: undefined
-		});
+						}
+						: undefined,
+				payment_intent_data:
+					plan.mode === 'payment'
+						? {
+							metadata
+						}
+						: undefined
+			},
+			{ idempotencyKey: sessionIdempotencyKey }
+		);
 
 		if (!session.url) {
-			return json({ error: 'Stripe session did not return a redirect URL.' }, { status: 500 });
+			throw new ApiProblem({
+				status: 502,
+				code: 'STRIPE_SESSION_URL_MISSING',
+				message: 'Stripe did not return a checkout URL.',
+				hint: 'Retry in a moment or contact support if the issue persists.'
+			});
 		}
 
 		await checkoutSessionDocRef(session.id).set(
@@ -193,10 +235,19 @@ export const POST = async ({ request, locals, url }) => {
 			{ merge: true }
 		);
 
-		return json({ url: session.url });
+		logger.info('Checkout session created', { checkoutSessionId: session.id });
+		return apiOk({ url: session.url });
 	} catch (error) {
-		console.error('[stripe] checkout session error', error);
-		const message = error instanceof Error ? error.message : 'Unable to start checkout.';
-		return json({ error: message }, { status: 500 });
+		if (error instanceof ApiProblem) {
+			throw error;
+		}
+		logger.error('Failed to initiate checkout', { error });
+		throw new ApiProblem({
+			status: 502,
+			code: 'CHECKOUT_START_FAILED',
+			message: 'Unable to start checkout with Stripe.',
+			hint: 'Retry shortly. If the problem persists, contact support.',
+			cause: error
+		});
 	}
-};
+}, { component: 'billing' });

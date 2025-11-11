@@ -2,18 +2,31 @@
 	export let data: {
 		campaign: {
 			id: string;
-			createdAt: number;
+			createdAt: number | null;
 			website?: string | null;
-			audience?: string | null;
+			influencerTypes?: string | null;
 			locations?: string | null;
 			followers?: string | null;
+			followersMin?: number | null;
+			followersMax?: number | null;
+			keywords?: string[];
 			businessSummary?: string | null;
 		} | null;
 		error?: string;
 	};
 
 	const campaign = data.campaign;
-	const createdAt = campaign ? new Date(campaign.createdAt).toLocaleString() : '';
+	const createdAt = campaign && typeof campaign.createdAt === 'number' ? new Date(campaign.createdAt).toLocaleString() : '';
+	const numberFormatter = new Intl.NumberFormat('en-US');
+	const formatFollowerBounds = () => {
+		if (!campaign) return '—';
+		const min = typeof campaign.followersMin === 'number' ? Math.round(campaign.followersMin) : null;
+		const max = typeof campaign.followersMax === 'number' ? Math.round(campaign.followersMax) : null;
+		if (min !== null && max !== null) return `${numberFormatter.format(min)} – ${numberFormatter.format(max)}`;
+		if (min !== null) return `${numberFormatter.format(min)}+`;
+		if (max !== null) return `Up to ${numberFormatter.format(max)}`;
+		return '—';
+	};
 </script>
 
 <svelte:head>
@@ -53,8 +66,8 @@
 					<dd class="mt-1 break-words">{campaign.website ?? '—'}</dd>
 				</div>
 				<div>
-					<dt class="font-medium text-gray-500">Influencer focus</dt>
-					<dd class="mt-1">{campaign.audience ?? '—'}</dd>
+					<dt class="font-medium text-gray-500">Influencer types</dt>
+					<dd class="mt-1">{campaign.influencerTypes ?? '—'}</dd>
 				</div>
 				<div>
 					<dt class="font-medium text-gray-500">Location / Remote</dt>
@@ -64,7 +77,21 @@
 					<dt class="font-medium text-gray-500">Follower range</dt>
 					<dd class="mt-1">{campaign.followers ?? '—'}</dd>
 				</div>
+				<div>
+					<dt class="font-medium text-gray-500">Follower bounds</dt>
+					<dd class="mt-1">{formatFollowerBounds()}</dd>
+				</div>
 			</dl>
+			{#if campaign.keywords && campaign.keywords.length}
+				<div class="mt-4">
+					<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Influencer keywords</h3>
+					<div class="mt-2 flex flex-wrap gap-2">
+						{#each campaign.keywords as keyword}
+							<span class="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700">{keyword}</span>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</section>
 
 		<section class="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-gray-800 shadow-sm">

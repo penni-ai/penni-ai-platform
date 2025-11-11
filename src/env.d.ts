@@ -24,6 +24,7 @@ declare module '$env/static/public' {
 	export const PUBLIC_FIREBASE_MESSAGING_SENDER_ID: string;
 	export const PUBLIC_FIREBASE_APP_ID: string;
 	export const PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: string;
+	export const PUBLIC_FIREBASE_FIRESTORE_EMULATOR_HOST: string;
 	export const PUBLIC_SITE_URL: string;
 	export const PUBLIC_STRIPE_PUBLISHABLE_KEY: string;
 }
@@ -42,6 +43,8 @@ declare module '$env/dynamic/private' {
 		STRIPE_PRICE_GROWTH?: string;
 		STRIPE_PRODUCT_EVENT?: string;
 		STRIPE_PRICE_EVENT?: string;
+		OPENAI_API_KEY?: string;
+		OPENAI_MODEL?: string;
 		[key: string]: string | undefined;
 	};
 }
@@ -55,6 +58,7 @@ declare module '$env/dynamic/public' {
 		PUBLIC_FIREBASE_MESSAGING_SENDER_ID?: string;
 		PUBLIC_FIREBASE_APP_ID?: string;
 		PUBLIC_FIREBASE_AUTH_EMULATOR_HOST?: string;
+		PUBLIC_FIREBASE_FIRESTORE_EMULATOR_HOST?: string;
 		PUBLIC_SITE_URL?: string;
 		PUBLIC_STRIPE_PUBLISHABLE_KEY?: string;
 		[key: string]: string | undefined;

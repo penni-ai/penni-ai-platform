@@ -184,18 +184,24 @@ async function openBillingPortal() {
 			await updatePassword(user, newPassword);
 
 			const idToken = await user.getIdToken(true);
-			const response = await fetch('/api/session', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({ idToken, remember: true })
-			});
+		const response = await fetch('/api/public/session', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ idToken, remember: true })
+		});
 
-			if (!response.ok) {
-				const payload = await response.json().catch(() => ({}));
-				throw new Error(payload?.error ?? 'Unable to refresh your session after updating the password.');
-			}
+		if (!response.ok) {
+			const payload = await response.json().catch(() => ({}));
+			const code = typeof payload?.error?.code === 'string' ? payload.error.code : null;
+			const message =
+				typeof payload?.error?.message === 'string'
+					? payload.error.message
+					: 'Unable to refresh your session after updating the password.';
+			const combined = code ? `${code}: ${message}` : message;
+			throw new Error(combined);
+		}
 
 			passwordMessage = 'Password updated successfully.';
 			currentPassword = '';

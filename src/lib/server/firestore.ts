@@ -3,22 +3,10 @@ import {
 	FieldValue,
 	type Firestore,
 	type DocumentReference,
-	type CollectionReference,
-	type DocumentSnapshot
+	type CollectionReference
 } from 'firebase-admin/firestore';
-import {
-	PIPELINE_RUN_STATUSES,
-	PIPELINE_STAGE_STATUSES,
-	STAGE_NAMES,
-	isPipelineStageDocument,
-	isPipelineStatus
-} from '$lib/types/search';
-import type { PipelineStageDocument, PipelineStatus, StageName } from '$lib/types/search';
 
 export const firestore: Firestore = adminDb;
-const PIPELINE_COLLECTION = 'search_pipeline_runs';
-
-const pipelineRunsCollection = () => firestore.collection(PIPELINE_COLLECTION);
 
 export function userDocRef(uid: string) {
 	return firestore.collection('users').doc(uid);
@@ -52,27 +40,31 @@ export function campaignDocRef(uid: string, campaignId: string) {
 	return userDocRef(uid).collection('campaigns').doc(campaignId);
 }
 
-export function conversationCollectionRef(uid: string): CollectionReference {
-	return userDocRef(uid).collection('conversations');
+// Campaign structure:
+// - campaigns/{campaignId}/collected (document) - collected data
+// - campaigns/{campaignId}/chat/{messageId} (collection) - messages
+export function chatCollectedDocRef(uid: string, campaignId: string): DocumentReference {
+	return campaignDocRef(uid, campaignId).collection('collected').doc('data');
 }
 
-export function conversationDocRef(uid: string, conversationId: string): DocumentReference {
-	return conversationCollectionRef(uid).doc(conversationId);
+export function chatMessagesCollectionRef(uid: string, campaignId: string): CollectionReference {
+	// Messages collection: campaigns/{campaignId}/chat/{messageId}
+	return campaignDocRef(uid, campaignId).collection('chat');
 }
 
-export function conversationMessagesCollectionRef(uid: string, conversationId: string): CollectionReference {
-	return conversationDocRef(uid, conversationId).collection('messages');
+// New organized structure: Outreach collection
+export function outreachCollectionRef(uid: string, campaignId: string): CollectionReference {
+	return campaignDocRef(uid, campaignId).collection('outreach');
 }
 
-export function pipelineStatusDocRef(pipelineId: string): DocumentReference {
-	return pipelineRunsCollection().doc(pipelineId);
+// New organized structure: Search collection
+export function searchCollectionRef(uid: string, campaignId: string): CollectionReference {
+	return campaignDocRef(uid, campaignId).collection('search');
 }
 
-function pipelineStageDocRef(pipelineId: string, stage: StageName): DocumentReference {
-	return pipelineRunsCollection().doc(stageDocumentId(pipelineId, stage));
+export function searchUsageDocRef(uid: string): DocumentReference {
+	return userDocRef(uid).collection('usage').doc('searches');
 }
-
-const stageDocumentId = (pipelineId: string, stage: StageName) => `${pipelineId}_${stage}`;
 
 export const serverTimestamp = () => FieldValue.serverTimestamp();
 
@@ -136,197 +128,53 @@ export interface AddonRecord {
 	expiresAt: number | null;
 }
 
+// Minimal campaign metadata - all detailed data is in subcollections
 export interface CampaignRecord {
 	id: string;
+	title: string | null;
+	status: 'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error';
 	createdAt: number;
-	website?: string | null;
-	influencerTypes?: string | null;
-	locations?: string | null;
-	followers?: string | null;
-	followersMin?: number | null;
-	followersMax?: number | null;
-	keywords?: string[];
-	businessSummary?: string | null;
-	sourceConversationId: string;
+	updatedAt: number;
+	pipeline_id?: string | null; // Pipeline job ID for influencer searches
 }
 
-export async function* watchPipelineStatus(
-	pipelineId: string,
-	signal?: AbortSignal
-): AsyncGenerator<PipelineStatus> {
-	const docRef = pipelineStatusDocRef(pipelineId);
-	const queue: PipelineStatus[] = [];
-	const abortError = new Error('Pipeline status watch aborted');
-	abortError.name = 'AbortError';
-	let pendingResolve: ((value: PipelineStatus) => void) | null = null;
-	let pendingReject: ((reason?: unknown) => void) | null = null;
-	let closed = false;
-	let terminalError: unknown = null;
+// Chat collected data structure
+export type FieldStatus = 'not_collected' | 'collected' | 'confirmed';
 
-	const emit = (status: PipelineStatus) => {
-		if (pendingResolve) {
-			pendingResolve(status);
-			pendingResolve = null;
-			pendingReject = null;
-		} else {
-			queue.push(status);
-		}
+export interface ChatCollectedData {
+	website: string | null;
+	business_location: string | null;
+	keywords: string[];
+	min_followers: number | null;
+	max_followers: number | null;
+	influencer_location: string | null;
+	influencerTypes: string | null; // Legacy field name, maps to influencer_location
+	business_about: string | null;
+	influencer_search_query: string | null; // 1-2 sentence description of business and desired influencers (no follower counts)
+	fieldStatus?: {
+		// Only explicit fields that require user confirmation have status tracking
+		website?: FieldStatus;
+		business_location?: FieldStatus;
+		business_about?: FieldStatus;
+		influencer_location?: FieldStatus;
+		min_followers?: FieldStatus;
+		max_followers?: FieldStatus;
 	};
-
-	const fail = (error: unknown) => {
-		terminalError = error;
-		closed = true;
-		if (pendingReject) {
-			pendingReject(error);
-			pendingResolve = null;
-			pendingReject = null;
-		}
-	};
-
-	const shift = (): Promise<PipelineStatus> => {
-		if (queue.length) {
-			return Promise.resolve(queue.shift()!);
-		}
-		if (closed) {
-			return Promise.reject(terminalError ?? abortError);
-		}
-		return new Promise<PipelineStatus>((resolve, reject) => {
-			pendingResolve = resolve;
-			pendingReject = reject;
-		});
-	};
-
-	const unsubscribe = docRef.onSnapshot(
-		(snapshot) => {
-			const status = coercePipelineStatus(snapshot, pipelineId);
-			if (status) {
-				emit(status);
-			}
-		},
-		(error) => {
-			fail(error);
-		}
-	);
-
-	const abortListener = () => {
-		fail(abortError);
-		unsubscribe();
-	};
-
-	if (signal) {
-		if (signal.aborted) {
-			abortListener();
-		} else {
-			signal.addEventListener('abort', abortListener, { once: true });
-		}
-	}
-
-	try {
-		while (true) {
-			const next = await shift();
-			yield next;
-		}
-	} catch (error) {
-		if (error !== abortError) {
-			throw error;
-		}
-	} finally {
-		closed = true;
-		unsubscribe();
-		if (signal) {
-			signal.removeEventListener('abort', abortListener);
-		}
-	}
+	updatedAt: number;
 }
 
-export async function readPipelineStageResults(
-	pipelineId: string,
-	stage: StageName
-): Promise<PipelineStageDocument | null> {
-	const snapshot = await pipelineStageDocRef(pipelineId, stage).get();
-	return coercePipelineStageDocument(snapshot, pipelineId, stage);
+export interface SearchUsageRecord {
+	month: string; // Format: "YYYY-MM" (e.g., "2025-01")
+	count: number;
+	updatedAt: number;
 }
 
-const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
-	!!value && typeof value === 'object' && !Array.isArray(value);
+export function outreachUsageDocRef(uid: string): DocumentReference {
+	return userDocRef(uid).collection('usage').doc('outreach');
+}
 
-const normalizeStageName = (value: unknown): StageName | null => {
-	if (typeof value !== 'string') {
-		return null;
-	}
-	const upper = value.toUpperCase();
-	return STAGE_NAMES.includes(upper as StageName) ? (upper as StageName) : null;
-};
-
-const normalizeStatus = <T extends readonly string[]>(
-	value: unknown,
-	allowed: T,
-	fallback: T[number]
-): T[number] => {
-	if (typeof value === 'string') {
-		const normalized = value.toLowerCase();
-		const match = allowed.find((candidate) => candidate === normalized);
-		if (match) {
-			return match as T[number];
-		}
-	}
-	return fallback;
-};
-
-const coercePipelineStatus = (
-	snapshot: DocumentSnapshot,
-	pipelineId: string
-): PipelineStatus | null => {
-	if (!snapshot.exists) {
-		return null;
-	}
-	const raw = (snapshot.data() ?? {}) as Record<string, unknown>;
-	const currentStage = normalizeStageName(raw.current_stage) ?? null;
-	const completedRaw = Array.isArray(raw.completed_stages) ? raw.completed_stages : [];
-	const completedStages = completedRaw
-		.map((stage) => normalizeStageName(stage))
-		.filter((stage): stage is StageName => Boolean(stage));
-	const normalized: Record<string, unknown> = {
-		...raw,
-		pipeline_id:
-			typeof raw.pipeline_id === 'string' && raw.pipeline_id ? raw.pipeline_id : pipelineId,
-		userId: typeof raw.userId === 'string' ? raw.userId : '',
-		status: normalizeStatus(raw.status, PIPELINE_RUN_STATUSES, 'running'),
-		current_stage: currentStage,
-		completed_stages: completedStages,
-		overall_progress: typeof raw.overall_progress === 'number' ? raw.overall_progress : 0,
-		error_message:
-			raw.error_message === undefined || raw.error_message === null
-				? null
-				: String(raw.error_message)
-	};
-	return isPipelineStatus(normalized) ? (normalized as PipelineStatus) : null;
-};
-
-const coercePipelineStageDocument = (
-	snapshot: DocumentSnapshot,
-	pipelineId: string,
-	fallbackStage: StageName
-): PipelineStageDocument | null => {
-	if (!snapshot.exists) {
-		return null;
-	}
-	const raw = (snapshot.data() ?? {}) as Record<string, unknown>;
-	const stage = normalizeStageName(raw.stage) ?? fallbackStage;
-	const profiles = Array.isArray(raw.profiles) ? raw.profiles.filter(isPlainRecord) : [];
-	const normalized: Record<string, unknown> = {
-		...raw,
-		pipeline_id: typeof raw.pipeline_id === 'string' ? raw.pipeline_id : pipelineId,
-		userId: typeof raw.userId === 'string' ? raw.userId : '',
-		stage,
-		status: normalizeStatus(raw.status, PIPELINE_STAGE_STATUSES, 'completed'),
-		profiles,
-		debug: isPlainRecord(raw.debug) ? raw.debug : {},
-		metadata: isPlainRecord(raw.metadata) ? raw.metadata : {},
-		error_message:
-			raw.error_message === undefined || raw.error_message === null
-				? null
-				: String(raw.error_message)
-	};
-	return isPipelineStageDocument(normalized) ? (normalized as PipelineStageDocument) : null;
-};
+export interface OutreachUsageRecord {
+	month: string; // Format: "YYYY-MM" (e.g., "2025-01")
+	count: number;
+	updatedAt: number;
+}

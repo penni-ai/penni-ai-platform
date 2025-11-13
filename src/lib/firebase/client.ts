@@ -14,10 +14,22 @@ const firebaseConfig = {
 };
 
 function createFirebaseApp(): FirebaseApp {
-	if (!firebaseConfig.apiKey) {
-		throw new Error('Missing Firebase configuration. Did you set PUBLIC_FIREBASE_* environment variables?');
+	// Check if already initialized
+	if (getApps().length) {
+		return getApp();
 	}
-	return getApps().length ? getApp() : initializeApp(firebaseConfig);
+	
+	// Validate required config (but don't throw during build - use fallbacks)
+	if (!firebaseConfig.apiKey) {
+		// In browser, this is a real error. During SSR/build, we might not have env vars yet
+		if (typeof window !== 'undefined') {
+			throw new Error('Missing Firebase configuration. Did you set PUBLIC_FIREBASE_* environment variables?');
+		}
+		// During SSR/build, create a minimal app - it will fail gracefully if used without config
+		console.warn('[FirebaseClient] Missing PUBLIC_FIREBASE_API_KEY - Firebase features may not work');
+	}
+	
+	return initializeApp(firebaseConfig);
 }
 
 function configureAuth(app: FirebaseApp): Auth {

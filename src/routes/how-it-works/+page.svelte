@@ -67,7 +67,7 @@
 			</p>
 			<div class="mt-4 flex flex-wrap gap-3">
 				<Button variant="outline" href="/pricing">Compare pricing</Button>
-				<Button href="/dashboard">Explore the product UI</Button>
+				<Button href="/">Explore the product UI</Button>
 			</div>
 		</section>
 	</main>

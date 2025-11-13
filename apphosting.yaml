@@ -45,18 +45,20 @@ env:
       - BUILD
       - RUNTIME
 
-  # Server-side configuration.
+  # Server-side Firebase configuration.
   - variable: FIREBASE_PROJECT_ID
     value: penni-ai-platform
     availability:
       - RUNTIME
+
+  # Site configuration.
   - variable: PUBLIC_SITE_URL
     value: https://penni-ai.com
     availability:
       - BUILD
       - RUNTIME
 
-  # Stripe keys and product metadata.
+  # Stripe configuration.
   - variable: PUBLIC_STRIPE_PUBLISHABLE_KEY
     value: pk_test_51SKoanH1EcnfAMZvTYcStRpm2iuYqd8yHLjXqdbKQl7iy7xrNZukL8z4HwZatttovP4ZgPS19PSBj4FupQy3dI8O00DqHMubq5
     availability:
@@ -70,15 +72,8 @@ env:
     secret: STRIPE_WEBHOOK_SECRET
     availability:
       - RUNTIME
-  - variable: OPENAI_API_KEY
-    secret: OPENAI_API_KEY
-    availability:
-      - RUNTIME
-  - variable: OPENAI_MODEL
-    value: gpt-4o-mini
-    availability:
-      - RUNTIME
 
+  # Stripe product configuration.
   - variable: STRIPE_PRODUCT_STARTER
     value: prod_TKJoQYsI35pNvM
     availability:
@@ -91,6 +86,8 @@ env:
     value: prod_TKJou1gDBzMKdn
     availability:
       - RUNTIME
+
+  # Stripe pricing configuration.
   - variable: STRIPE_PRICE_STARTER
     value: price_1SNfBEH1EcnfAMZvJiI3uIwM
     availability:
@@ -101,5 +98,15 @@ env:
       - RUNTIME
   - variable: STRIPE_PRICE_EVENT
     value: price_1SNfBFH1EcnfAMZvvcIDo8ir
+    availability:
+      - RUNTIME
+
+  # OpenAI configuration.
+  - variable: OPENAI_API_KEY
+    secret: OPENAI_API_KEY
+    availability:
+      - RUNTIME
+  - variable: OPENAI_MODEL
+    value: gpt-4o-mini
     availability:
       - RUNTIME

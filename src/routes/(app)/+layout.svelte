@@ -9,7 +9,6 @@
 		collection,
 		limit,
 		onSnapshot,
-		orderBy,
 		query,
 		type DocumentData,
 		type QueryDocumentSnapshot
@@ -25,20 +24,26 @@
 		if (!uid) return;
 
 		const campaignsRef = collection(firebaseFirestore, 'users', uid, 'campaigns');
-		const campaignsQuery = query(
-			campaignsRef,
-			orderBy('createdAtMs', 'desc'),
-			limit(SIDEBAR_CAMPAIGN_LIMIT)
-		);
+		
+		// Get all campaigns and sort in memory (more reliable than relying on indexes)
+		const campaignsQuery = query(campaignsRef, limit(SIDEBAR_CAMPAIGN_LIMIT * 2)); // Get more than needed for sorting
 
 		const unsubscribe = onSnapshot(
 			campaignsQuery,
 			(snapshot) => {
-				const nextCampaigns = sortCampaignsByRecency(snapshot.docs.map(deserializeCampaignSnapshot));
-				campaignsState = nextCampaigns;
+				try {
+					const deserialized = snapshot.docs.map(deserializeCampaignSnapshot);
+					// Sort by recency and limit
+					const sorted = sortCampaignsByRecency(deserialized).slice(0, SIDEBAR_CAMPAIGN_LIMIT);
+					campaignsState = sorted;
+				} catch (error) {
+					console.error('[sidebar] failed to deserialize campaigns', error);
+					campaignsState = [];
+				}
 			},
 			(error) => {
 				console.error('[sidebar] campaigns listener failed', error);
+				campaignsState = [];
 			}
 		);
 
@@ -49,22 +54,19 @@
 	const sidebarCampaigns = $derived(() =>
 		campaignsState
 			.map((campaign) => {
-				const id = campaign?.sourceConversationId ?? campaign?.id;
+				const id = campaign?.id;
 				if (!id) return null;
 				return {
 					id,
 					name: resolveCampaignName(campaign),
-					href: `/campaign/chat/${id}`
+					href: `/campaign/${id}`
 				};
 			})
 			.filter((campaign): campaign is { id: string; name: string; href: string } => Boolean(campaign))
-	);
+		);
 
 	const activeCampaignId = $derived(() => {
 		const path = pathname();
-		if (path.startsWith('/campaign/chat/')) {
-			return path.split('/')[3] ?? null;
-		}
 		if (path.startsWith('/campaign/')) {
 			return path.split('/')[2] ?? null;
 		}
@@ -72,6 +74,7 @@
 	});
 
 	function resolveCampaignName(campaign: SerializedCampaign): string {
+		if (campaign.title) return campaign.title;
 		if (campaign.website) return campaign.website;
 		if (campaign.influencerTypes) return campaign.influencerTypes;
 		if (campaign.locations) return campaign.locations;
@@ -87,21 +90,25 @@
 		doc: QueryDocumentSnapshot<DocumentData>
 	): SerializedCampaign {
 		const data = doc.data() ?? {};
+		// New structure: campaign root only has minimal fields
+		// Collected data is in chat/collected subcollection (not accessible from client-side snapshot)
+		// For sidebar, we only need basic fields anyway
 		return {
 			id: pickString(data.id) ?? doc.id,
-			createdAt: timestampToMillis(data.createdAt) ?? numberOrNull(data.createdAtMs),
-			updatedAt: timestampToMillis(data.updatedAt) ?? numberOrNull(data.updatedAtMs),
-			website: pickString(data.website),
-			influencerTypes:
-				pickString(data.influencerTypes) ?? pickString(data.audience) ?? null,
-			locations: pickString(data.locations),
-			followers: pickString(data.followers),
+			createdAt: timestampToMillis(data.createdAt) ?? numberOrNull(data.createdAtMs) ?? numberOrNull(data.createdAt),
+			updatedAt: timestampToMillis(data.updatedAt) ?? numberOrNull(data.updatedAtMs) ?? numberOrNull(data.updatedAt),
+			title: pickString(data.title),
+			// These fields are now in chat/collected, but keep fallback for old campaigns
+			website: pickString(data.website) ?? null,
+			influencerTypes: pickString(data.influencerTypes) ?? pickString(data.audience) ?? null,
+			locations: pickString(data.locations) ?? null,
+			followers: pickString(data.followers) ?? null,
 			followersMin: numberOrNull(data.followersMin),
 			followersMax: numberOrNull(data.followersMax),
 			keywords: normalizeKeywords(data.keywords),
-			businessSummary: pickString(data.businessSummary),
-			sourceConversationId: pickString(data.sourceConversationId),
-			lastUpdatedTurnId: pickString(data.lastUpdatedTurnId)
+			businessSummary: pickString(data.businessSummary) ?? null,
+			lastUpdatedTurnId: pickString(data.lastUpdatedTurnId) ?? null,
+			status: typeof data.status === 'string' ? data.status as SerializedCampaign['status'] : undefined
 		};
 	}
 
@@ -114,13 +121,22 @@
 	}
 
 	function timestampToMillis(value: unknown): number | null {
+		// Handle Firestore Timestamp objects
 		if (value && typeof value === 'object' && 'toMillis' in value) {
 			try {
 				const millis = (value as { toMillis: () => number }).toMillis();
-				return typeof millis === 'number' ? millis : null;
+				return typeof millis === 'number' && Number.isFinite(millis) ? millis : null;
 			} catch (error) {
 				console.warn('[sidebar] failed to convert timestamp', error);
 			}
+		}
+		// Handle number timestamps (new structure)
+		if (typeof value === 'number' && Number.isFinite(value)) {
+			return value;
+		}
+		// Handle seconds timestamps (convert to milliseconds)
+		if (typeof value === 'number' && value < 1e12) {
+			return value * 1000;
 		}
 		return null;
 	}

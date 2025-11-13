@@ -6,23 +6,15 @@
 	let { size = 'md' }: Props = $props();
 
 const sizeStyles = {
-	sm: 'h-6',
-	md: 'h-8',
-	lg: 'h-12'
-};
-
-const widthStyles = {
-	sm: 'w-auto',
-	md: 'w-auto',
-	lg: 'w-auto'
+	sm: { width: 'w-32', height: 'h-20' },
+	md: { width: 'w-40', height: 'h-24' },
+	lg: { width: 'w-60', height: 'h-36' }
 };
 </script>
 
-<div class="flex items-center gap-2">
 	<img
-		src="/images/branding/penny-logo.png"
+	src="/images/branding/main%20logo%20SVG.svg"
 		alt="Penny logo"
-		class={`${widthStyles[size]} ${sizeStyles[size]} object-contain`}
 		loading="lazy"
+	class={`${sizeStyles[size].width} ${sizeStyles[size].height} object-cover`}
 	/>
-</div>

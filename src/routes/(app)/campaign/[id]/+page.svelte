@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { fade, fly } from 'svelte/transition';
 	import Button from '$lib/components/Button.svelte';
+	import OutreachPanel from '$lib/components/OutreachPanel.svelte';
 	import type { PageData } from './$types';
 	import { firebaseFirestore, firebaseAuth } from '$lib/firebase/client';
 	import { doc, onSnapshot } from 'firebase/firestore';
@@ -46,31 +47,9 @@
 	const campaign = $derived(data.campaign);
 	const routeCampaignId = $derived($page.params.id);
 
-	function createCampaignFallback(id: string | null): SerializedCampaign {
-		return {
-			id,
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-			title: null,
-			website: null,
-			influencerTypes: null,
-			locations: null,
-			followers: null,
-			business_location: null,
-			followersMin: null,
-			followersMax: null,
-			keywords: [],
-			businessSummary: null,
-			influencerSearchQuery: null,
-			lastUpdatedTurnId: null,
-			pipeline_id: null,
-			status: 'searching'
-		};
-	}
-	
-	// Local campaign state that can be updated immediately after search
-	let localCampaign = $state<SerializedCampaign | null>(null);
-	const effectiveCampaign = $derived((localCampaign ?? campaign) ?? createCampaignFallback(routeCampaignId));
+// Local campaign state that can be updated immediately after search
+let localCampaign = $state<SerializedCampaign | null>(null);
+const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 
 	let activeTab = $state<'chat' | 'outreach'>('chat');
 	let campaignId = $state<string | null>(null);
@@ -123,6 +102,10 @@
 			fit_score?: number;
 			fit_rationale?: string;
 			platform?: string;
+			biography?: string;
+			bio?: string;
+			email_address?: string;
+			business_email?: string;
 			_id?: string; // Unique identifier for tracking
 		}>;
 		stages: {
@@ -135,6 +118,8 @@
 	} | null>(null);
 	let pipelinePollInterval: ReturnType<typeof setInterval> | null = null;
 	let previousProfileIds = $state<Set<string>>(new Set());
+	let selectedInfluencerIds = $state<Set<string>>(new Set());
+	let outreachPanelOpen = $state(false);
 
 	function addAssistantPlaceholder(id: string) {
 		messages = [
@@ -179,7 +164,7 @@
 
 	// Reload conversation when campaign ID changes (e.g., when switching between campaigns)
 	$effect(() => {
-		const currentCampaignId = routeCampaignId;
+	const currentCampaignId = routeCampaignId;
 		if (currentCampaignId && activeTab === 'chat') {
 			// Only reload if campaign ID changed or we haven't loaded yet
 			if (campaignId !== currentCampaignId) {
@@ -205,12 +190,8 @@
 	onMount(() => {
 		if (!browser) return;
 		
-		// Initial load is handled by $effect above, but keep this as fallback
-		if (activeTab === 'chat' && campaign?.id && !campaignId) {
-			void loadConversation(campaign.id);
-		}
-		// Load search usage when component mounts
-		void loadSearchUsage();
+	// Load search usage when component mounts
+	void loadSearchUsage();
 		
 		// Load pipeline status if pipeline_id exists
 		if (effectiveCampaign?.pipeline_id) {
@@ -221,7 +202,7 @@
 		let unsubscribeCampaign: (() => void) | null = null;
 		const setupCampaignListener = () => {
 			const currentUser = firebaseAuth.currentUser;
-			const campaignId = routeCampaignId();
+			const campaignId = routeCampaignId;
 			
 			if (!currentUser || !campaignId) return;
 			
@@ -375,13 +356,17 @@
 			
 			// Update local campaign with pipeline_id immediately
 			if (data.job_id) {
-				const baseCampaign = campaign ?? localCampaign ?? createCampaignFallback(routeCampaignId);
+			const baseCampaign = localCampaign ?? campaign;
+			if (baseCampaign) {
 				localCampaign = {
 					...baseCampaign,
 					pipeline_id: data.job_id,
 					updatedAt: Date.now()
 				};
 				console.log('[campaign] Updated localCampaign with pipeline_id:', data.job_id);
+			} else {
+				console.warn('[campaign] Unable to update pipeline binding locally (campaign missing)');
+			}
 				
 				// Load pipeline status and start polling immediately
 				await loadPipelineStatus(data.job_id);
@@ -407,6 +392,70 @@
 			return profile.profile_url;
 		}
 		return `${profile.platform ?? 'unknown'}_${profile.display_name ?? 'unknown'}_${profile.followers ?? 0}`;
+	}
+
+	// Get platform logo SVG
+	function getPlatformLogo(platform: string | null | undefined): string {
+		if (!platform) return '';
+		const platformLower = platform.toLowerCase();
+		if (platformLower === 'instagram') {
+			return `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>`;
+		}
+		if (platformLower === 'tiktok') {
+			return `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/></svg>`;
+		}
+		return '';
+	}
+
+	// Get platform color
+	function getPlatformColor(platform: string | null | undefined): string {
+		if (!platform) return 'text-gray-400';
+		const platformLower = platform.toLowerCase();
+		if (platformLower === 'instagram') {
+			return 'text-[#E4405F]';
+		}
+		if (platformLower === 'tiktok') {
+			return 'text-black';
+		}
+		return 'text-gray-500';
+	}
+
+	// Toggle influencer selection
+	function toggleInfluencerSelection(profileId: string) {
+		if (selectedInfluencerIds.has(profileId)) {
+			selectedInfluencerIds.delete(profileId);
+		} else {
+			selectedInfluencerIds.add(profileId);
+		}
+		selectedInfluencerIds = new Set(selectedInfluencerIds); // Trigger reactivity
+	}
+
+	// Check if influencer is selected
+	function isInfluencerSelected(profileId: string): boolean {
+		return selectedInfluencerIds.has(profileId);
+	}
+
+	// Get count of selected influencers
+	const selectedCount = $derived(selectedInfluencerIds.size);
+
+	// Handle send outreach - opens the panel
+	function handleSendOutreach() {
+		if (selectedCount === 0) return;
+		outreachPanelOpen = true;
+	}
+	
+	// Get selected influencers
+	const selectedInfluencers = $derived(() => {
+		if (!pipelineStatus?.profiles) return [];
+		return pipelineStatus.profiles.filter(profile => {
+			const profileId = profile._id || getProfileId(profile);
+			return selectedInfluencerIds.has(profileId);
+		});
+	});
+	
+	// Close outreach panel
+	function closeOutreachPanel() {
+		outreachPanelOpen = false;
 	}
 	
 	async function loadPipelineStatus(pipelineId: string) {
@@ -923,7 +972,8 @@
 			</div>
 		{:else}
 			<!-- Outreach Tab -->
-			<div class="flex h-full flex-col overflow-y-auto px-8 py-6">
+			<div class="flex h-full flex-col overflow-hidden">
+				<div class="flex-1 overflow-y-auto px-8 py-6">
 				{#if effectiveCampaign?.pipeline_id && pipelineStatus}
 					<!-- Pipeline Status View -->
 					<div class="mx-auto w-full max-w-6xl space-y-6">
@@ -941,71 +991,73 @@
 						</div>
 						
 						<!-- Pipeline Progress -->
-						<div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-							<div class="mb-4">
-								<div class="mb-2 flex items-center justify-between text-sm">
-									<span class="font-medium text-gray-700">Overall Progress</span>
-									<span class="text-gray-500">{pipelineStatus.overall_progress}%</span>
+						{#if pipelineStatus.status !== 'completed'}
+							<div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+								<div class="mb-4">
+									<div class="mb-2 flex items-center justify-between text-sm">
+										<span class="font-medium text-gray-700">Overall Progress</span>
+										<span class="text-gray-500">{pipelineStatus.overall_progress}%</span>
+									</div>
+									<div class="h-3 w-full overflow-hidden rounded-full bg-gray-100">
+										<div
+											class="h-full bg-[#FF6F61] transition-all duration-300"
+											style="width: {pipelineStatus.overall_progress}%"
+										></div>
+									</div>
 								</div>
-								<div class="h-3 w-full overflow-hidden rounded-full bg-gray-100">
-									<div
-										class="h-full bg-[#FF6F61] transition-all duration-300"
-										style="width: {pipelineStatus.overall_progress}%"
-									></div>
+								
+								<!-- Stage Status -->
+								<div class="grid grid-cols-2 gap-4 text-sm">
+									<div class="rounded-lg border border-gray-200 p-3">
+										<div class="flex items-center justify-between">
+											<span class="text-gray-600">Query Expansion</span>
+											<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.query_expansion?.status ?? 'pending'}</span>
+										</div>
+										{#if pipelineStatus.stages.query_expansion?.queries}
+											<p class="mt-1 text-xs text-gray-500">{pipelineStatus.stages.query_expansion.queries.length} queries generated</p>
+										{/if}
+									</div>
+									<div class="rounded-lg border border-gray-200 p-3">
+										<div class="flex items-center justify-between">
+											<span class="text-gray-600">Weaviate Search</span>
+											<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.weaviate_search?.status ?? 'pending'}</span>
+										</div>
+										{#if pipelineStatus.stages.weaviate_search?.deduplicated_results}
+											<p class="mt-1 text-xs text-gray-500">{pipelineStatus.stages.weaviate_search.deduplicated_results} unique profiles</p>
+										{/if}
+									</div>
+									<div class="rounded-lg border border-gray-200 p-3">
+										<div class="flex items-center justify-between">
+											<span class="text-gray-600">BrightData Collection</span>
+											<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.brightdata_collection?.status ?? 'pending'}</span>
+										</div>
+										{#if pipelineStatus.stages.brightdata_collection}
+											<p class="mt-1 text-xs text-gray-500">
+												{pipelineStatus.stages.brightdata_collection.profiles_collected ?? 0} collected
+												{#if pipelineStatus.stages.brightdata_collection.total_batches}
+													({pipelineStatus.stages.brightdata_collection.batches_completed ?? 0}/{pipelineStatus.stages.brightdata_collection.total_batches} batches)
+												{/if}
+											</p>
+										{/if}
+									</div>
+									<div class="rounded-lg border border-gray-200 p-3">
+										<div class="flex items-center justify-between">
+											<span class="text-gray-600">LLM Analysis</span>
+											<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.llm_analysis?.status ?? 'pending'}</span>
+										</div>
+										{#if pipelineStatus.stages.llm_analysis?.profiles_analyzed}
+											<p class="mt-1 text-xs text-gray-500">{pipelineStatus.stages.llm_analysis.profiles_analyzed} analyzed</p>
+										{/if}
+									</div>
 								</div>
+								
+								{#if pipelineStatus.error_message}
+									<div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+										<strong>Error:</strong> {pipelineStatus.error_message}
+									</div>
+								{/if}
 							</div>
-							
-							<!-- Stage Status -->
-							<div class="grid grid-cols-2 gap-4 text-sm">
-								<div class="rounded-lg border border-gray-200 p-3">
-									<div class="flex items-center justify-between">
-										<span class="text-gray-600">Query Expansion</span>
-										<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.query_expansion?.status ?? 'pending'}</span>
-									</div>
-									{#if pipelineStatus.stages.query_expansion?.queries}
-										<p class="mt-1 text-xs text-gray-500">{pipelineStatus.stages.query_expansion.queries.length} queries generated</p>
-									{/if}
-								</div>
-								<div class="rounded-lg border border-gray-200 p-3">
-									<div class="flex items-center justify-between">
-										<span class="text-gray-600">Weaviate Search</span>
-										<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.weaviate_search?.status ?? 'pending'}</span>
-									</div>
-									{#if pipelineStatus.stages.weaviate_search?.deduplicated_results}
-										<p class="mt-1 text-xs text-gray-500">{pipelineStatus.stages.weaviate_search.deduplicated_results} unique profiles</p>
-									{/if}
-								</div>
-								<div class="rounded-lg border border-gray-200 p-3">
-									<div class="flex items-center justify-between">
-										<span class="text-gray-600">BrightData Collection</span>
-										<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.brightdata_collection?.status ?? 'pending'}</span>
-									</div>
-									{#if pipelineStatus.stages.brightdata_collection}
-										<p class="mt-1 text-xs text-gray-500">
-											{pipelineStatus.stages.brightdata_collection.profiles_collected ?? 0} collected
-											{#if pipelineStatus.stages.brightdata_collection.total_batches}
-												({pipelineStatus.stages.brightdata_collection.batches_completed ?? 0}/{pipelineStatus.stages.brightdata_collection.total_batches} batches)
-											{/if}
-										</p>
-									{/if}
-								</div>
-								<div class="rounded-lg border border-gray-200 p-3">
-									<div class="flex items-center justify-between">
-										<span class="text-gray-600">LLM Analysis</span>
-										<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.llm_analysis?.status ?? 'pending'}</span>
-									</div>
-									{#if pipelineStatus.stages.llm_analysis?.profiles_analyzed}
-										<p class="mt-1 text-xs text-gray-500">{pipelineStatus.stages.llm_analysis.profiles_analyzed} analyzed</p>
-									{/if}
-								</div>
-							</div>
-							
-							{#if pipelineStatus.error_message}
-								<div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-									<strong>Error:</strong> {pipelineStatus.error_message}
-								</div>
-							{/if}
-						</div>
+						{/if}
 						
 						<!-- Influencers Table -->
 						{#if pipelineStatus.status === 'running' || pipelineStatus.status === 'completed' || pipelineStatus.status === 'pending'}
@@ -1027,7 +1079,7 @@
 											<thead class="border-b border-gray-200 bg-gray-50">
 												<tr>
 													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Platform</th>
+													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Bio</th>
 													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Followers</th>
 													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fit Score</th>
 													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Rationale</th>
@@ -1037,25 +1089,59 @@
 												{#each pipelineStatus.profiles as profile (profile._id || getProfileId(profile))}
 													{@const profileId = profile._id || getProfileId(profile)}
 													{@const isNewProfile = !previousProfileIds.has(profileId)}
+													{@const isSelected = isInfluencerSelected(profileId)}
+													{@const isSelectable = pipelineStatus.status === 'completed'}
 													<tr 
-														class="hover:bg-gray-50 transition-colors"
+														class="transition-colors {
+															isSelected ? 'bg-[#FFF1ED] hover:bg-[#FFE5DC]' : 
+															isSelectable ? 'hover:bg-gray-50 cursor-pointer' : 
+															'hover:bg-gray-50'
+														}"
+														onclick={() => isSelectable && toggleInfluencerSelection(profileId)}
 														in:fly={{ y: -20, duration: 400, opacity: 0 }}
 													>
 														<td class="whitespace-nowrap px-6 py-4">
-															<div class="flex items-center">
-																{#if profile.profile_url}
-																	<a href={profile.profile_url} target="_blank" rel="noopener noreferrer" class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline">
-																		{profile.display_name ?? 'N/A'}
-																	</a>
-																{:else}
-																	<div class="text-sm font-medium text-gray-900">
-																		{profile.display_name ?? 'N/A'}
-																	</div>
-																{/if}
+															<div class="flex items-center gap-3">
+																<div class="flex-shrink-0 flex flex-col items-center gap-1">
+																	{#if profile.platform}
+																		<div class="flex items-center {getPlatformColor(profile.platform)}" title={profile.platform}>
+																			{@html getPlatformLogo(profile.platform)}
+																		</div>
+																	{/if}
+																	{#if profile.email_address || profile.business_email}
+																		<a 
+																			href={`mailto:${profile.email_address || profile.business_email}`}
+																			class="text-gray-400 hover:text-[#FF6F61] transition-colors"
+																			title={profile.email_address || profile.business_email}
+																			onclick={(e) => e.stopPropagation()}
+																		>
+																			<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+																				<path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+																			</svg>
+																		</a>
+																	{/if}
+																</div>
+																<div>
+																	{#if profile.profile_url}
+																		<a 
+																			href={profile.profile_url} 
+																			target="_blank" 
+																			rel="noopener noreferrer" 
+																			class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+																			onclick={(e) => e.stopPropagation()}
+																		>
+																			{profile.display_name ?? 'N/A'}
+																		</a>
+																	{:else}
+																		<div class="text-sm font-medium text-gray-900">
+																			{profile.display_name ?? 'N/A'}
+																		</div>
+																	{/if}
+																</div>
 															</div>
 														</td>
-														<td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500 capitalize">
-															{profile.platform ?? 'N/A'}
+														<td class="px-6 py-4 text-sm text-gray-500 max-w-md">
+															<div class="line-clamp-3">{profile.biography ?? profile.bio ?? '—'}</div>
 														</td>
 														<td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
 															{profile.followers ? profile.followers.toLocaleString() : 'N/A'}
@@ -1225,9 +1311,45 @@
 								{/if}
 							</Button>
 						</form>
+					</div>
+				{/if}
 				</div>
+				
+				<!-- Bottom Bar for Outreach Selection -->
+				{#if pipelineStatus?.status === 'completed' && pipelineStatus.profiles && pipelineStatus.profiles.length > 0}
+					<div 
+						class="border-t border-gray-200 bg-white px-8 py-4 shadow-lg"
+						in:fly={{ y: 100, duration: 300 }}
+					>
+						<div class="mx-auto flex max-w-6xl items-center justify-between">
+							<div class="flex items-center gap-4">
+								<p class="text-sm font-medium text-gray-900">Select Influencers for Outreach</p>
+								{#if selectedCount > 0}
+									<span class="inline-flex items-center rounded-full bg-[#FF6F61] px-3 py-1 text-sm font-semibold text-white">
+										{selectedCount} {selectedCount === 1 ? 'influencer' : 'influencers'} selected
+									</span>
+								{/if}
+							</div>
+							<Button
+								type="button"
+								variant="primary"
+								size="lg"
+								disabled={selectedCount === 0}
+								onclick={handleSendOutreach}
+							>
+								Send Outreach
+							</Button>
+						</div>
+					</div>
 				{/if}
 			</div>
 		{/if}
 	</div>
 </div>
+
+<!-- Outreach Panel -->
+<OutreachPanel 
+	open={outreachPanelOpen} 
+	influencers={selectedInfluencers()} 
+	onClose={closeOutreachPanel}
+/>

@@ -6,15 +6,77 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
     function isPipelineOwner() {
       return isSignedIn() && request.auth.uid == resource.data.userId;
     }
 
+    // Pipeline runs - only owner can read, writes via Admin SDK only
     match /search_pipeline_runs/{docId} {
-      // Status + stage documents live in the same collection; only the owner may read them.
       allow read: if isPipelineOwner();
       // Pipeline writes originate from Cloud Functions via the Admin SDK, which bypasses rules.
       allow write: if false;
+    }
+
+    // User documents and all subcollections - users can only access their own data
+    match /users/{userId} {
+      // Allow users to read their own user document
+      allow read: if isOwner(userId);
+      // User document writes are handled server-side via Admin SDK
+      allow write: if false;
+
+      // Campaigns subcollection
+      match /campaigns/{campaignId} {
+        allow read, write: if isOwner(userId);
+        
+        // Campaign subcollections (collected, chat, outreach, search)
+        match /{subcollection=**} {
+          allow read, write: if isOwner(userId);
+        }
+      }
+
+      // Sites subcollection
+      match /sites/{siteId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Subscriptions subcollection
+      match /subscriptions/{subscriptionId} {
+        allow read: if isOwner(userId);
+        // Subscription writes are handled server-side via Admin SDK
+        allow write: if false;
+      }
+
+      // Addons subcollection
+      match /addons/{addonId} {
+        allow read: if isOwner(userId);
+        // Addon writes are handled server-side via Admin SDK
+        allow write: if false;
+      }
+
+      // Usage subcollection
+      match /usage/{usageId} {
+        allow read: if isOwner(userId);
+        // Usage writes are handled server-side via Admin SDK
+        allow write: if false;
+      }
+    }
+
+    // Server-managed collections (writes via Admin SDK only)
+    match /checkoutSessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /webhookEvents/{eventId} {
+      allow read, write: if false; // Admin SDK only
+    }
+
+    match /stripeCustomers/{customerId} {
+      allow read, write: if false; // Admin SDK only
     }
 
     // Deny access to all other collections by default.

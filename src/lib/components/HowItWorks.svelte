@@ -81,9 +81,19 @@
 								</nav>
 								<div class="mt-6">
 									<p class="text-xs font-semibold text-gray-500 mb-2">Campaign</p>
-									<a href="/campaign" class="block text-xs text-gray-700 hover:bg-gray-100 px-2 py-2 rounded">Student AI Campaign</a>
-									<a href="/campaign" class="block text-xs text-gray-600 hover:bg-gray-100 px-2 py-2 rounded">July Fourth Campaign</a>
-									<a href="/campaign" class="block text-xs text-gray-600 hover:bg-gray-100 px-2 py-2 rounded">Club Free Drinks Campaign</a>
+									<button onclick={async () => {
+										try {
+											const response = await fetch('/api/campaigns', { method: 'POST' });
+											if (!response.ok) throw new Error('Failed to create campaign');
+											const data = await response.json();
+											if (data.campaignId) {
+												window.location.href = `/campaign/${data.campaignId}`;
+											}
+										} catch (error) {
+											console.error('Failed to create campaign', error);
+											alert('Failed to create campaign. Please try again.');
+										}
+									}} class="block text-xs text-gray-700 hover:bg-gray-100 px-2 py-2 rounded">Start new campaign</button>
 								</div>
 							</div>
 

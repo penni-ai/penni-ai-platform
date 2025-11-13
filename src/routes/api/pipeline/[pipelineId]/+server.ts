@@ -131,7 +131,19 @@ export const GET = handleApiRoute(async (event) => {
 	
 	const data = doc.data() as PipelineJobDocument;
 
-	if (!data.uid || data.uid !== user.uid) {
+	let userOwnsPipeline = data.uid === user.uid;
+	if (!userOwnsPipeline && (!data.uid || data.uid === null)) {
+		const fallbackCampaignSnapshot = await firestore
+			.collection('users')
+			.doc(user.uid)
+			.collection('campaigns')
+			.where('pipeline_id', '==', pipelineId)
+			.limit(1)
+			.get();
+		userOwnsPipeline = !fallbackCampaignSnapshot.empty;
+	}
+
+	if (!userOwnsPipeline) {
 		throw new ApiProblem({
 			status: 404,
 			code: 'PIPELINE_NOT_FOUND',
@@ -144,18 +156,8 @@ export const GET = handleApiRoute(async (event) => {
 	if (data.profiles_storage_path) {
 		console.log(`[API] Loading profiles from storage path: ${data.profiles_storage_path}`);
 		profiles = await loadProfilesFromStorage(data.profiles_storage_path);
-		// Sort by fit_score descending
 		profiles.sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
 		console.log(`[API] Loaded ${profiles.length} profiles for pipeline ${pipelineId}`);
-	} else {
-		console.log(`[API] No profiles_storage_path found for pipeline ${pipelineId}`);
-		// Try default path if storage_path is not set
-		const defaultPath = `pipeline_jobs/${pipelineId}/profiles.json`;
-		console.log(`[API] Attempting to load from default path: ${defaultPath}`);
-		profiles = await loadProfilesFromStorage(defaultPath);
-		if (profiles.length > 0) {
-			profiles.sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
-		}
 	}
 	
 	return apiOk({

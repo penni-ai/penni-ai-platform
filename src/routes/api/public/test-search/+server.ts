@@ -83,23 +83,16 @@ function mergeSearchPayload(body: TestSearchRequest): SearchPipelineRequest {
 		max_posts: body.max_posts ?? DEFAULT_TEST_BODY.max_posts,
 		model: body.model ?? DEFAULT_TEST_BODY.model,
 		verbosity: body.verbosity ?? DEFAULT_TEST_BODY.verbosity,
-		concurrency: body.concurrency ?? DEFAULT_TEST_BODY.concurrency,
-		debug_mode: true
+		concurrency: body.concurrency ?? DEFAULT_TEST_BODY.concurrency
 	};
 }
 
 function normalizeStages(requested?: StageName[]): StageName[] {
-	if (!requested || !requested.length) {
-		return [...STAGE_ORDER];
+	const finalStage = STAGE_ORDER[STAGE_ORDER.length - 1];
+	if (!requested || requested.includes(finalStage)) {
+		return [finalStage];
 	}
-	const requestedSet = new Set<StageName>();
-	for (const stage of requested) {
-		if (STAGE_ORDER.includes(stage)) {
-			requestedSet.add(stage);
-		}
-	}
-	const ordered = STAGE_ORDER.filter((stage) => requestedSet.has(stage));
-	return ordered.length ? ordered : [...STAGE_ORDER];
+	return [finalStage];
 }
 
 function summarizeResponse(payload: SearchPipelineResponse | null): StageResultSummary['response_summary'] {
@@ -142,10 +135,7 @@ export const POST = handleApiRoute(async (event) => {
 		let error: string | null = null;
 
 		try {
-			const response = await invokeSearchPipeline(
-				{ ...baseRequest, stop_at_stage: stage },
-				{ uid: TEST_RUNNER_UID }
-			);
+			const response = await invokeSearchPipeline(baseRequest, { uid: TEST_RUNNER_UID });
 			status = response.status;
 			ok = response.ok;
 			try {

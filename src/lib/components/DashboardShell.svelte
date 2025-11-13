@@ -14,7 +14,7 @@ export let activeCampaignId: string | null = null;
 <div class="flex h-screen bg-white overflow-hidden">
 	{#if $sidebarState}
 		<aside class={`${sidebarWidthClass} bg-white border-r border-gray-200 flex flex-col`}>
-			<div class="px-6 py-5 border-b border-gray-200 flex items-center justify-between">
+			<div class="px-2 py-2 border-b border-gray-200 flex items-center justify-between">
 				<slot name="sidebar-header">
 					<Logo size="md" />
 				</slot>

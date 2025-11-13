@@ -24,6 +24,9 @@
 
   const getFitScore = (profile: CreatorProfile) =>
     profile.fit_score == null ? '—' : `${Math.round(profile.fit_score)}`;
+
+  const getEmail = (profile: CreatorProfile) =>
+    profile.business_email ?? profile.email_address ?? '';
   const serialize = (value: string | number | null | undefined) => {
     if (value === null || value === undefined) return '';
     const str = String(value).replace(/"/g, '""');
@@ -35,13 +38,14 @@
 
   function exportCsv() {
     if (!browser || !profiles.length) return;
-    const header = ['username', 'profile_url', 'bio', 'followers', 'fit_score'];
+    const header = ['username', 'profile_url', 'bio', 'followers', 'fit_score', 'email'];
     const rows = profiles.map((profile) => [
       getHandle(profile),
       (profile.profile_url as string) ?? '',
       getField(profile, 'biography') ?? getField(profile, 'bio') ?? '',
       profile.followers ?? '',
-      profile.fit_score ?? ''
+      profile.fit_score ?? '',
+      getEmail(profile)
     ]);
 
     const csv = [header, ...rows]
@@ -81,12 +85,13 @@
         <th scope="col" class="px-6 py-3">Bio</th>
         <th scope="col" class="px-6 py-3">Followers</th>
         <th scope="col" class="px-6 py-3">Fit Score</th>
+        <th scope="col" class="px-6 py-3">Email</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100 bg-white text-gray-700">
       {#if profiles.length === 0}
         <tr>
-          <td colspan={5} class="px-6 py-8 text-center text-sm text-gray-500">
+          <td colspan={6} class="px-6 py-8 text-center text-sm text-gray-500">
             No creator results yet. Run a search to populate this table.
           </td>
         </tr>
@@ -113,6 +118,18 @@
             </td>
             <td class="px-6 py-4 font-semibold">{formatFollowers(profile.followers)}</td>
             <td class="px-6 py-4 font-semibold">{getFitScore(profile)}</td>
+            <td class="px-6 py-4">
+              {#if getEmail(profile)}
+                <a
+                  href={`mailto:${getEmail(profile)}`}
+                  class="text-[#FF6F61] hover:underline"
+                >
+                  {getEmail(profile)}
+                </a>
+              {:else}
+                <span class="text-gray-400">—</span>
+              {/if}
+            </td>
           </tr>
         {/each}
       {/if}

@@ -21,13 +21,17 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	let campaigns: SerializedCampaign[] = [];
 
 	try {
+		// Use updatedAt for ordering (always present in new structure)
 		const snapshot = await userDocRef(locals.user.uid)
 			.collection('campaigns')
-			.orderBy('createdAtMs', 'desc')
+			.orderBy('updatedAt', 'desc')
 			.limit(SIDEBAR_CAMPAIGN_LIMIT)
 			.get();
 
-		campaigns = sortCampaignsByRecency(snapshot.docs.map((doc) => serializeCampaignSnapshot(doc)));
+		campaigns = await Promise.all(
+			snapshot.docs.map((doc) => serializeCampaignSnapshot(doc, locals.user.uid))
+		);
+		campaigns = sortCampaignsByRecency(campaigns);
 	} catch (error) {
 		locals.logger?.warn('Failed to load sidebar campaigns', { error });
 	}

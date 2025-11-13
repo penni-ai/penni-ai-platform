@@ -3,12 +3,13 @@ import { env as publicEnv } from '$env/dynamic/public';
 import { openaiClient, DEFAULT_MODEL } from '$lib/server/openai';
 import type { Logger } from '$lib/server/logger';
 import {
-	conversationCollectionRef,
-	conversationDocRef,
-	conversationMessagesCollectionRef,
+	campaignDocRef,
+	chatCollectedDocRef,
+	chatMessagesCollectionRef,
 	serverTimestamp,
 	firestore,
-	campaignDocRef
+	type ChatCollectedData,
+	type FieldStatus
 } from '$lib/server/firestore';
 import {
 	FIRST_PROMPT,
@@ -20,7 +21,7 @@ import {
 	type RequiredField
 } from '$lib/server/chat-schema';
 
-const APPROX_BOUND_SCALE = 0.2;
+// APPROX_BOUND_SCALE removed - no longer parsing follower ranges from text
 const MAX_SOURCE_REFERENCES = 3;
 
 type ConversationStatus =
@@ -60,29 +61,35 @@ export type ConversationMessage = {
 export type ConversationSnapshot = {
   id: string;
   status: ConversationStatus;
-  collected: Partial<Record<RequiredField, string>>;
+  collected: ChatCollectedData;
   missing: RequiredField[];
-  search?: {
-    status: 'idle' | 'pending' | 'complete' | 'error' | 'needs_config';
-    results?: unknown;
-    lastError?: string | null;
-    completedAt?: string | null;
-  };
   messages: ConversationMessage[];
-  keywords: string[];
-  followerRange: { min: number | null; max: number | null };
 };
 
 type AssistantModelResponse = {
 	reply: string;
-	collected?: Record<string, string | null>;
+	// Match Firestore ChatCollectedData structure exactly
+	website?: string | null;
+	business_location?: string | null;
+	keywords?: string[];
+	min_followers?: number | null;
+	max_followers?: number | null;
+	influencer_location?: string | null;
+	influencerTypes?: string | null;
+	business_about?: string | null;
+	influencer_search_query?: string | null; // 1-2 sentence description of business and desired influencers (no follower counts)
+	fieldStatus?: {
+		// Only explicit fields that require user confirmation have status tracking
+		website?: 'not_collected' | 'collected' | 'confirmed';
+		business_location?: 'not_collected' | 'collected' | 'confirmed';
+		business_about?: 'not_collected' | 'collected' | 'confirmed';
+		influencer_location?: 'not_collected' | 'collected' | 'confirmed';
+		min_followers?: 'not_collected' | 'collected' | 'confirmed';
+		max_followers?: 'not_collected' | 'collected' | 'confirmed';
+	};
 	needs?: RequiredField[];
 	search_ready?: boolean;
-	influencer_keywords?: string[];
-	follower_range?: {
-		min: number | null;
-		max: number | null;
-	};
+	campaign_title?: string | null;
 	sources?: MessageSource[];
 };
 
@@ -95,137 +102,145 @@ const RETRY_DELAY_RANGE_MS: [number, number] = [250, 750];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function createEmptyCollected(): Record<RequiredField, string | null> {
-	return REQUIRED_FIELDS.reduce<Record<RequiredField, string | null>>((acc, key) => {
-		acc[key] = null;
-		return acc;
-	}, {} as Record<RequiredField, string | null>);
+function createEmptyCollected(): ChatCollectedData {
+	return {
+		website: null,
+		business_location: null,
+		keywords: [],
+		min_followers: null,
+		max_followers: null,
+		influencer_location: null,
+		influencerTypes: null,
+		business_about: null,
+		influencer_search_query: null,
+		fieldStatus: {},
+		updatedAt: Date.now()
+	};
 }
 
-export async function createConversation(uid: string): Promise<ConversationSnapshot> {
-  const collectionRef = conversationCollectionRef(uid);
-  const docRef = collectionRef.doc();
-  const now = Date.now();
+export async function createCampaign(uid: string, logger?: Logger): Promise<string> {
+	// Create campaign immediately with intro messages
+	const campaignId = crypto.randomUUID();
+	const now = Date.now();
+	
+	const campaignRef = campaignDocRef(uid, campaignId);
+	
+	// Create minimal campaign document
+	await campaignRef.set({
+		id: campaignId,
+		title: 'New Campaign',
+		status: 'collecting' as ConversationStatus,
+		createdAt: now,
+		updatedAt: now
+	});
 
-  const snapshotData = {
-    createdAt: serverTimestamp(),
-    createdAtMs: now,
-    updatedAt: serverTimestamp(),
-    updatedAtMs: now,
-    status: 'collecting' as ConversationStatus,
-    requiredFields: Array.from(REQUIRED_FIELDS),
-    collected: {},
-    missing: Array.from(REQUIRED_FIELDS),
-    search: {
-      status: 'idle' as const,
-      results: null,
-      lastError: null,
-      completedAt: null
-    },
-    keywords: [] as string[],
-    followerRange: { min: null, max: null }
-  };
+	// Create initial collected data document
+	const collectedRef = chatCollectedDocRef(uid, campaignId);
+	await collectedRef.set(createEmptyCollected());
 
-  await docRef.set(snapshotData);
+	// Create initial intro messages
+	const messagesRef = chatMessagesCollectionRef(uid, campaignId);
+	const introMessageId = crypto.randomUUID();
+	const firstPromptMessageId = crypto.randomUUID();
 
-  const messagesRef = conversationMessagesCollectionRef(uid, docRef.id);
+	await messagesRef.doc(introMessageId).set({
+		role: 'assistant',
+		content: INTRO_MESSAGE,
+		type: 'intro',
+		createdAt: serverTimestamp(),
+		createdAtMs: now,
+		sequence: 1
+	});
 
-  const introMessage = {
-    id: messagesRef.doc().id,
-    role: 'assistant' as MessageRole,
-    content: INTRO_MESSAGE,
-    type: 'intro' as const,
-    createdAt: now
-  };
+	await messagesRef.doc(firstPromptMessageId).set({
+		role: 'assistant',
+		content: FIRST_PROMPT,
+		type: 'text',
+		createdAt: serverTimestamp(),
+		createdAtMs: now + 1,
+		sequence: 2
+	});
 
-  await messagesRef.doc(introMessage.id).set({
-    role: introMessage.role,
-    content: introMessage.content,
-    type: introMessage.type,
-    createdAt: serverTimestamp(),
-    createdAtMs: now
-  });
+	logger?.info('Campaign created', {
+		campaignId
+	});
 
-  const firstPromptMessage = {
-    id: messagesRef.doc().id,
-    role: 'assistant' as MessageRole,
-    content: FIRST_PROMPT,
-    type: 'text' as const,
-    createdAt: now + 1
-  };
-
-  await messagesRef.doc(firstPromptMessage.id).set({
-    role: firstPromptMessage.role,
-    content: firstPromptMessage.content,
-    type: firstPromptMessage.type,
-    createdAt: serverTimestamp(),
-    createdAtMs: now + 1
-  });
-
-  return {
-    id: docRef.id,
-    status: 'collecting',
-    collected: {},
-    missing: Array.from(REQUIRED_FIELDS),
-    search: {
-      status: 'idle'
-    },
-    keywords: [],
-    followerRange: { min: null, max: null },
-    messages: [
-      {
-        ...introMessage,
-        createdAt: new Date(introMessage.createdAt).toISOString()
-      },
-      {
-        ...firstPromptMessage,
-        createdAt: new Date(firstPromptMessage.createdAt).toISOString()
-      }
-    ]
-  };
+	return campaignId;
 }
 
-export async function getConversation(uid: string, conversationId: string): Promise<ConversationSnapshot | null> {
-  const docRef = conversationDocRef(uid, conversationId);
-  const doc = await docRef.get();
-  if (!doc.exists) {
+export async function getConversation(uid: string, campaignId: string, logger?: Logger): Promise<ConversationSnapshot | null> {
+  const campaignRef = campaignDocRef(uid, campaignId);
+  const campaignDoc = await campaignRef.get();
+  if (!campaignDoc.exists) {
+    logger?.warn('Campaign document not found', {
+      uid,
+      campaignId,
+      path: campaignRef.path
+    });
     return null;
   }
 
-  const data = doc.data() as Record<string, any>;
-  const messagesSnap = await conversationMessagesCollectionRef(uid, conversationId)
-    .orderBy('createdAtMs', 'asc')
-    .get();
+  const campaignData = campaignDoc.data() as Record<string, any>;
+  
+  // Read collected data from chat/collected
+  const collectedRef = chatCollectedDocRef(uid, campaignId);
+  const collectedDoc = await collectedRef.get();
+  const collected: ChatCollectedData = collectedDoc.exists
+    ? (collectedDoc.data() as ChatCollectedData)
+    : createEmptyCollected();
+  
+  // Query messages from chat collection
+  const messagesSnap = await chatMessagesCollectionRef(uid, campaignId).get();
 
-	const messages: ConversationMessage[] = messagesSnap.docs.map((messageDoc) => {
-		const payload = messageDoc.data() as Record<string, any>;
-		const createdAtMs = typeof payload.createdAtMs === 'number' ? payload.createdAtMs : Date.now();
-		return {
-			id: messageDoc.id,
-			role: (payload.role as MessageRole) ?? 'assistant',
-			content: String(payload.content ?? ''),
-			type: payload.type,
-			createdAt: new Date(createdAtMs).toISOString(),
-			turnId: typeof payload.turnId === 'string' ? payload.turnId : null,
-			sources: normalizeMessageSources(payload.sources)
-		};
-	});
+	const messages: ConversationMessage[] = messagesSnap.docs
+		.map((messageDoc) => {
+			const payload = messageDoc.data() as Record<string, any>;
+			const createdAtMs = typeof payload.createdAtMs === 'number' ? payload.createdAtMs : Date.now();
+			const sequence = typeof payload.sequence === 'number' ? payload.sequence : 0;
+			return {
+				id: messageDoc.id,
+				role: (payload.role as MessageRole) ?? 'assistant',
+				content: String(payload.content ?? ''),
+				type: payload.type,
+				createdAt: new Date(createdAtMs).toISOString(),
+				turnId: typeof payload.turnId === 'string' ? payload.turnId : null,
+				sources: normalizeMessageSources(payload.sources),
+				sequence
+			};
+		})
+		.sort((a, b) => {
+			// Always sort by sequence first, then by createdAt as fallback
+			if (typeof a.sequence === 'number' && typeof b.sequence === 'number') {
+				return a.sequence - b.sequence;
+			}
+			if (typeof a.sequence === 'number') return -1;
+			if (typeof b.sequence === 'number') return 1;
+			const aTime = new Date(a.createdAt).getTime();
+			const bTime = new Date(b.createdAt).getTime();
+			return aTime - bTime;
+		});
+
+  // Determine missing fields based on REQUIRED_FIELDS
+  // A field is missing only if it's null (not if it's "N/A" or has a value)
+  const missing: RequiredField[] = [];
+  if (collected.website === null) missing.push('website');
+  if (collected.business_location === null) missing.push('business_location');
+  if (collected.influencer_location === null && collected.influencerTypes === null) missing.push('locations');
+  if (collected.min_followers === null && collected.max_followers === null) missing.push('followers');
+  if (collected.influencerTypes === null && collected.influencer_location === null) missing.push('influencerTypes');
 
   return {
-    id: conversationId,
-    status: (data.status as ConversationStatus) ?? 'collecting',
-    collected: (data.collected as Record<RequiredField, string | undefined>) ?? {},
-    missing: (Array.isArray(data.missing) ? data.missing : REQUIRED_FIELDS) as RequiredField[],
-    search: data.search ?? { status: 'idle' },
-    keywords: Array.isArray(data.keywords) ? normalizeKeywordList(data.keywords) : [],
-    followerRange: normalizeFollowerRangeObject(data.followerRange),
+    id: campaignId,
+    status: (campaignData.status as ConversationStatus) ?? 'collecting',
+    collected,
+    missing,
     messages
   };
 }
 
 export async function registerUserMessage(
 	uid: string,
-	conversationId: string,
+	campaignId: string,
 	content: string,
 	options: { logger?: Logger; turnId?: string } = {}
 ) {
@@ -235,35 +250,53 @@ export async function registerUserMessage(
 	const normalized = trimmed.slice(0, MAX_USER_MESSAGE_LENGTH);
 	if (normalized.length < trimmed.length) {
 		options.logger?.warn('User message truncated to enforce length cap', {
-			conversationId,
+			campaignId,
 			turnId: options.turnId ?? null,
 			originalLength: trimmed.length,
 			storedLength: normalized.length
 		});
 	}
 
-	const messagesRef = conversationMessagesCollectionRef(uid, conversationId);
-	const messageId = messagesRef.doc().id;
 	const createdAtMs = Date.now();
+	const campaignRef = campaignDocRef(uid, campaignId);
+	const campaignSnap = await campaignRef.get();
 
+	// Campaign should already exist - throw error if it doesn't
+	if (!campaignSnap.exists) {
+		throw new Error(`Campaign ${campaignId} does not exist`);
+	}
+
+	// Get next sequence number atomically using transaction
+	const messagesRef = chatMessagesCollectionRef(uid, campaignId);
+	const nextSequence = await firestore.runTransaction(async (tx) => {
+		// Get all messages to find max sequence
+		const allMessagesSnap = await tx.get(messagesRef);
+		let maxSequence = 0;
+		allMessagesSnap.docs.forEach((doc) => {
+			const seq = doc.data()?.sequence;
+			if (typeof seq === 'number' && seq > maxSequence) {
+				maxSequence = seq;
+			}
+		});
+		return maxSequence + 1;
+	});
+
+	// Update campaign timestamp
+	await campaignRef.update({
+		updatedAt: serverTimestamp()
+	});
+
+	const messageId = crypto.randomUUID();
 	await messagesRef.doc(messageId).set({
 		role: 'user',
 		content: normalized,
 		type: 'text',
 		createdAt: serverTimestamp(),
 		createdAtMs,
+		sequence: nextSequence,
 		turnId: options.turnId ?? null,
 		length: normalized.length
 	});
-
-	await conversationDocRef(uid, conversationId).set(
-		{
-			updatedAt: serverTimestamp(),
-			updatedAtMs: createdAtMs,
-			lastTurnId: options.turnId ?? null
-		},
-		{ merge: true }
-	);
 
 		return {
 		id: messageId,
@@ -278,7 +311,7 @@ export async function registerUserMessage(
 
 export async function handleAssistantTurn(
 	uid: string,
-	conversationId: string,
+	campaignId: string,
 	latestUserMessage: string | undefined,
 	options: { logger?: Logger; turnId: string }
 ): Promise<{
@@ -288,44 +321,30 @@ export async function handleAssistantTurn(
 	const turnId = options.turnId;
 	const logger = options.logger ? options.logger.child({ turnId }) : undefined;
 
-	const history = await buildAssistantHistory(uid, conversationId, { logger, turnId });
+	const history = await buildAssistantHistory(uid, campaignId, { logger, turnId });
 
 	const aiResponse = await callAssistant(history, { logger, turnId, lastUserMessage: latestUserMessage });
 	const limitedSources = limitMessageSources(aiResponse.sources);
 	const cleanedReply = stripSourceLinkText(aiResponse.reply, limitedSources);
 	aiResponse.sources = limitedSources;
 
-	const state = await advanceConversationState(uid, conversationId, aiResponse, { logger, turnId });
+	const state = await advanceConversationState(uid, campaignId, aiResponse, { logger, turnId });
 
 	const assistantMessages: ConversationMessage[] = [];
-	const assistantMessage = await persistAssistantMessage(uid, conversationId, cleanedReply, {
+	const assistantMessage = await persistAssistantMessage(uid, campaignId, cleanedReply, {
 		logger,
 		turnId,
 		sources: limitedSources
 	});
 	assistantMessages.push(assistantMessage);
 
-	if (state.shouldSendFollowUp) {
-		const followUpMessage = await persistAssistantMessage(
-			uid,
-			conversationId,
-			buildCampaignFollowUpMessage(conversationId),
-			{
-				logger,
-				turnId,
-				type: 'summary'
-			}
-		);
-		assistantMessages.push(followUpMessage);
-	}
-
-	const snapshot = await getConversation(uid, conversationId);
+	const snapshot = await getConversation(uid, campaignId);
 	if (!snapshot) {
 		throw new Error('Conversation missing after state advance');
 	}
 
 	logger?.info('Assistant turn completed', {
-		conversationId,
+		campaignId,
 		turnId,
 		status: snapshot.status,
 		missing: snapshot.missing
@@ -336,7 +355,7 @@ export async function handleAssistantTurn(
 
 export async function streamAssistantTurn(
 	uid: string,
-	conversationId: string,
+	campaignId: string,
 	latestUserMessage: string | undefined,
 	options: {
 		logger?: Logger;
@@ -345,7 +364,7 @@ export async function streamAssistantTurn(
 		signal?: AbortSignal;
 	}
 ) {
-	const history = await buildAssistantHistory(uid, conversationId, options);
+	const history = await buildAssistantHistory(uid, campaignId, options);
 	const aiResponse = await callAssistantStream(history, {
 		logger: options.logger,
 		turnId: options.turnId,
@@ -357,7 +376,7 @@ export async function streamAssistantTurn(
 	const cleanedReply = stripSourceLinkText(aiResponse.reply, limitedSources);
 	aiResponse.sources = limitedSources;
 
-	const state = await advanceConversationState(uid, conversationId, aiResponse, {
+	const state = await advanceConversationState(uid, campaignId, aiResponse, {
 		logger: options.logger,
 		turnId: options.turnId
 	});
@@ -365,7 +384,7 @@ export async function streamAssistantTurn(
 	const assistantMessages: ConversationMessage[] = [];
 	const assistantMessage = await persistAssistantMessage(
 		uid,
-		conversationId,
+		campaignId,
 		cleanedReply,
 		{
 			logger: options.logger,
@@ -375,27 +394,13 @@ export async function streamAssistantTurn(
 	);
 	assistantMessages.push(assistantMessage);
 
-	if (state.shouldSendFollowUp) {
-		const followUpMessage = await persistAssistantMessage(
-			uid,
-			conversationId,
-			buildCampaignFollowUpMessage(conversationId),
-			{
-				logger: options.logger,
-				turnId: options.turnId,
-				type: 'summary'
-			}
-		);
-		assistantMessages.push(followUpMessage);
-	}
-
-	const snapshot = await getConversation(uid, conversationId);
+	const snapshot = await getConversation(uid, campaignId);
 	if (!snapshot) {
 		throw new Error('Conversation missing after streamed state advance');
 	}
 
 	options.logger?.info('Assistant turn (stream) completed', {
-		conversationId,
+		campaignId,
 		turnId: options.turnId,
 		status: snapshot.status,
 		missing: snapshot.missing
@@ -409,37 +414,61 @@ export async function streamAssistantTurn(
 
 async function buildAssistantHistory(
 	uid: string,
-	conversationId: string,
+	campaignId: string,
 	options: { logger?: Logger; turnId: string }
 ): Promise<ModelMessage[]> {
-	const messagesSnapshot = await conversationMessagesCollectionRef(uid, conversationId)
-		.orderBy('createdAtMs', 'asc')
-		.get();
+	// Get all messages from chat collection
+	const messagesSnapshot = await chatMessagesCollectionRef(uid, campaignId).get();
 
-	let history: ModelMessage[] = messagesSnapshot.docs.map((doc) => {
-		const payload = doc.data() as Record<string, any>;
-		return {
-			role: ((payload.role as MessageRole) ?? 'assistant') as ModelMessageRole,
-			content: String(payload.content ?? ''),
-			type: (payload.type as ConversationMessage['type']) ?? undefined
-		};
-	});
+	let history: ModelMessage[] = messagesSnapshot.docs
+		.map((doc) => {
+			const payload = doc.data() as Record<string, any>;
+			return {
+				role: ((payload.role as MessageRole) ?? 'assistant') as ModelMessageRole,
+				content: String(payload.content ?? ''),
+				type: (payload.type as ConversationMessage['type']) ?? undefined,
+				sequence: typeof payload.sequence === 'number' ? payload.sequence : 0
+			};
+		})
+		.sort((a, b) => {
+			// Sort by sequence - always use sequence for ordering
+				return a.sequence - b.sequence;
+		})
+		.map((msg) => ({
+			role: msg.role,
+			content: msg.content,
+			type: msg.type
+		}));
 
-	history = limitHistory(history);
+	// No longer limiting history - send full conversation to maintain context
 	history = await prependSiteContext(uid, history, { logger: options.logger, turnId: options.turnId });
 	return history;
 }
 
 async function persistAssistantMessage(
 	uid: string,
-	conversationId: string,
+	campaignId: string,
 	content: string,
 	options: { logger?: Logger; turnId?: string; type?: ConversationMessage['type']; sources?: MessageSource[] } = {}
 ) {
-	const messagesRef = conversationMessagesCollectionRef(uid, conversationId);
-	const messageId = messagesRef.doc().id;
+	const messagesRef = chatMessagesCollectionRef(uid, campaignId);
+	const messageId = crypto.randomUUID();
 	const createdAtMs = Date.now();
 	const sanitizedSources = sanitizeMessageSourcesForWrite(options.sources);
+
+	// Get next sequence number atomically using transaction
+	const nextSequence = await firestore.runTransaction(async (tx) => {
+		// Get all messages to find max sequence
+		const allMessagesSnap = await tx.get(messagesRef);
+		let maxSequence = 0;
+		allMessagesSnap.docs.forEach((doc) => {
+			const seq = doc.data()?.sequence;
+			if (typeof seq === 'number' && seq > maxSequence) {
+				maxSequence = seq;
+			}
+		});
+		return maxSequence + 1;
+	});
 
 	const docData: Record<string, unknown> = {
 		role: 'assistant',
@@ -447,6 +476,7 @@ async function persistAssistantMessage(
 		type: options.type ?? 'text',
 		createdAt: serverTimestamp(),
 		createdAtMs,
+		sequence: nextSequence,
 		turnId: options.turnId ?? null,
 		length: content.length,
 	};
@@ -455,15 +485,6 @@ async function persistAssistantMessage(
 	}
 
 	await messagesRef.doc(messageId).set(docData);
-
-	await conversationDocRef(uid, conversationId).set(
-		{
-			updatedAt: serverTimestamp(),
-			updatedAtMs: createdAtMs,
-			lastTurnId: options.turnId ?? null
-		},
-		{ merge: true }
-	);
 
 	const message: ConversationMessage = {
 		id: messageId,
@@ -486,9 +507,19 @@ async function callAssistant(
 	if (!env.OPENAI_API_KEY) {
 		return {
 			reply: 'I need an API key to continue this conversation. Please contact support.',
-			collected: createEmptyCollected(),
 			needs: [...REQUIRED_FIELDS],
-			search_ready: false
+			search_ready: false,
+			keywords: [],
+			website: null,
+			business_location: null,
+			min_followers: null,
+			max_followers: null,
+			influencer_location: null,
+			influencerTypes: null,
+			business_about: null,
+			influencer_search_query: null,
+			campaign_title: null,
+			fieldStatus: undefined
 		};
 	}
 
@@ -529,9 +560,19 @@ async function callAssistant(
 			if (typeof rawContent !== 'string') {
 				return {
 					reply: 'I could not understand the assistant response. Please try again.',
-					collected: createEmptyCollected(),
 					needs: [...REQUIRED_FIELDS],
-					search_ready: false
+					search_ready: false,
+					keywords: [],
+					website: null,
+					business_location: null,
+					min_followers: null,
+					max_followers: null,
+					influencer_location: null,
+					influencerTypes: null,
+					business_about: null,
+					influencer_search_query: null,
+					campaign_title: null,
+					fieldStatus: undefined
 				};
 			}
 
@@ -542,10 +583,19 @@ async function callAssistant(
 			if ((error as Error).name === 'AbortError') {
 				context.logger?.warn('OpenAI request aborted due to timeout', { turnId: context.turnId });
 	return {
-		reply: 'The assistant took too long to reply. Let’s try that again in a moment.',
-		collected: createEmptyCollected(),
+					reply: "The assistant took too long to reply. Let's try that again in a moment.",
 		needs: [...REQUIRED_FIELDS],
-		search_ready: false
+				search_ready: false,
+				keywords: [],
+				website: null,
+				business_location: null,
+				min_followers: null,
+				max_followers: null,
+				influencer_location: null,
+				influencerTypes: null,
+				business_about: null,
+				influencer_search_query: null,
+				campaign_title: null
 	};
 	}
 
@@ -565,9 +615,18 @@ async function callAssistant(
 
 	return {
 		reply: formatOpenAiErrorMessage(status, JSON.stringify(error.error ?? { message: error.message })),
-		collected: createEmptyCollected(),
 		needs: [...REQUIRED_FIELDS],
-		search_ready: false
+	search_ready: false,
+	keywords: [],
+	website: null,
+	business_location: null,
+	min_followers: null,
+	max_followers: null,
+	influencer_location: null,
+	influencerTypes: null,
+	business_about: null,
+	influencer_search_query: null,
+	campaign_title: null
 	};
 			}
 
@@ -580,9 +639,18 @@ async function callAssistant(
 
 return {
 	reply: 'The assistant is unavailable right now. Please try again shortly.',
-	collected: createEmptyCollected(),
 	needs: [...REQUIRED_FIELDS],
-	search_ready: false
+	search_ready: false,
+	keywords: [],
+	website: null,
+	business_location: null,
+	min_followers: null,
+	max_followers: null,
+	influencer_location: null,
+	influencerTypes: null,
+	business_about: null,
+	influencer_search_query: null,
+	campaign_title: null
 };
 		} finally {
 			clearTimeout(timeout);
@@ -605,9 +673,19 @@ async function callAssistantStream(
 	if (!env.OPENAI_API_KEY) {
 		return {
 			reply: 'I need an API key to continue this conversation. Please contact support.',
-			collected: createEmptyCollected(),
 			needs: [...REQUIRED_FIELDS],
-			search_ready: false
+			search_ready: false,
+			keywords: [],
+			website: null,
+			business_location: null,
+			min_followers: null,
+			max_followers: null,
+			influencer_location: null,
+			influencerTypes: null,
+			business_about: null,
+			influencer_search_query: null,
+			campaign_title: null,
+			fieldStatus: undefined
 		};
 	}
 
@@ -665,9 +743,18 @@ async function callAssistantStream(
 		if (typeof rawContent !== 'string') {
 			return {
 				reply: 'I could not understand the assistant response. Please try again.',
-				collected: createEmptyCollected(),
 				needs: [...REQUIRED_FIELDS],
-				search_ready: false
+				search_ready: false,
+				keywords: [],
+				website: null,
+				business_location: null,
+				min_followers: null,
+				max_followers: null,
+				influencer_location: null,
+				influencerTypes: null,
+				business_about: null,
+				influencer_search_query: null,
+				campaign_title: null
 			};
 		}
 
@@ -678,10 +765,19 @@ async function callAssistantStream(
 		if ((error as Error).name === 'AbortError' || abortController.signal.aborted) {
 			context.logger?.warn('OpenAI stream aborted', { turnId: context.turnId });
 			return {
-				reply: 'The assistant took too long to reply. Let’s try that again in a moment.',
-				collected: createEmptyCollected(),
+				reply: "The assistant took too long to reply. Let's try that again in a moment.",
 				needs: [...REQUIRED_FIELDS],
-				search_ready: false
+				search_ready: false,
+				keywords: [],
+				website: null,
+				business_location: null,
+				min_followers: null,
+				max_followers: null,
+				influencer_location: null,
+				influencerTypes: null,
+				business_about: null,
+				influencer_search_query: null,
+				campaign_title: null
 			};
 		}
 		throw error;
@@ -710,163 +806,143 @@ async function safeReadText(response: Response) {
 
 async function advanceConversationState(
 	uid: string,
-	conversationId: string,
+	campaignId: string,
 	aiResponse: AssistantModelResponse,
 	options: { logger?: Logger; turnId: string }
 ) {
 	const { turnId, logger } = options;
 
 	return firestore.runTransaction(async (tx) => {
-		const convRef = conversationDocRef(uid, conversationId);
-		const convSnap = await tx.get(convRef);
-		if (!convSnap.exists) {
-			throw new Error('Conversation not found');
+		const campaignRef = campaignDocRef(uid, campaignId);
+		const collectedRef = chatCollectedDocRef(uid, campaignId);
+		
+		const campaignSnap = await tx.get(campaignRef);
+		if (!campaignSnap.exists) {
+			throw new Error('Campaign not found');
 		}
 
-		const existing = convSnap.data() as Record<string, any>;
-		const collected = { ...(existing.collected ?? {}) } as Record<RequiredField, string | undefined>;
-    const existingKeywords = Array.isArray(existing.keywords) ? normalizeKeywordList(existing.keywords) : [];
-    const aiKeywords = normalizeKeywordList(aiResponse.influencer_keywords);
-    const existingFollowerRange = normalizeFollowerRangeObject(existing.followerRange);
+		const campaignData = campaignSnap.data() as Record<string, any>;
+		const previousStatus = (campaignData.status as ConversationStatus) ?? 'collecting';
 
-		if (aiResponse.collected) {
-			for (const field of REQUIRED_FIELDS) {
-				const value = aiResponse.collected[field];
-				if (typeof value === 'string') {
-					const trimmed = value.trim();
-					if (trimmed) {
-						collected[field] = trimmed;
+		// Read existing collected data
+		const collectedSnap = await tx.get(collectedRef);
+		const existingCollected: ChatCollectedData = collectedSnap.exists
+			? (collectedSnap.data() as ChatCollectedData)
+			: createEmptyCollected();
+
+		// Update collected data from AI response - 1:1 mapping since schema matches Firestore structure
+		const updatedCollected: ChatCollectedData = { ...existingCollected };
+		const nowMs = Date.now();
+
+		// Map fields directly from AI response (schema matches Firestore structure)
+		if (aiResponse.website !== undefined) updatedCollected.website = aiResponse.website;
+		if (aiResponse.business_location !== undefined) updatedCollected.business_location = aiResponse.business_location;
+		if (aiResponse.influencer_location !== undefined) updatedCollected.influencer_location = aiResponse.influencer_location;
+		if (aiResponse.influencerTypes !== undefined) updatedCollected.influencerTypes = aiResponse.influencerTypes;
+		if (aiResponse.min_followers !== undefined) updatedCollected.min_followers = aiResponse.min_followers;
+		if (aiResponse.max_followers !== undefined) updatedCollected.max_followers = aiResponse.max_followers;
+		if (aiResponse.business_about !== undefined) updatedCollected.business_about = aiResponse.business_about;
+		if (aiResponse.influencer_search_query !== undefined) updatedCollected.influencer_search_query = aiResponse.influencer_search_query;
+
+		// Update fieldStatus - merge with existing, but never downgrade status
+		// Status hierarchy: not_collected < collected < confirmed
+		if (aiResponse.fieldStatus) {
+			if (!updatedCollected.fieldStatus) updatedCollected.fieldStatus = {};
+			
+			// Helper function to get status priority (higher number = higher priority)
+			const getStatusPriority = (status: FieldStatus): number => {
+				switch (status) {
+					case 'not_collected': return 0;
+					case 'collected': return 1;
+					case 'confirmed': return 2;
+					default: return -1;
+				}
+			};
+			
+			// Only update status if new status is higher priority than existing
+			for (const [field, newStatus] of Object.entries(aiResponse.fieldStatus)) {
+				const existingStatus = updatedCollected.fieldStatus[field as keyof typeof updatedCollected.fieldStatus];
+				
+				if (!existingStatus) {
+					// No existing status, set the new one
+					updatedCollected.fieldStatus[field as keyof typeof updatedCollected.fieldStatus] = newStatus;
+				} else {
+					// Compare priorities - only update if new status is higher
+					const existingPriority = getStatusPriority(existingStatus);
+					const newPriority = getStatusPriority(newStatus);
+					
+					if (newPriority > existingPriority) {
+						updatedCollected.fieldStatus[field as keyof typeof updatedCollected.fieldStatus] = newStatus;
 					}
+					// If newPriority <= existingPriority, keep the existing status (prevent downgrade)
 				}
 			}
 		}
 
-	const missing = REQUIRED_FIELDS.filter((field) => !collected[field] || !collected[field]?.trim());
-	const searchReady = missing.length === 0 && aiResponse.search_ready !== false;
-
-	const previousStatus = (existing.status as ConversationStatus) ?? 'collecting';
-		const nowMs = Date.now();
-		const keywordSources = buildKeywordSources(collected, existing.collected ?? {});
-		const keywords = mergeKeywordLists(existingKeywords, aiKeywords, keywordSources);
-		let followerRange = mergeFollowerRanges(
-			existingFollowerRange,
-			normalizeFollowerRangeObject(aiResponse.follower_range),
-			parseFollowerRangeFromText(collected.followers ?? existing.collected?.followers)
+		// Update keywords - merge with existing
+		if (aiResponse.keywords !== undefined) {
+		const keywordSources = buildKeywordSourcesFromCollected(updatedCollected);
+		updatedCollected.keywords = mergeKeywordLists(
+			existingCollected.keywords,
+				aiResponse.keywords,
+			keywordSources
 		);
-		if (followerRange.min !== null) {
-			followerRange.min = Math.max(0, followerRange.min);
-		}
-		if (followerRange.max !== null) {
-			followerRange.max = Math.max(0, followerRange.max);
 		}
 
-		const update: Record<string, unknown> = {
-			collected,
-			missing,
-			updatedAt: serverTimestamp(),
-			updatedAtMs: nowMs,
-			lastTurnId: turnId,
-			keywords,
-			followerRange
-		};
+		updatedCollected.updatedAt = nowMs;
 
-	let status: ConversationStatus = searchReady ? 'searching' : 'collecting';
-	const shouldSendFollowUp = searchReady && previousStatus !== 'complete';
+		// Determine missing fields - a field is missing only if it's null (not if it's "N/A" or has a value)
+		const missing: RequiredField[] = [];
+		if (updatedCollected.website === null) missing.push('website');
+		if (updatedCollected.business_location === null) missing.push('business_location');
+		if (updatedCollected.influencer_location === null && updatedCollected.influencerTypes === null) missing.push('locations');
+		if (updatedCollected.min_followers === null && updatedCollected.max_followers === null) missing.push('followers');
+		if (updatedCollected.influencerTypes === null && updatedCollected.influencer_location === null) missing.push('influencerTypes');
 
-	const searchState = {
-		...(existing.search ?? { status: 'idle' }),
-		lastTurnId: turnId
-	} as Record<string, unknown>;
+		// Enforce 10k minimum for min_followers (only if user provided a value)
+		const MIN_FOLLOWERS_REQUIRED = 10000;
+		if (updatedCollected.min_followers !== null && updatedCollected.min_followers < MIN_FOLLOWERS_REQUIRED) {
+			updatedCollected.min_followers = MIN_FOLLOWERS_REQUIRED;
+		}
 
-	if (searchReady) {
-		searchState.status = 'searching';
+		// Ensure search_ready can only be true when all required fields are collected (100% progress)
+		// Override LLM's search_ready if there are still missing fields
+		const searchReady = missing.length === 0 && aiResponse.search_ready !== false;
+		// Force search_ready to false if there are missing fields, regardless of LLM response
+		const finalSearchReady = missing.length === 0 ? searchReady : false;
+		const status: ConversationStatus = finalSearchReady ? 'complete' : 'collecting';
+
+		// Update campaign document (minimal metadata only)
+		const campaignUpdate: Record<string, unknown> = {
+		updatedAt: serverTimestamp(),
+			status
+	};
+
+	// Update title if AI suggested one
+	if (aiResponse.campaign_title !== undefined && aiResponse.campaign_title !== null) {
+		const trimmedTitle = aiResponse.campaign_title.trim();
+		if (trimmedTitle) {
+				campaignUpdate.title = trimmedTitle;
+		}
 	}
 
-	update.status = status;
-	update.search = searchState;
+		// Write updates
+		tx.set(collectedRef, updatedCollected);
+		tx.set(campaignRef, campaignUpdate, { merge: true });
 
-		if (searchReady) {
-			const campRef = campaignDocRef(uid, conversationId);
-			const campaignSnap = await tx.get(campRef);
-			if (!campaignSnap.exists) {
-				const siteSnapshot = await tx.get(
-					firestore.collection(`users/${uid}/sites`).orderBy('capturedAt', 'desc').limit(1)
-				);
-				const siteData = siteSnapshot.docs[0]?.data() as { rawText?: string; url?: string } | undefined;
-
-				const businessSummary = siteData?.rawText
-					? siteData.rawText.slice(0, 600)
-					: collected.website
-						? `Business website: ${collected.website}`
-						: 'Business summary not provided yet.';
-
-				tx.set(
-					campRef,
-					{
-						id: conversationId,
-						createdAt: serverTimestamp(),
-						createdAtMs: nowMs,
-						updatedAt: serverTimestamp(),
-						updatedAtMs: nowMs,
-						website: collected.website ?? null,
-						influencerTypes: collected.influencerTypes ?? null,
-						locations: collected.locations ?? null,
-						followers: collected.followers ?? null,
-						followersMin: followerRange.min ?? null,
-						followersMax: followerRange.max ?? null,
-						keywords,
-						businessSummary,
-						sourceConversationId: conversationId,
-						lastUpdatedTurnId: turnId
-					},
-					{ merge: true }
-				);
-				logger?.info('Campaign record created from conversation', {
-					conversationId,
-					turnId
-				});
-			} else {
-				tx.set(
-					campRef,
-					{
-						updatedAt: serverTimestamp(),
-						updatedAtMs: nowMs,
-						lastUpdatedTurnId: turnId,
-						influencerTypes: collected.influencerTypes ?? null,
-						followersMin: followerRange.min ?? null,
-						followersMax: followerRange.max ?? null,
-						keywords
-					},
-					{ merge: true }
-				);
-				logger?.debug('Campaign already existed for conversation', {
-					conversationId,
-					turnId
-				});
-			}
-			searchState.status = 'complete';
-			searchState.completedAt = new Date(nowMs).toISOString();
-			status = 'complete';
-		}
-
-	update.status = status;
-	update.search = searchState;
-
-	tx.set(convRef, update, { merge: true });
+	logger?.debug('Campaign updated from conversation', {
+		campaignId,
+		turnId,
+			titleUpdated: aiResponse.campaign_title !== undefined,
+			searchReady: finalSearchReady,
+			missingFields: missing
+	});
 
 		return {
 			status,
-			searchReady,
-			shouldSendFollowUp
+			searchReady: finalSearchReady
 		};
 	});
-}
-
-function buildCampaignFollowUpMessage(conversationId: string): string {
-	const rawBase = publicEnv.PUBLIC_SITE_URL ?? '';
-	const baseUrl = rawBase ? rawBase.replace(/\/$/, '') : '';
-	const campaignUrl = baseUrl ? `${baseUrl}/campaign/chat/${conversationId}` : `/campaign/chat/${conversationId}`;
-	return `Cool! That's all I'll need for now. I'll create a campaign here (show embedded preview to the campaign page), please navigate here and I've initiated the search for influencers! Keep watch here for influencers as my systems find them~ ${campaignUrl}`;
 }
 
 function randomRetryDelay() {
@@ -962,21 +1038,25 @@ function normalizeAssistantResponse(rawContent: string, context: { logger?: Logg
     const parsed = JSON.parse(rawContent) as Record<string, unknown>;
     const reply = typeof parsed.reply === 'string' && parsed.reply.trim() ? parsed.reply : rawContent;
 
-    const collectedPayload = parsed.collected;
-    const collected = createEmptyCollected();
-    if (collectedPayload && typeof collectedPayload === 'object') {
-      for (const field of REQUIRED_FIELDS) {
-        const rawValue = (collectedPayload as Record<string, unknown>)[field];
-        if (typeof rawValue === 'string') {
-          const trimmed = rawValue.trim();
-          if (trimmed) {
-            collected[field] = trimmed;
-          }
-        } else if (rawValue === null) {
-          collected[field] = null;
-        }
+    // Extract fields directly - schema now matches Firestore structure 1:1
+    const normalizeString = (value: unknown): string | null => {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed ? trimmed : null;
       }
-    }
+      return value === null ? null : null;
+    };
+
+    const normalizeNumber = (value: unknown, minValue: number = 0): number | null => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(minValue, value);
+          }
+      return value === null ? null : null;
+    };
+
+    const normalizeStringArray = (value: unknown): string[] => {
+      return normalizeKeywordList(value);
+    };
 
     const needs = Array.isArray(parsed.needs)
       ? (parsed.needs as unknown[]).filter((item): item is RequiredField =>
@@ -985,16 +1065,51 @@ function normalizeAssistantResponse(rawContent: string, context: { logger?: Logg
       : [];
 
     const searchReady = typeof parsed.search_ready === 'boolean' ? parsed.search_ready : undefined;
-    const influencerKeywords = normalizeKeywordList(parsed.influencer_keywords);
-    const followerRange = normalizeFollowerRangeObject(parsed.follower_range);
+
+	const MIN_FOLLOWERS_REQUIRED = 10000;
+
+		// Normalize fields
+	let website = normalizeString(parsed.website);
+	let business_location = normalizeString(parsed.business_location);
+	let influencer_location = normalizeString(parsed.influencer_location);
+	let business_about = normalizeString(parsed.business_about);
+	let influencer_search_query = normalizeString(parsed.influencer_search_query);
+
+	// CRITICAL: Only website can be "N/A" - reject "N/A" for all other fields
+	// If LLM tries to set other fields to "N/A", treat as null (missing)
+	if (business_location === 'N/A') {
+		business_location = null;
+		context.logger?.warn('Rejected "N/A" for business_location - only website can be N/A', { turnId: context.turnId });
+	}
+	if (influencer_location === 'N/A') {
+		influencer_location = null;
+		context.logger?.warn('Rejected "N/A" for influencer_location - only website can be N/A', { turnId: context.turnId });
+	}
+	if (business_about === 'N/A') {
+		business_about = null;
+		context.logger?.warn('Rejected "N/A" for business_about - only website can be N/A', { turnId: context.turnId });
+	}
+
+	// Extract fieldStatus if provided
+	const fieldStatus = parsed.fieldStatus && typeof parsed.fieldStatus === 'object' 
+		? parsed.fieldStatus as Record<string, 'not_collected' | 'collected' | 'confirmed'>
+		: undefined;
 
 	return {
 		reply,
-		collected,
+		website,
+		business_location,
+		keywords: normalizeStringArray(parsed.keywords),
+		min_followers: normalizeNumber(parsed.min_followers, MIN_FOLLOWERS_REQUIRED),
+		max_followers: normalizeNumber(parsed.max_followers),
+		influencer_location,
+		influencerTypes: normalizeString(parsed.influencerTypes),
+		business_about,
+		influencer_search_query,
+		fieldStatus,
 		needs: needs.length ? needs : [...REQUIRED_FIELDS],
 		search_ready: searchReady,
-		influencer_keywords: influencerKeywords,
-		follower_range: followerRange
+		campaign_title: normalizeString(parsed.campaign_title)
 	};
 	} catch (error) {
 		context.logger?.warn('Failed to parse assistant JSON response', { error, turnId: context.turnId });
@@ -1002,8 +1117,17 @@ function normalizeAssistantResponse(rawContent: string, context: { logger?: Logg
 			reply: rawContent,
 			needs: [...REQUIRED_FIELDS],
 			search_ready: false,
-			influencer_keywords: [],
-			follower_range: { min: null, max: null }
+			keywords: [],
+			website: null,
+			business_location: null,
+			min_followers: null,
+			max_followers: null,
+			influencer_location: null,
+			influencerTypes: null,
+			business_about: null,
+			influencer_search_query: null,
+			campaign_title: null,
+			fieldStatus: undefined
 		};
 	}
 }
@@ -1128,21 +1252,13 @@ function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function buildKeywordSources(
-  collected: Record<RequiredField, string | undefined>,
-  existingCollected: Record<string, unknown>
-): string[] {
+function buildKeywordSourcesFromCollected(collected: ChatCollectedData): string[] {
   const texts = new Set<string>();
-const candidateKeys: RequiredField[] = ['influencerTypes', 'followers', 'locations'];
-  for (const key of candidateKeys) {
-    const current = collected[key];
-    if (typeof current === 'string' && current.trim()) {
-      texts.add(current);
-    }
-    const previous = typeof existingCollected?.[key] === 'string' ? (existingCollected[key] as string) : null;
-    if (previous && previous.trim()) {
-      texts.add(previous);
-    }
+  if (collected.influencerTypes && collected.influencerTypes.trim()) {
+    texts.add(collected.influencerTypes);
+  }
+  if (collected.influencer_location && collected.influencer_location.trim()) {
+    texts.add(collected.influencer_location);
   }
   return Array.from(texts);
 }
@@ -1187,105 +1303,7 @@ function mergeKeywordLists(
   return merged;
 }
 
-function sanitizeFollowerCount(value: unknown): number | null {
-  if (typeof value !== 'number') return null;
-  if (!Number.isFinite(value)) return null;
-  const rounded = Math.round(value);
-  if (rounded <= 0) return null;
-  return rounded;
-}
-
-function normalizeFollowerRangeObject(raw: unknown): { min: number | null; max: number | null } {
-	if (!raw || typeof raw !== 'object') {
-		return { min: null, max: null };
-	}
-	const payload = raw as Record<string, unknown>;
-	const lower = 'lower_bound' in payload ? payload.lower_bound : payload.min;
-	const upper = 'upper_bound' in payload ? payload.upper_bound : payload.max;
-	const min = sanitizeFollowerCount(lower);
-	const max = sanitizeFollowerCount(upper);
-	return { min, max };
-}
-
-function mergeFollowerRanges(
-  ...ranges: Array<{ min: number | null; max: number | null } | null | undefined>
-): { min: number | null; max: number | null } {
-  let min: number | null = null;
-  let max: number | null = null;
-  for (const range of ranges) {
-    if (!range) continue;
-    if (typeof range.min === 'number') {
-      min = min === null ? range.min : Math.min(min, range.min);
-    }
-    if (typeof range.max === 'number') {
-      max = max === null ? range.max : Math.max(max, range.max);
-    }
-  }
-  if (min !== null && max !== null && min > max) {
-    const swap = min;
-    min = max;
-    max = swap;
-  }
-  return { min, max };
-}
-
-function parseFollowerRangeFromText(rawText: string | undefined): { min: number | null; max: number | null } | null {
-  if (!rawText) return null;
-  const text = rawText.toLowerCase();
-  const cleaned = text.replace(/[,]/g, '').replace(/\s+/g, ' ');
-  const approx = /(about|around|approx|approximately|roughly|~)/.test(cleaned);
-  const atLeast = /(at least|min(imum)?|more than|over|\b>\b|\+\s*$)/.test(cleaned);
-  const atMost = /(at most|max(imum)?|less than|under|up to|\b<\b)/.test(cleaned);
-  const matches = Array.from(cleaned.matchAll(/(\d+(?:\.\d+)?)\s*(k|m|million)?/g));
-  if (!matches.length) return null;
-
-  const values = matches
-    .map((match) => followerTextToNumber(match[1], match[2]))
-    .filter((value): value is number => value !== null);
-  if (!values.length) return null;
-
-  let min: number | null = null;
-  let max: number | null = null;
-
-  if (values.length >= 2) {
-    [min, max] = values.slice(0, 2) as [number, number];
-    if (min > max) {
-      const swap = min;
-      min = max;
-      max = swap;
-    }
-  } else {
-    const value = values[0];
-    if (approx) {
-      min = Math.max(1, Math.round(value * (1 - APPROX_BOUND_SCALE)));
-      max = Math.round(value * (1 + APPROX_BOUND_SCALE));
-    } else if (atLeast && !atMost) {
-      min = value;
-      max = null;
-    } else if (atMost && !atLeast) {
-      min = null;
-      max = value;
-    } else if (/\+/.test(cleaned)) {
-      min = value;
-      max = null;
-    } else {
-      min = value;
-      max = value;
-    }
-  }
-
-  return { min, max };
-}
-
-function followerTextToNumber(value: string, rawSuffix: string | undefined): number | null {
-  const base = Number.parseFloat(value);
-  if (!Number.isFinite(base)) return null;
-  const suffix = rawSuffix?.trim().toLowerCase();
-  let multiplier = 1;
-  if (suffix === 'k') multiplier = 1_000;
-  if (suffix === 'm' || suffix === 'million') multiplier = 1_000_000;
-  return Math.round(base * multiplier);
-}
+// Parsing functions removed - LLM now provides follower bounds directly as integers
 
 function limitHistory(history: ModelMessage[]): ModelMessage[] {
 	const systemMessages = history.filter((message) => message.role === 'system');

@@ -490,7 +490,7 @@ function closeUpgradeModal() {
 			</p>
 			<div class="flex flex-wrap justify-center gap-3">
 				<Button href="mailto:hello@penny.ai">Book a strategy call</Button>
-				<Button variant="outline" href="/dashboard">Preview the product UI</Button>
+				<Button variant="outline" href="/">Preview the product UI</Button>
 			</div>
 		</section>
 	</main>

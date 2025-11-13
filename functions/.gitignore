@@ -1,6 +1,9 @@
-# Python bytecode
-__pycache__/
-
-# Python virtual environment
-venv/
-*.local
+node_modules
+lib
+.cache
+.firebase
+npm-debug.log*
+.idea
+.DS_Store
+.env.local
+.firebase-config.json

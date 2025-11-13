@@ -1,4 +1,5 @@
-import { apiOk, handleApiRoute, requireUser } from '$lib/server/api';
+import { createCampaign } from '$lib/server/chat-assistant';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
 import { serializeCampaignSnapshot } from '$lib/server/campaigns';
 import { userDocRef } from '$lib/server/firestore';
 
@@ -16,11 +17,35 @@ export const GET = handleApiRoute(async (event) => {
 
 	const campaignsSnap = await userDocRef(user.uid)
 		.collection('campaigns')
-		.orderBy('updatedAtMs', 'desc')
+		.orderBy('updatedAt', 'desc')
 		.limit(limit)
 		.get();
 
-	const campaigns = campaignsSnap.docs.map((doc) => serializeCampaignSnapshot(doc));
+	const campaigns = await Promise.all(
+		campaignsSnap.docs.map((doc) => serializeCampaignSnapshot(doc, user.uid))
+	);
 
 	return apiOk({ campaigns });
+}, { component: 'campaigns' });
+
+export const POST = handleApiRoute(async (event) => {
+	const user = requireUser(event);
+	assertSameOrigin(event);
+
+	const logger = event.locals.logger.child({ component: 'campaigns', action: 'create_campaign' });
+
+	try {
+		const campaignId = await createCampaign(user.uid, logger);
+		logger.info('Campaign created', { campaignId });
+		return apiOk({ campaignId });
+	} catch (error) {
+		logger.error('Failed to create campaign', { error });
+		throw new ApiProblem({
+			status: 500,
+			code: 'CAMPAIGN_CREATE_FAILED',
+			message: 'Failed to create a new campaign.',
+			hint: 'Please retry in a moment.',
+			cause: error
+		});
+	}
 }, { component: 'campaigns' });

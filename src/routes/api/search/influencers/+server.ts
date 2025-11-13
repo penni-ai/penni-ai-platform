@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
 import { getSearchUsage, incrementSearchUsage } from '$lib/server/search-usage';
 import { functionsConfig, mintIdToken } from '$lib/server/functions-client';
@@ -17,8 +18,9 @@ async function bindCampaignPipelineId(options: {
 	campaignId: string;
 	pipelineId: string;
 	logger?: ApiLogger;
+	requestId?: string;
 }) {
-	const { uid, campaignId, pipelineId, logger } = options;
+	const { uid, campaignId, pipelineId, logger, requestId } = options;
 	const startedAt = Date.now();
 	const campaignRef = campaignDocRef(uid, campaignId);
 	for (let attempt = 1; attempt <= PIPELINE_BIND_RETRY_DELAYS_MS.length; attempt++) {
@@ -54,7 +56,8 @@ async function bindCampaignPipelineId(options: {
 				attempt,
 				status: result.status,
 				existingPipelineId: result.existingPipelineId,
-				campaign_binding_ms: elapsed
+				campaign_binding_ms: elapsed,
+				request_id: requestId
 			});
 			return { ...result, attempts: attempt, campaign_binding_ms: elapsed };
 		} catch (error) {
@@ -63,7 +66,8 @@ async function bindCampaignPipelineId(options: {
 				campaignId,
 				pipelineId,
 				attempt,
-				error: error instanceof Error ? error.message : String(error)
+				error: error instanceof Error ? error.message : String(error),
+				request_id: requestId
 			});
 			if (attempt === PIPELINE_BIND_RETRY_DELAYS_MS.length) {
 				const elapsed = Date.now() - startedAt;
@@ -72,7 +76,8 @@ async function bindCampaignPipelineId(options: {
 					campaignId,
 					pipelineId,
 					attempts: attempt,
-					campaign_binding_ms: elapsed
+					campaign_binding_ms: elapsed,
+					request_id: requestId
 				});
 				return {
 					status: 'failed' as const,
@@ -92,7 +97,9 @@ const INFLUENCER_ANALYSIS_FUNCTION_NAME = 'pipelineInfluencerAnalysis';
 export const POST = handleApiRoute(async (event) => {
 	assertSameOrigin(event);
 	const user = requireUser(event);
-	const logger = event.locals.logger?.child({ component: 'search/influencers' });
+	const requestId = randomUUID();
+	let functionRequestId: string = requestId;
+	const logger = event.locals.logger?.child({ component: 'search/influencers', requestId });
 	const pipelineLogger = logger as ApiLogger | undefined;
 	
 	try {
@@ -104,7 +111,8 @@ export const POST = handleApiRoute(async (event) => {
 			throw new ApiProblem({
 				status: 400,
 				code: 'INVALID_REQUEST',
-				message: 'business_description is required and must be a non-empty string.'
+				message: 'business_description is required and must be a non-empty string.',
+				details: { request_id: requestId }
 			});
 		}
 		
@@ -114,7 +122,8 @@ export const POST = handleApiRoute(async (event) => {
 			throw new ApiProblem({
 				status: 400,
 				code: 'INVALID_REQUEST',
-				message: 'top_n must be a number between 30 and 100.'
+				message: 'top_n must be a number between 30 and 100.',
+				details: { request_id: requestId }
 			});
 		}
 		
@@ -126,7 +135,8 @@ export const POST = handleApiRoute(async (event) => {
 			throw new ApiProblem({
 				status: 400,
 				code: 'INVALID_REQUEST',
-				message: 'min_followers must be a non-negative number.'
+				message: 'min_followers must be a non-negative number.',
+				details: { request_id: requestId }
 			});
 		}
 		
@@ -134,7 +144,8 @@ export const POST = handleApiRoute(async (event) => {
 			throw new ApiProblem({
 				status: 400,
 				code: 'INVALID_REQUEST',
-				message: 'max_followers must be a non-negative number.'
+				message: 'max_followers must be a non-negative number.',
+				details: { request_id: requestId }
 			});
 		}
 		
@@ -142,7 +153,8 @@ export const POST = handleApiRoute(async (event) => {
 			throw new ApiProblem({
 				status: 400,
 				code: 'INVALID_REQUEST',
-				message: 'min_followers cannot be greater than max_followers.'
+				message: 'min_followers cannot be greater than max_followers.',
+				details: { request_id: requestId }
 			});
 		}
 
@@ -152,7 +164,8 @@ export const POST = handleApiRoute(async (event) => {
 				throw new ApiProblem({
 					status: 400,
 					code: 'INVALID_REQUEST',
-					message: 'campaign_id must be a string when provided.'
+					message: 'campaign_id must be a string when provided.',
+					details: { request_id: requestId }
 				});
 			}
 			campaignId = campaign_id.trim();
@@ -160,7 +173,8 @@ export const POST = handleApiRoute(async (event) => {
 				throw new ApiProblem({
 					status: 400,
 					code: 'INVALID_REQUEST',
-					message: 'campaign_id must be a non-empty string when provided.'
+					message: 'campaign_id must be a non-empty string when provided.',
+					details: { request_id: requestId }
 				});
 			}
 		}
@@ -175,7 +189,8 @@ export const POST = handleApiRoute(async (event) => {
 				details: {
 					remaining: usage.remaining,
 					requested: topN,
-					limit: usage.limit
+					limit: usage.limit,
+					request_id: requestId
 				}
 			});
 		}
@@ -187,7 +202,8 @@ export const POST = handleApiRoute(async (event) => {
 		const requestBody: Record<string, unknown> = {
 			business_description: business_description.trim(),
 			top_n: topN,
-			uid: user.uid
+			uid: user.uid,
+			request_id: requestId
 		};
 		
 		if (minFollowers !== null) {
@@ -204,7 +220,9 @@ export const POST = handleApiRoute(async (event) => {
 			userId: user.uid,
 			topN,
 			minFollowers,
-			maxFollowers
+			maxFollowers,
+			campaignId,
+			request_id: requestId
 		});
 		
 		const functionResponse = await fetch(functionUrl, {
@@ -215,47 +233,73 @@ export const POST = handleApiRoute(async (event) => {
 			},
 			body: JSON.stringify(requestBody)
 		});
-		
-		// Accept both 200 (success) and 202 (accepted - processing in background)
-		if (!functionResponse.ok && functionResponse.status !== 202) {
-			const errorText = await functionResponse.text();
+
+		const rawFunctionResponse = await functionResponse.text();
+		let functionResult: Record<string, unknown> = {};
+		if (rawFunctionResponse) {
+			try {
+				functionResult = JSON.parse(rawFunctionResponse);
+			} catch {
+				functionResult = { raw: rawFunctionResponse };
+			}
+		}
+		functionRequestId =
+			typeof functionResult?.request_id === 'string' && (functionResult.request_id as string).trim()
+				? (functionResult.request_id as string).trim()
+				: requestId;
+
+		if (!functionResponse.ok) {
 			logger?.error('Cloud function call failed', {
 				status: functionResponse.status,
-				error: errorText
+				error: functionResult,
+				request_id: functionRequestId
 			});
+			const errorCode =
+				typeof functionResult?.error === 'string'
+					? (functionResult.error as string)
+					: 'FUNCTION_ERROR';
+			const message =
+				typeof functionResult?.message === 'string'
+					? (functionResult.message as string)
+					: 'Failed to execute influencer search.';
 			throw new ApiProblem({
 				status: functionResponse.status,
-				code: 'FUNCTION_ERROR',
-				message: 'Failed to execute influencer search.',
-				details: { error: errorText }
+				code: errorCode,
+				message,
+				details: {
+					function_response: functionResult,
+					request_id: functionRequestId
+				}
 			});
 		}
-		
-		const functionResult = await functionResponse.json();
-		const pipelineId = functionResult.job_id;
+
+		const pipelineId = typeof functionResult.job_id === 'string' ? (functionResult.job_id as string) : undefined;
 		
 		// For 202 Accepted, the pipeline is processing in background
 		// Return minimal info - frontend will poll for status
 		if (functionResponse.status === 202) {
 			logger?.info('Pipeline job accepted, processing in background', {
 				userId: user.uid,
-				pipelineId
+				pipelineId,
+				request_id: functionRequestId
 			});
 		}
 		
 		// Save pipeline ID to campaign if campaign_id is provided
-		if (campaignId) {
+		if (campaignId && pipelineId) {
 			const result = await bindCampaignPipelineId({
 				uid: user.uid,
 				campaignId,
 				pipelineId,
-				logger: pipelineLogger
+				logger: pipelineLogger,
+				requestId: functionRequestId
 			});
 			if (result.status === 'missing_campaign') {
 				logger?.warn('Campaign document missing while binding pipeline ID', {
 					userId: user.uid,
 					campaignId,
-					pipelineId
+					pipelineId,
+					request_id: functionRequestId
 				});
 			} else if (result.status === 'failed') {
 				logger?.error('Failed to bind pipeline ID to campaign after retries', {
@@ -264,13 +308,30 @@ export const POST = handleApiRoute(async (event) => {
 					pipelineId,
 					attempts: result.attempts,
 					campaign_binding_ms: result.campaign_binding_ms,
-					error: result.error
+					error: result.error,
+					request_id: functionRequestId
+				});
+			} else if (result.status === 'noop_same' || result.status === 'noop_other') {
+				logger?.info('Campaign pipeline binding already satisfied (API fallback)', {
+					userId: user.uid,
+					campaignId,
+					pipelineId,
+					status: result.status,
+					existingPipelineId: result.existingPipelineId,
+					request_id: functionRequestId
 				});
 			}
-		} else {
-			logger?.warn('No campaign_id provided, skipping pipeline_id save', {
+		} else if (campaignId && !pipelineId) {
+			logger?.warn('Function response missing job_id, skipping API binding', {
 				userId: user.uid,
-				campaign_id: campaign_id
+				campaignId,
+				request_id: functionRequestId
+			});
+		} else {
+			logger?.info('No campaign_id provided, skipping pipeline_id save', {
+				userId: user.uid,
+				campaign_id: campaign_id ?? null,
+				request_id: functionRequestId
 			});
 		}
 		
@@ -280,7 +341,8 @@ export const POST = handleApiRoute(async (event) => {
 		logger?.info('Search completed successfully', {
 			userId: user.uid,
 			topN,
-			jobId: pipelineId
+			jobId: pipelineId,
+			request_id: functionRequestId
 		});
 		
 		// For 202 Accepted, return minimal info - pipeline is processing in background
@@ -292,6 +354,7 @@ export const POST = handleApiRoute(async (event) => {
 				profiles_count: 0, // Not available yet
 				profiles_storage_url: null,
 				pipeline_stats: null,
+				request_id: functionRequestId,
 				usage: {
 					count: usage.count + topN,
 					limit: usage.limit,
@@ -308,6 +371,7 @@ export const POST = handleApiRoute(async (event) => {
 			profiles_count: functionResult.profiles_count ?? 0,
 			profiles_storage_url: functionResult.profiles_storage_url,
 			pipeline_stats: functionResult.pipeline_stats,
+			request_id: functionRequestId,
 			usage: {
 				count: usage.count + topN,
 				limit: usage.limit,
@@ -319,12 +383,13 @@ export const POST = handleApiRoute(async (event) => {
 		if (error instanceof ApiProblem) {
 			throw error;
 		}
-		logger?.error('Unexpected error in search endpoint', { error });
+		logger?.error('Unexpected error in search endpoint', { error, request_id: functionRequestId });
 		throw new ApiProblem({
 			status: 500,
 			code: 'INTERNAL_ERROR',
 			message: 'An unexpected error occurred while processing your search request.',
-			cause: error
+			cause: error,
+			details: { request_id: functionRequestId }
 		});
 	}
 }, { component: 'search/influencers' });

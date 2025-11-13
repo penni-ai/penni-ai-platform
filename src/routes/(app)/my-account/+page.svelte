@@ -239,11 +239,11 @@ async function openBillingPortal() {
 <div class="min-h-screen bg-gray-50">
 	<header class="border-b border-gray-200 bg-white">
 		<div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-8 py-6">
-			<a class="flex items-center gap-3 text-gray-600 transition hover:text-gray-900" href="/dashboard">
+			<a class="flex items-center gap-3 text-gray-600 transition hover:text-gray-900" href="/">
 				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
 				</svg>
-				<span class="text-sm font-medium">Back to dashboard</span>
+				<span class="text-sm font-medium">Back to chat</span>
 			</a>
 			<Logo size="md" />
 		</div>
@@ -258,7 +258,7 @@ async function openBillingPortal() {
 		<section class="grid gap-6 md:grid-cols-2">
 			<article class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
 				<h2 class="text-lg font-semibold text-gray-900">Profile</h2>
-				<p class="mt-2 text-sm text-gray-500">Update how collaborators see you inside the dashboard.</p>
+				<p class="mt-2 text-sm text-gray-500">Update how collaborators see you.</p>
 				<form
 					class="mt-6 space-y-4"
 					onsubmit={(event) => {

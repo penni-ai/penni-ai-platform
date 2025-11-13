@@ -3,9 +3,11 @@
 
 declare module '$env/static/private' {
 	export const FIREBASE_PROJECT_ID: string;
-	export const FIREBASE_CLIENT_EMAIL: string;
-	export const FIREBASE_PRIVATE_KEY: string;
-	export const FIREBASE_AUTH_EMULATOR_HOST: string;
+	// Optional: Only for local development with explicit credentials
+	export const FIREBASE_CLIENT_EMAIL: string | undefined;
+	export const FIREBASE_PRIVATE_KEY: string | undefined;
+	// Optional: Only for local emulator development
+	export const FIREBASE_AUTH_EMULATOR_HOST: string | undefined;
 	export const STRIPE_SECRET_KEY: string;
 	export const STRIPE_WEBHOOK_SECRET: string;
 	export const STRIPE_PRODUCT_STARTER: string;
@@ -23,8 +25,9 @@ declare module '$env/static/public' {
 	export const PUBLIC_FIREBASE_STORAGE_BUCKET: string;
 	export const PUBLIC_FIREBASE_MESSAGING_SENDER_ID: string;
 	export const PUBLIC_FIREBASE_APP_ID: string;
-	export const PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: string;
-	export const PUBLIC_FIREBASE_FIRESTORE_EMULATOR_HOST: string;
+	// Optional: Only for local emulator development
+	export const PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: string | undefined;
+	export const PUBLIC_FIREBASE_FIRESTORE_EMULATOR_HOST: string | undefined;
 	export const PUBLIC_SITE_URL: string;
 	export const PUBLIC_STRIPE_PUBLISHABLE_KEY: string;
 }

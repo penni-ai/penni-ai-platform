@@ -2,10 +2,6 @@
 # See https://firebase.google.com/docs/app-hosting/configure#cloud-run
 runConfig:
   minInstances: 0
-  # maxInstances: 100
-  # concurrency: 80
-  # cpu: 1
-  # memoryMiB: 512
 
 env:
   # Firebase client config exposed to the browser.
@@ -45,38 +41,83 @@ env:
       - BUILD
       - RUNTIME
 
-  # Server-side configuration.
+  # Server-side Firebase configuration.
   - variable: FIREBASE_PROJECT_ID
     value: penni-ai-platform
     availability:
       - RUNTIME
-  - variable: PUBLIC_FIREBASE_AUTH_EMULATOR_HOST
-    value: http://127.0.0.1:9100
-    availability:
-      - BUILD
-      - RUNTIME
-  - variable: FIREBASE_AUTH_EMULATOR_HOST
-    value: 127.0.0.1:9100
-    availability:
-      - RUNTIME
-  - variable: FIREBASE_FUNCTIONS_EMULATOR_ORIGIN
-    value: http://127.0.0.1:6200
-    availability:
-      - RUNTIME
-  - variable: FIRESTORE_EMULATOR_HOST
-    value: 127.0.0.1:6201
-    availability:
-      - RUNTIME
+
+  # Site configuration.
   - variable: PUBLIC_SITE_URL
     value: http://localhost:5002
+    availability: [ BUILD, RUNTIME ]
+
+  # Stripe configuration.
+  - variable: PUBLIC_STRIPE_PUBLISHABLE_KEY
+    value: pk_test_51SKoanH1EcnfAMZvTYcStRpm2iuYqd8yHLjXqdbKQl7iy7xrNZukL8z4HwZatttovP4ZgPS19PSBj4FupQy3dI8O00DqHMubq5
     availability:
       - BUILD
       - RUNTIME
+  - variable: STRIPE_SECRET_KEY
+    secret: STRIPE_SECRET_KEY
+    availability:
+      - RUNTIME
+  - variable: STRIPE_WEBHOOK_SECRET
+    secret: STRIPE_WEBHOOK_SECRET
+    availability:
+      - RUNTIME
 
-  # OpenAI configuration. API keys are loaded from .env (see .env.example) during local runs.
+  # Stripe product configuration.
+  - variable: STRIPE_PRODUCT_STARTER
+    value: prod_TKJoQYsI35pNvM
+    availability:
+      - RUNTIME
+  - variable: STRIPE_PRODUCT_GROWTH
+    value: prod_TKJoeYeR07s6td
+    availability:
+      - RUNTIME
+  - variable: STRIPE_PRODUCT_EVENT
+    value: prod_TKJou1gDBzMKdn
+    availability:
+      - RUNTIME
+
+  # Stripe pricing configuration.
+  - variable: STRIPE_PRICE_STARTER
+    value: price_1SNfBEH1EcnfAMZvJiI3uIwM
+    availability:
+      - RUNTIME
+  - variable: STRIPE_PRICE_GROWTH
+    value: price_1SNfBFH1EcnfAMZvjtlQjvQl
+    availability:
+      - RUNTIME
+  - variable: STRIPE_PRICE_EVENT
+    value: price_1SNfBFH1EcnfAMZvvcIDo8ir
+    availability:
+      - RUNTIME
+
+  # OpenAI configuration.
+  - variable: OPENAI_API_KEY
+    secret: OPENAI_API_KEY
+    availability:
+      - RUNTIME
   - variable: OPENAI_MODEL
     value: gpt-4o-mini
     availability:
       - RUNTIME
 
-  # Stripe keys and product metadata are loaded from your local .env (git-ignored) when running the emulator.
+  # Emulator host overrides
+  - variable: PUBLIC_FIREBASE_AUTH_EMULATOR_HOST
+    value: http://127.0.0.1:9100
+    availability: [ BUILD, RUNTIME ]
+
+  - variable: FIREBASE_AUTH_EMULATOR_HOST
+    value: 127.0.0.1:9100
+    availability: [ RUNTIME ]
+
+  - variable: FIREBASE_FUNCTIONS_EMULATOR_ORIGIN
+    value: http://127.0.0.1:6200
+    availability: [ RUNTIME ]
+
+  - variable: FIRESTORE_EMULATOR_HOST
+    value: 127.0.0.1:6201
+    availability: [ RUNTIME ]

@@ -84,7 +84,6 @@ export interface SearchPipelineRequest {
   model?: string;
   verbosity?: string;
   concurrency?: number;
-  debug_mode?: boolean;
 }
 
 export const PIPELINE_RUN_STATUSES = ['running', 'completed', 'error', 'cancelled'] as const;
@@ -174,18 +173,31 @@ export interface PipelineStageSummary {
 export interface PipelineBatchDocument {
   pipeline_id: string;
   userId: string;
-  seq: number;
-  input_count: number;
-  deduped_kept: number;
-  deduped_discarded: number;
-  brightdata_success: number;
-  brightdata_dead: number;
-  llm_above_5: number;
-  llm_below_5: number;
-  /** Snapshot of enriched profiles for this batch (includes followers, engagement, bio, fit). */
-  profiles?: CreatorProfile[];
+  /** Legacy sequential index (0-based). */
+  seq?: number;
+  /** Canonical batch index used by the UI listeners. */
+  batch_index?: number;
+  input_count?: number;
+  deduped_kept?: number;
+  deduped_discarded?: number;
+  brightdata_success?: number;
+  brightdata_dead?: number;
+  llm_above_5?: number;
+  llm_below_5?: number;
+  /** Slim per-batch delta emitted to the UI. */
+  profiles?: BatchProfileDelta[];
   profiles_snapshot_count?: number;
   profiles_total_in_batch?: number;
+  metrics?: {
+    llm_above_5?: number;
+    llm_below_5?: number;
+    [key: string]: number | undefined;
+  };
+  storage_paths?: Array<{
+    batch_index: number;
+    brightdata?: string | null;
+    llm?: string | null;
+  }>;
   timing?: {
     brightdata_ms?: number | null;
     llm_ms?: number | null;
@@ -195,6 +207,21 @@ export interface PipelineBatchDocument {
   status?: string;
   created_at?: TimestampLike;
   updated_at?: TimestampLike;
+}
+
+export interface BatchProfileDelta {
+  id?: number | null;
+  lance_db_id?: string | null;
+  account?: string | null;
+  username?: string | null;
+  profile_url?: string | null;
+  display_name?: string | null;
+  profile_name?: string | null;
+  platform?: string | null;
+  fit_score?: number | null;
+  fit_rationale?: string | null;
+  email_address?: string | null;
+  business_email?: string | null;
 }
 
 export interface FlowMetrics {
@@ -256,7 +283,7 @@ export interface CompleteEvent {
   pipeline_id: string;
   /** Lightweight summaries for every completed stage. */
   summary: PipelineStageSummary[];
-  /** Full documents are only present when the pipeline runs in debug mode. */
+  /** Full documents for each stage. */
   stages?: PipelineStageDocument[];
   flow_metrics?: FlowMetrics;
 }

@@ -7,6 +7,7 @@
  * 5. LLM analysis with fit scoring
  */
 
+import { randomUUID } from 'crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import OpenAI from 'openai';
 import type { BrightDataUnifiedProfile } from '../types/brightdata.js';
@@ -25,24 +26,33 @@ import {
   updateBatchCounters,
   isJobCancelled,
   cancelPipelineJob,
+  finalizePipelineProgress,
 } from '../utils/firestore-tracker.js';
-import { initializeApp, getApps } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-
-// Initialize Firebase Admin if not already initialized
-function getFirestoreInstance() {
-  if (getApps().length === 0) {
-    initializeApp();
-  }
-  return getFirestore();
-}
+import { FieldValue } from 'firebase-admin/firestore';
+import { getAuthInstance, getFirestoreInstance } from '../utils/firebase-admin.js';
 
 const db = getFirestoreInstance();
-const auth = getAuth();
+const auth = getAuthInstance();
 const CAMPAIGN_BIND_RETRY_DELAYS_MS = [0, 100, 500, 1000];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+type OptionalIntParseResult = {
+  provided: boolean;
+  value: number | null;
+  isValid: boolean;
+};
+
+function parseOptionalInteger(raw: unknown): OptionalIntParseResult {
+  if (raw === undefined || raw === null || raw === '') {
+    return { provided: false, value: null, isValid: true };
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return { provided: true, value: null, isValid: false };
+  }
+  return { provided: true, value: parsed, isValid: true };
+}
 
 function extractBearerToken(headerValue?: string | string[]): string | null {
   if (!headerValue) return null;
@@ -58,6 +68,7 @@ async function bindPipelineToCampaignWithRetries(options: {
   campaignId: string;
   pipelineId: string;
   startedAtMs: number;
+  requestId?: string;
 }): Promise<{
   status: 'updated' | 'noop_same' | 'noop_other' | 'missing_campaign' | 'failed';
   attempts: number;
@@ -65,7 +76,7 @@ async function bindPipelineToCampaignWithRetries(options: {
   existingPipelineId?: string;
   error?: string;
 }> {
-  const { uid, campaignId, pipelineId, startedAtMs } = options;
+  const { uid, campaignId, pipelineId, startedAtMs, requestId } = options;
   const campaignRef = db.collection('users').doc(uid).collection('campaigns').doc(campaignId);
   const begin = startedAtMs;
   for (let attempt = 1; attempt <= CAMPAIGN_BIND_RETRY_DELAYS_MS.length; attempt++) {
@@ -95,6 +106,7 @@ async function bindPipelineToCampaignWithRetries(options: {
       });
       const elapsed = Date.now() - begin;
       console.log('[Pipeline] Campaign binding result', {
+        request_id: requestId,
         uid,
         campaignId,
         pipelineId,
@@ -113,6 +125,7 @@ async function bindPipelineToCampaignWithRetries(options: {
       };
     } catch (error) {
       console.error('[Pipeline] Campaign binding attempt failed', {
+        request_id: requestId,
         uid,
         campaignId,
         pipelineId,
@@ -122,6 +135,7 @@ async function bindPipelineToCampaignWithRetries(options: {
       if (attempt === CAMPAIGN_BIND_RETRY_DELAYS_MS.length) {
         const elapsed = Date.now() - begin;
         console.error('[Pipeline] Campaign binding failed after retries', {
+          request_id: requestId,
           uid,
           campaignId,
           pipelineId,
@@ -137,7 +151,53 @@ async function bindPipelineToCampaignWithRetries(options: {
     }
   }
   const elapsed = Date.now() - begin;
-  return { status: 'failed', attempts: CAMPAIGN_BIND_RETRY_DELAYS_MS.length, campaign_binding_ms: elapsed };
+  return {
+    status: 'failed',
+    attempts: CAMPAIGN_BIND_RETRY_DELAYS_MS.length,
+    campaign_binding_ms: elapsed,
+  };
+}
+
+async function performLastChanceCampaignBind(options: {
+  uid: string;
+  campaignId: string;
+  pipelineId: string;
+  requestId?: string;
+}) {
+  const { uid, campaignId, pipelineId, requestId } = options;
+  const campaignRef = db.collection('users').doc(uid).collection('campaigns').doc(campaignId);
+  try {
+    const snapshot = await campaignRef.get();
+    if (!snapshot.exists) {
+      console.warn('[Pipeline] Last-chance campaign binding skipped (missing campaign)', {
+        request_id: requestId,
+        uid,
+        campaignId,
+        pipelineId,
+      });
+      return 'missing_campaign' as const;
+    }
+    await campaignRef.set(
+      { pipeline_id: pipelineId, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    console.info('[Pipeline] Last-chance campaign binding succeeded', {
+      request_id: requestId,
+      uid,
+      campaignId,
+      pipelineId,
+    });
+    return 'updated' as const;
+  } catch (error) {
+    console.error('[Pipeline] Last-chance campaign binding failed', {
+      request_id: requestId,
+      uid,
+      campaignId,
+      pipelineId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 'failed' as const;
+  }
 }
 import { processBatchedCollectionStreaming, type StreamingBatchConfig } from '../http/brightdata/streaming-batch-processor.js';
 
@@ -531,17 +591,27 @@ export const pipelineInfluencerAnalysis = onRequest(
     region: 'us-central1',
     timeoutSeconds: 3600, // 1 hour max
     memory: '1GiB',
+    invoker: 'private',
   },
   async (request, response) => {
     let jobId: string | null = null;
+    let requestId = randomUUID();
     
     try {
-      const authHeader = request.headers?.authorization ?? (request.headers as Record<string, unknown>)?.Authorization;
+      const authHeader =
+        request.headers?.authorization ?? (request.headers as Record<string, unknown>)?.Authorization;
+      const rawRequestIdInput =
+        (typeof request.body?.request_id === 'string' && request.body.request_id) ||
+        (typeof request.query?.request_id === 'string' && (request.query.request_id as string)) ||
+        null;
+      requestId = rawRequestIdInput?.trim() || requestId;
+
       const idToken = extractBearerToken(authHeader as string | string[] | undefined);
       if (!idToken) {
         response.status(401).json({
           error: 'UNAUTHENTICATED',
           message: 'Missing Authorization bearer token.',
+          request_id: requestId,
         });
         return;
       }
@@ -555,6 +625,7 @@ export const pipelineInfluencerAnalysis = onRequest(
           error: 'UNAUTHENTICATED',
           message: 'Invalid or expired ID token.',
           details: error instanceof Error ? error.message : String(error),
+          request_id: requestId,
         });
         return;
       }
@@ -563,6 +634,7 @@ export const pipelineInfluencerAnalysis = onRequest(
         response.status(401).json({
           error: 'UNAUTHENTICATED',
           message: 'Unable to resolve caller identity.',
+          request_id: requestId,
         });
         return;
       }
@@ -572,75 +644,222 @@ export const pipelineInfluencerAnalysis = onRequest(
         response.status(403).json({
           error: 'UID_MISMATCH',
           message: 'Authenticated user does not match uid in request body.',
+          request_id: requestId,
         });
         return;
       }
 
       const rawCampaignId = request.body?.campaign_id ?? request.query?.campaign_id;
       let campaignId: string | null = null;
-      if (typeof rawCampaignId === 'string') {
+      if (rawCampaignId !== undefined && rawCampaignId !== null) {
+        if (typeof rawCampaignId !== 'string') {
+          response.status(400).json({
+            error: 'INVALID_CAMPAIGN_ID',
+            message: 'campaign_id must be a string when provided.',
+            request_id: requestId,
+          });
+          return;
+        }
         campaignId = rawCampaignId.trim();
         if (!campaignId) {
           response.status(400).json({
             error: 'INVALID_CAMPAIGN_ID',
             message: 'campaign_id must be a non-empty string when provided.',
+            request_id: requestId,
           });
           return;
         }
-      } else if (rawCampaignId !== undefined && rawCampaignId !== null) {
+      }
+
+      const rawBusinessDescription =
+        request.body?.business_description ?? request.query?.business_description;
+      const businessDescription =
+        typeof rawBusinessDescription === 'string' ? rawBusinessDescription.trim() : '';
+      if (!businessDescription) {
         response.status(400).json({
-          error: 'INVALID_CAMPAIGN_ID',
-          message: 'campaign_id must be a string when provided.',
+          error: 'INVALID_BUSINESS_DESCRIPTION',
+          message: 'business_description is required and must be a non-empty string.',
+          request_id: requestId,
         });
         return;
       }
 
-      const businessDescription = request.body?.business_description || request.query?.business_description || 'restaurant in san francisco looking for local influencers';
-      const topN = request.body?.top_n || request.query?.top_n || 5;
-      const minFollowers = request.body?.min_followers !== undefined ? parseInt(request.body.min_followers, 10) : (request.query?.min_followers ? parseInt(request.query.min_followers as string, 10) : null);
-      const maxFollowers = request.body?.max_followers !== undefined ? parseInt(request.body.max_followers, 10) : (request.query?.max_followers ? parseInt(request.query.max_followers as string, 10) : null);
-      const platform = request.body?.platform || request.query?.platform || null;
+      const rawTopN = request.body?.top_n ?? request.query?.top_n;
+      const topN =
+        rawTopN === undefined || rawTopN === null || rawTopN === '' ? 30 : Number(rawTopN);
+      if (!Number.isFinite(topN) || !Number.isInteger(topN) || topN < 30 || topN > 100) {
+        response.status(400).json({
+          error: 'INVALID_TOP_N',
+          message: 'top_n must be an integer between 30 and 100.',
+          request_id: requestId,
+        });
+        return;
+      }
 
-      console.log(`[Pipeline] Starting influencer analysis pipeline for: "${businessDescription}"`);
-      console.log(`[Pipeline] Will analyze top ${topN} profiles`);
-      if (minFollowers !== null && minFollowers !== undefined) {
-        console.log(`[Pipeline] Filtering by min_followers: ${minFollowers}`);
+      const minFollowersResult = parseOptionalInteger(
+        request.body?.min_followers ?? request.query?.min_followers
+      );
+      if (!minFollowersResult.isValid) {
+        response.status(400).json({
+          error: 'INVALID_FOLLOWER_BOUNDS',
+          message: 'min_followers must be a whole number.',
+          request_id: requestId,
+        });
+        return;
       }
-      if (maxFollowers !== null && maxFollowers !== undefined) {
-        console.log(`[Pipeline] Filtering by max_followers: ${maxFollowers}`);
+      if (minFollowersResult.value !== null && minFollowersResult.value < 0) {
+        response.status(400).json({
+          error: 'INVALID_FOLLOWER_BOUNDS',
+          message: 'min_followers must be a non-negative number.',
+          request_id: requestId,
+        });
+        return;
       }
-      if (platform !== null && platform !== undefined && platform.trim() !== '') {
-        console.log(`[Pipeline] Filtering by platform: ${platform}`);
+
+      const maxFollowersResult = parseOptionalInteger(
+        request.body?.max_followers ?? request.query?.max_followers
+      );
+      if (!maxFollowersResult.isValid) {
+        response.status(400).json({
+          error: 'INVALID_FOLLOWER_BOUNDS',
+          message: 'max_followers must be a whole number.',
+          request_id: requestId,
+        });
+        return;
+      }
+      if (maxFollowersResult.value !== null && maxFollowersResult.value < 0) {
+        response.status(400).json({
+          error: 'INVALID_FOLLOWER_BOUNDS',
+          message: 'max_followers must be a non-negative number.',
+          request_id: requestId,
+        });
+        return;
+      }
+
+      if (
+        minFollowersResult.value !== null &&
+        maxFollowersResult.value !== null &&
+        minFollowersResult.value > maxFollowersResult.value
+      ) {
+        response.status(400).json({
+          error: 'INVALID_FOLLOWER_BOUNDS',
+          message: 'min_followers cannot be greater than max_followers.',
+          request_id: requestId,
+        });
+        return;
+      }
+
+      const minFollowers = minFollowersResult.value;
+      const maxFollowers = maxFollowersResult.value;
+      const rawPlatform = request.body?.platform ?? request.query?.platform;
+      const platform =
+        typeof rawPlatform === 'string' && rawPlatform.trim() ? rawPlatform.trim() : null;
+
+      if (campaignId) {
+        const campaignSnapshot = await db
+          .collection('users')
+          .doc(verifiedUid)
+          .collection('campaigns')
+          .doc(campaignId)
+          .get();
+        if (!campaignSnapshot.exists) {
+          response.status(400).json({
+            error: 'INVALID_CAMPAIGN_ID',
+            message: 'Campaign does not exist for this user.',
+            request_id: requestId,
+          });
+          return;
+        }
+      }
+      console.log('[Pipeline] Starting influencer analysis pipeline', {
+        request_id: requestId,
+        uid: verifiedUid,
+        top_n: topN,
+        campaign_id: campaignId,
+        min_followers: minFollowers,
+        max_followers: maxFollowers,
+        platform,
+      });
+
+      const jobMetadata: { uid?: string; campaignId?: string } = { uid: verifiedUid };
+      if (campaignId) {
+        jobMetadata.campaignId = campaignId;
       }
 
       // Create pipeline job in Firestore
-      jobId = await createPipelineJob(businessDescription, topN, {
-        uid: verifiedUid,
-        campaignId,
-      });
+      jobId = await createPipelineJob(businessDescription, topN, jobMetadata);
       const jobCreatedAtMs = Date.now();
       await updatePipelineJobStatus(jobId, 'running');
       await updatePipelineStage(jobId, 'query_expansion', 5);
       await updateQueryExpansionStage(jobId, 'running');
 
+      let bindingSummary: {
+        status: string;
+        attempts?: number;
+        campaign_binding_ms?: number;
+        existingPipelineId?: string;
+      } | null = null;
       if (campaignId) {
         const bindingResult = await bindPipelineToCampaignWithRetries({
           uid: verifiedUid,
           campaignId,
           pipelineId: jobId,
           startedAtMs: jobCreatedAtMs,
+          requestId,
         });
+        bindingSummary = bindingResult;
+
+        if (bindingResult.status === 'missing_campaign') {
+          await cancelPipelineJob(jobId);
+          response.status(400).json({
+            error: 'INVALID_CAMPAIGN_ID',
+            message: 'Campaign was removed before the pipeline could be linked.',
+            request_id: requestId,
+          });
+          return;
+        }
+
         if (bindingResult.status === 'failed') {
-          console.warn('[Pipeline] Campaign binding ultimately failed before returning response', {
+          const lastChanceStatus = await performLastChanceCampaignBind({
             uid: verifiedUid,
             campaignId,
             pipelineId: jobId,
-            attempts: bindingResult.attempts,
-            campaign_binding_ms: bindingResult.campaign_binding_ms,
-            error: bindingResult.error,
+            requestId,
           });
+
+          if (lastChanceStatus === 'updated') {
+            bindingSummary = {
+              status: 'last_chance_updated',
+              attempts: bindingResult.attempts,
+              campaign_binding_ms: bindingResult.campaign_binding_ms,
+            };
+          } else if (lastChanceStatus === 'missing_campaign') {
+            await cancelPipelineJob(jobId);
+            response.status(400).json({
+              error: 'INVALID_CAMPAIGN_ID',
+              message: 'Campaign no longer exists for this user.',
+              request_id: requestId,
+            });
+            return;
+          } else {
+            bindingSummary = {
+              ...bindingResult,
+              status: 'failed_last_chance',
+            };
+          }
         }
       }
+
+      console.log('[Pipeline] Pipeline job accepted', {
+        request_id: requestId,
+        uid: verifiedUid,
+        job_id: jobId,
+        campaign_id: campaignId,
+        binding_status: bindingSummary?.status ?? (campaignId ? 'skipped' : 'not_requested'),
+        binding_attempts: bindingSummary?.attempts ?? 0,
+        campaign_binding_ms: bindingSummary?.campaign_binding_ms ?? 0,
+        existing_pipeline_id: bindingSummary?.existingPipelineId,
+      });
       
       // Return job_id immediately so frontend can start polling
       // The pipeline will continue processing in the background
@@ -649,6 +868,7 @@ export const pipelineInfluencerAnalysis = onRequest(
         job_id: jobId,
         message: 'Pipeline job started',
         timestamp: new Date().toISOString(),
+        request_id: requestId,
       });
       
       // Continue processing asynchronously (don't await - let it run in background)
@@ -658,7 +878,10 @@ export const pipelineInfluencerAnalysis = onRequest(
         
         try {
           // Step 1: Generate search queries
-          console.log('[Pipeline] Step 1: Generating search queries...');
+          console.log('[Pipeline] Step 1: Generating search queries...', {
+            request_id: requestId,
+            job_id: jobId,
+          });
           let queries: string[] = [];
           try {
             // Check for cancellation
@@ -690,7 +913,10 @@ export const pipelineInfluencerAnalysis = onRequest(
           await updatePipelineStage(jobId, 'weaviate_search', 25);
           await updateWeaviateSearchStage(jobId, 'running');
           
-          console.log('[Pipeline] Step 2: Performing multi-alpha Weaviate searches...');
+          console.log('[Pipeline] Step 2: Performing multi-alpha Weaviate searches...', {
+            request_id: requestId,
+            job_id: jobId,
+          });
           const alphaValues = [0.2, 0.5, 0.8];
           const searchLimit = 500;
           const allSearchResults: any[] = [];
@@ -726,7 +952,10 @@ export const pipelineInfluencerAnalysis = onRequest(
             console.log(`[Pipeline] Collected ${allSearchResults.length} total search results`);
 
             // Step 3: Deduplicate results
-            console.log('[Pipeline] Step 3: Deduplicating results...');
+            console.log('[Pipeline] Step 3: Deduplicating results...', {
+              request_id: requestId,
+              job_id: jobId,
+            });
             deduplicatedResults = deduplicateResults(allSearchResults);
             console.log(`[Pipeline] After deduplication: ${deduplicatedResults.length} unique profiles`);
 
@@ -749,7 +978,10 @@ export const pipelineInfluencerAnalysis = onRequest(
           }
 
           // Step 4: Extract top N profiles
-          console.log(`[Pipeline] Step 4: Extracting top ${topN} profiles...`);
+          console.log(`[Pipeline] Step 4: Extracting top ${topN} profiles...`, {
+            request_id: requestId,
+            job_id: jobId,
+          });
           const topProfileUrls = extractTopProfiles(deduplicatedResults, topN);
           console.log(`[Pipeline] Extracted ${topProfileUrls.length} profile URLs: ${topProfileUrls.join(', ')}`);
 
@@ -772,7 +1004,10 @@ export const pipelineInfluencerAnalysis = onRequest(
           await updatePipelineStage(jobId, 'llm_analysis', 60); // Start LLM stage early
           await updateLLMAnalysisStage(jobId, 'running');
           
-          console.log(`[Pipeline] Step 5: Streaming collection of ${topProfileUrls.length} profiles from BrightData...`);
+          console.log(`[Pipeline] Step 5: Streaming collection of ${topProfileUrls.length} profiles from BrightData...`, {
+            request_id: requestId,
+            job_id: jobId,
+          });
           const streamingConfig: StreamingBatchConfig = {
             batchSize: 20,
             maxConcurrentBatches: 10,
@@ -884,13 +1119,20 @@ export const pipelineInfluencerAnalysis = onRequest(
           
           await storePipelineResults(jobId, allAnalyzedProfiles, pipelineStats);
           await updatePipelineJobStatus(jobId, 'completed');
-          await updatePipelineStage(jobId, null as any, 100);
+          await finalizePipelineProgress(jobId);
           
           // Pipeline completed - status is already updated in Firestore
           // Frontend will poll to get the final results
-          console.log(`[Pipeline] Background processing completed successfully: ${jobId}`);
+          console.log(`[Pipeline] Background processing completed successfully: ${jobId}`, {
+            request_id: requestId,
+            job_id: jobId,
+          });
         } catch (backgroundError) {
-          console.error('[Pipeline] Background processing error:', backgroundError);
+          console.error('[Pipeline] Background processing error:', {
+            request_id: requestId,
+            job_id: jobId,
+            error: backgroundError,
+          });
           const errorMessage = backgroundError instanceof Error ? backgroundError.message : 'Unknown error';
           if (jobId) {
             try {
@@ -905,7 +1147,11 @@ export const pipelineInfluencerAnalysis = onRequest(
       // Early return - don't continue with the rest of the function
       return;
     } catch (error) {
-      console.error('[Pipeline] Error before job creation:', error);
+      console.error('[Pipeline] Error before job creation:', {
+        request_id: requestId,
+        job_id: jobId,
+        error,
+      });
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
       // Only send error response if we haven't already sent the 202 response
@@ -916,6 +1162,7 @@ export const pipelineInfluencerAnalysis = onRequest(
           job_id: jobId || null,
           message: errorMessage,
           timestamp: new Date().toISOString(),
+          request_id: requestId,
         });
       } else {
         // Job was created, error will be handled in background processing

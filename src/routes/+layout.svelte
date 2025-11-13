@@ -1,12 +1,13 @@
 <script lang="ts">
 	import '../app.css';
-	import favicon from '$lib/assets/favicon.svg';
 
 	let { children } = $props();
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<title>Penni AI</title>
+	<link rel="icon" href="/images/icon/pink_white_icon.png" type="image/png" />
+	<link rel="apple-touch-icon" href="/images/icon/pink_white_icon.png" />
 </svelte:head>
 
 <div style="min-height: 100vh; display: flex; flex-direction: column;">

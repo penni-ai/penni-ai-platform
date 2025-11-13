@@ -89,7 +89,6 @@
 				<p class="mt-1">Head to outreach to review the seeded creators and continue drafting emails.</p>
 				<div class="mt-3 flex flex-wrap gap-3">
 					<Button href={`/campaign/${createdCampaignId()}`} class="justify-center">Open campaign</Button>
-					<Button variant="outline" href={`/campaign/${createdCampaignId()}/chat`} class="justify-center">Continue chat</Button>
 				</div>
 			</div>
 		</div>

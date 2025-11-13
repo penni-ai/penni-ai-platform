@@ -5,9 +5,9 @@ import { adminAuth } from '$lib/firebase/admin';
 import { ApiProblem } from '$lib/server/api';
 import {
 	PUBLIC_FIREBASE_API_KEY,
-	PUBLIC_FIREBASE_PROJECT_ID,
-	PUBLIC_FIREBASE_AUTH_EMULATOR_HOST
+	PUBLIC_FIREBASE_PROJECT_ID
 } from '$env/static/public';
+import { env as publicEnv } from '$env/dynamic/public';
 import type { SearchPipelineRequest } from '$lib/types/search';
 
 const FUNCTIONS_REGION = process.env.FIREBASE_FUNCTIONS_REGION ?? 'us-central1';
@@ -33,6 +33,7 @@ const FUNCTION_BASE = FUNCTIONS_EMULATOR_ORIGIN
 	? `${FUNCTIONS_EMULATOR_ORIGIN.replace(/\/$/, '')}/${PROJECT_ID}/${FUNCTIONS_REGION}`
 	: `https://${FUNCTIONS_REGION}-${PROJECT_ID}.cloudfunctions.net`;
 export const SEARCH_PIPELINE_URL = `${FUNCTION_BASE}/search_pipeline_orchestrator`;
+export const LEGACY_SEARCH_PIPELINE_URL = `${FUNCTION_BASE}/search_pipeline`;
 
 export async function mintIdToken(uid: string): Promise<string> {
 	if (!PUBLIC_FIREBASE_API_KEY && !USING_AUTH_EMULATOR) {
@@ -75,6 +76,22 @@ export async function invokeSearchPipeline(
 	request: SearchPipelineRequest,
 	options: InvokeOptions = {}
 ): Promise<Response> {
+	return callCallableFunction(SEARCH_PIPELINE_URL, request, options);
+}
+
+export async function invokeLegacySearchPipeline(
+	request: SearchPipelineRequest,
+	options: InvokeOptions = {}
+): Promise<Response> {
+	const { uid, signal } = options;
+	return callCallableFunction(LEGACY_SEARCH_PIPELINE_URL, request, { uid, signal });
+}
+
+async function callCallableFunction(
+	endpoint: string,
+	request: SearchPipelineRequest,
+	options: InvokeOptions = {}
+): Promise<Response> {
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json'
 	};
@@ -88,7 +105,7 @@ export async function invokeSearchPipeline(
 		payload.pipeline_id = options.pipelineId;
 	}
 
-	return fetch(SEARCH_PIPELINE_URL, {
+	return fetch(endpoint, {
 		method: 'POST',
 		headers,
 		body: JSON.stringify({ data: payload }),
@@ -109,8 +126,9 @@ function resolveAuthEmulatorOrigin(): string | null {
 	if (fromProcess) {
 		return normalizeOrigin(fromProcess);
 	}
-	if (PUBLIC_FIREBASE_AUTH_EMULATOR_HOST) {
-		return normalizeOrigin(PUBLIC_FIREBASE_AUTH_EMULATOR_HOST);
+	const fromPublicEnv = publicEnv.PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+	if (fromPublicEnv) {
+		return normalizeOrigin(fromPublicEnv);
 	}
 	return null;
 }

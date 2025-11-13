@@ -3,26 +3,18 @@
  * Tracks status and stores data at each stage of the pipeline
  */
 
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { getStorage } from 'firebase-admin/storage';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { BrightDataUnifiedProfile } from '../types/brightdata.js';
-
-/**
- * Initialize Firebase Admin if not already initialized
- */
-function getFirestoreInstance() {
-  if (getApps().length === 0) {
-    // Initialize with default credentials (uses Application Default Credentials in Cloud Functions)
-    initializeApp();
-  }
-  return getFirestore();
-}
+import {
+  getFirestoreInstance,
+  getStorageInstance,
+  resolvedStorageBucketName,
+} from './firebase-admin.js';
 
 const db = getFirestoreInstance();
-const storage = getStorage();
+const storage = getStorageInstance();
 const PIPELINE_COLLECTION = 'pipeline_jobs';
-const STORAGE_BUCKET_NAME = process.env.STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET || 'penni-ai-platform.firebasestorage.app';
+const STORAGE_BUCKET_NAME = resolvedStorageBucketName || storage.bucket().name;
 
 /**
  * Pipeline job status
@@ -147,7 +139,7 @@ export interface PipelineJobDocument {
 export async function createPipelineJob(
   businessDescription: string,
   topN: number,
-  metadata?: { uid?: string | null; campaignId?: string | null }
+  metadata?: { uid?: string; campaignId?: string }
 ): Promise<string> {
   const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const now = Timestamp.now();
@@ -165,9 +157,13 @@ export async function createPipelineJob(
     created_at: now,
     updated_at: now,
     top_n: topN,
-    uid: metadata?.uid ?? null,
-    campaign_id: metadata?.campaignId ?? null,
   };
+  if (metadata?.uid && typeof metadata.uid === 'string' && metadata.uid.trim()) {
+    jobDoc.uid = metadata.uid.trim();
+  }
+  if (metadata?.campaignId && typeof metadata.campaignId === 'string' && metadata.campaignId.trim()) {
+    jobDoc.campaign_id = metadata.campaignId.trim();
+  }
   
   await db.collection(PIPELINE_COLLECTION).doc(jobId).set(jobDoc);
   console.log(`[Firestore] Created pipeline job: ${jobId}`);
@@ -548,4 +544,16 @@ export async function updateBatchCounters(
   });
   
   console.log(`[Firestore] Updated batch counters for ${jobId}: ${batchesCompleted}/${totalBatches} completed`);
+}
+
+/**
+ * Finalize pipeline progress at 100% without mutating stage state
+ */
+export async function finalizePipelineProgress(jobId: string): Promise<void> {
+  await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
+    overall_progress: 100,
+    current_stage: null,
+    updated_at: Timestamp.now(),
+  });
+  console.log(`[Firestore] Finalized pipeline job ${jobId} progress at 100%`);
 }

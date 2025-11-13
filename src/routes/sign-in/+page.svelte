@@ -52,6 +52,7 @@ async function authenticate() {
 			throw new Error(combined);
 		}
 
+		// Redirect to dashboard
 		await goto('/dashboard', { invalidateAll: true });
 	} catch (error) {
 		console.error('[auth] sign-in failed', error);

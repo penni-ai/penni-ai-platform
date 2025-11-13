@@ -12,11 +12,11 @@
 <div class="min-h-screen bg-gray-50">
 	<header class="border-b border-gray-200 bg-white">
 		<div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-8 py-6">
-			<a class="flex items-center gap-3 text-gray-600 transition hover:text-gray-900" href="/dashboard">
+			<a class="flex items-center gap-3 text-gray-600 transition hover:text-gray-900" href="/">
 				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
 				</svg>
-				<span class="text-sm font-medium">Back to dashboard</span>
+				<span class="text-sm font-medium">Back to chat</span>
 			</a>
 			<Logo size="md" />
 		</div>
@@ -50,7 +50,7 @@
 		</div>
 
 		<div class="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-			<Button href="/dashboard" class="px-6">Go to dashboard</Button>
+			<Button href="/" class="px-6">Go to dashboard</Button>
 			<Button variant="outline" href="/my-account" class="px-6">Manage account</Button>
 		</div>
 	</main>

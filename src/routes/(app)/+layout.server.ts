@@ -14,7 +14,8 @@ function sortCampaignsByRecency(campaigns: SerializedCampaign[]) {
 }
 
 export const load: LayoutServerLoad = async ({ locals }) => {
-	if (!locals.user) {
+	const user = locals.user;
+	if (!user) {
 		throw redirect(303, '/sign-in');
 	}
 
@@ -22,14 +23,14 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 
 	try {
 		// Use updatedAt for ordering (always present in new structure)
-		const snapshot = await userDocRef(locals.user.uid)
+		const snapshot = await userDocRef(user.uid)
 			.collection('campaigns')
 			.orderBy('updatedAt', 'desc')
 			.limit(SIDEBAR_CAMPAIGN_LIMIT)
 			.get();
 
 		campaigns = await Promise.all(
-			snapshot.docs.map((doc) => serializeCampaignSnapshot(doc, locals.user.uid))
+			snapshot.docs.map((doc) => serializeCampaignSnapshot(doc, user.uid))
 		);
 		campaigns = sortCampaignsByRecency(campaigns);
 	} catch (error) {
@@ -38,8 +39,8 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 
 	return {
 		user: {
-			uid: locals.user.uid,
-			email: locals.user.email ?? null
+			uid: user.uid,
+			email: user.email ?? null
 		},
 		campaigns
 	};

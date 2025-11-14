@@ -1,5 +1,4 @@
 <script lang="ts">
-	import Logo from '$lib/components/Logo.svelte';
 	import Button from '$lib/components/Button.svelte';
 
 	const steps = [
@@ -22,21 +21,8 @@
 	];
 </script>
 
-<div class="min-h-screen bg-gray-50">
-	<header class="border-b border-gray-200 bg-white">
-		<div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-6">
-			<a class="flex items-center gap-3 text-gray-600 transition hover:text-gray-900" href="/">
-				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-				</svg>
-				<span class="text-sm font-medium">Back to homepage</span>
-			</a>
-			<Logo size="md" />
-			<div class="w-5"></div>
-		</div>
-	</header>
-
-	<main class="mx-auto flex max-w-5xl flex-col gap-12 px-6 py-12">
+<main class="pt-16 bg-white">
+	<div class="mx-auto flex max-w-5xl flex-col gap-12 px-6 py-12">
 		<section class="space-y-3 text-center">
 			<h1 class="text-3xl font-semibold text-gray-900">How Penny works</h1>
 			<p class="text-sm text-gray-500">
@@ -70,5 +56,5 @@
 				<Button href="/">Explore the product UI</Button>
 			</div>
 		</section>
-	</main>
-</div>
+	</div>
+</main>

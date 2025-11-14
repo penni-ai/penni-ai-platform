@@ -40,6 +40,10 @@ export function campaignDocRef(uid: string, campaignId: string) {
 	return userDocRef(uid).collection('campaigns').doc(campaignId);
 }
 
+export function gmailConnectionsCollectionRef(uid: string): CollectionReference {
+	return userDocRef(uid).collection('gmailConnections');
+}
+
 // Campaign structure:
 // - campaigns/{campaignId}/collected (document) - collected data
 // - campaigns/{campaignId}/chat/{messageId} (collection) - messages
@@ -167,7 +171,7 @@ export interface SearchUsageRecord {
 	month: string; // Format: "YYYY-MM" (e.g., "2025-01")
 	count: number;
 	updatedAt: number;
-}
+	}
 
 export function outreachUsageDocRef(uid: string): DocumentReference {
 	return userDocRef(uid).collection('usage').doc('outreach');

@@ -3,7 +3,8 @@ import type Stripe from 'stripe';
 import { env } from '$env/dynamic/private';
 import { ApiProblem, apiOk, handleApiRoute } from '$lib/server/api';
 import type { Logger } from '$lib/server/logger';
-import { getStripeClient, getPlanKeyByPrice } from '$lib/server/stripe';
+import { getStripeClient, getPlanKeyByPrice, type PlanKey } from '$lib/server/stripe';
+import { buildEntitlements } from '$lib/server/billing-utils';
 import {
 	addonDocRef,
 	checkoutSessionDocRef,
@@ -19,7 +20,7 @@ const timestamp = () => Date.now();
 const toMillis = (value: unknown): number | null =>
 	typeof value === 'number' ? Math.round(value * 1000) : null;
 
-type PlanKey = ReturnType<typeof getPlanKeyByPrice>;
+// PlanKey is imported from stripe.ts
 
 function extractUid(metadata?: Stripe.Metadata | null): string | null {
 	if (!metadata) return null;
@@ -29,36 +30,16 @@ function extractUid(metadata?: Stripe.Metadata | null): string | null {
 	return null;
 }
 
-function buildEntitlements(planKey: PlanKey) {
-	if (planKey === 'starter') {
-		return {
-			maxProfiles: 300,
-			connectedInboxes: 1,
-			monthlyOutreachEmails: 200,
-			maxActiveCampaigns: 1,
-			csvExportEnabled: false
-		};
-	}
-	if (planKey === 'growth') {
-		return {
-			maxProfiles: 1000,
-			connectedInboxes: 3,
-			monthlyOutreachEmails: 700,
-			maxActiveCampaigns: 10,
-			csvExportEnabled: true
-		};
-	}
-	return undefined;
-}
+// buildEntitlements is now imported from billing-utils
 
-function resolvePlanKey(metadata: Stripe.Metadata | null | undefined, priceId: string | null): PlanKey {
+function resolvePlanKey(metadata: Stripe.Metadata | null | undefined, priceId: string | null): PlanKey | null {
 	if (metadata?.plan) {
 		const raw = String(metadata.plan).toLowerCase();
-		if (raw === 'starter' || raw === 'growth') {
-			return raw;
+		if (raw === 'free' || raw === 'starter' || raw === 'growth' || raw === 'event') {
+			return raw as PlanKey;
 		}
 	}
-	return getPlanKeyByPrice(priceId) ?? null;
+	return getPlanKeyByPrice(priceId);
 }
 
 async function findUidByCustomerId(customerId: string | null, logger: Logger): Promise<string | null> {
@@ -288,6 +269,10 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session, 
 		});
 		const firstPriceId = subscription.items.data[0]?.price?.id ?? null;
 		const planKey = resolvePlanKey(session.metadata ?? null, firstPriceId);
+		if (!planKey) {
+			logger.warn('Unable to resolve plan key for checkout session', { sessionId: session.id });
+			return;
+		}
 		await recordSubscription(uid, subscription, {
 			planKey,
 			source: 'checkout.session.completed'
@@ -326,6 +311,10 @@ async function handleSubscriptionEvent(subscription: Stripe.Subscription, source
 	}
 	const priceId = subscription.items.data[0]?.price?.id ?? null;
 	const planKey = resolvePlanKey(subscription.metadata ?? null, priceId);
+	if (!planKey) {
+		logger.warn('Unable to resolve plan key for subscription', { subscriptionId: subscription.id });
+		return;
+	}
 	await recordSubscription(uid, subscription, { planKey, source });
 }
 

@@ -9,6 +9,7 @@
 
 import { randomUUID } from 'crypto';
 import { onRequest } from 'firebase-functions/v2/https';
+import { GoogleAuth, type IdTokenClient } from 'google-auth-library';
 import OpenAI from 'openai';
 import type { BrightDataUnifiedProfile } from '../types/brightdata.js';
 import { normalizeProfiles } from '../utils/profile-normalizer.js';
@@ -37,6 +38,37 @@ const CAMPAIGN_BIND_RETRY_DELAYS_MS = [0, 100, 500, 1000];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const googleAuth = new GoogleAuth();
+const idTokenClients = new Map<string, IdTokenClient>();
+
+async function fetchWithServiceIdentity(
+  url: string,
+  init: RequestInit = {},
+  audienceOverride?: string
+): Promise<Response> {
+  if (process.env.FUNCTIONS_EMULATOR) {
+    return fetch(url, init);
+  }
+
+  const audience = audienceOverride ?? url.split('?')[0] ?? url;
+  let client = idTokenClients.get(audience);
+  if (!client) {
+    client = await googleAuth.getIdTokenClient(audience);
+    idTokenClients.set(audience, client);
+  }
+
+  const authHeaders = await client.getRequestHeaders(audience);
+  const authorization = authHeaders.get('Authorization') ?? authHeaders.get('authorization');
+  if (!authorization) {
+    throw new Error(`Failed to obtain Authorization header for ${audience}`);
+  }
+
+  const headers = new Headers(init.headers ?? {});
+  headers.set('Authorization', authorization);
+
+  return fetch(url, { ...init, headers });
+}
+
 type OptionalIntParseResult = {
   provided: boolean;
   value: number | null;
@@ -52,15 +84,6 @@ function parseOptionalInteger(raw: unknown): OptionalIntParseResult {
     return { provided: true, value: null, isValid: false };
   }
   return { provided: true, value: parsed, isValid: true };
-}
-
-function extractBearerToken(headerValue?: string | string[]): string | null {
-  if (!headerValue) return null;
-  const headerRaw = Array.isArray(headerValue) ? headerValue[0] : headerValue;
-  const header = headerRaw ?? '';
-  if (!header) return null;
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() ?? null;
 }
 
 async function bindPipelineToCampaignWithRetries(options: {
@@ -243,11 +266,16 @@ function getQueryGenerationUrl(): string {
  * Generate search queries from business description
  */
 async function generateSearchQueries(businessDescription: string): Promise<string[]> {
-  const url = getQueryGenerationUrl();
-  const response = await fetch(`${url}?description=${encodeURIComponent(businessDescription)}`, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const baseUrl = getQueryGenerationUrl();
+  const targetUrl = `${baseUrl}?description=${encodeURIComponent(businessDescription)}`;
+  const response = await fetchWithServiceIdentity(
+    targetUrl,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    },
+    baseUrl
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -292,11 +320,15 @@ async function performHybridSearch(
   const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 minute timeout
 
   try {
-    const response = await fetch(searchUrl, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-    });
+    const response = await fetchWithServiceIdentity(
+      searchUrl,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+      },
+      url
+    );
 
     clearTimeout(timeoutId);
 
@@ -598,55 +630,58 @@ export const pipelineInfluencerAnalysis = onRequest(
     let requestId = randomUUID();
     
     try {
-      const authHeader =
-        request.headers?.authorization ?? (request.headers as Record<string, unknown>)?.Authorization;
       const rawRequestIdInput =
         (typeof request.body?.request_id === 'string' && request.body.request_id) ||
         (typeof request.query?.request_id === 'string' && (request.query.request_id as string)) ||
         null;
       requestId = rawRequestIdInput?.trim() || requestId;
 
-      const idToken = extractBearerToken(authHeader as string | string[] | undefined);
-      if (!idToken) {
-        response.status(401).json({
-          error: 'UNAUTHENTICATED',
-          message: 'Missing Authorization bearer token.',
+      // Get user ID from request body (already verified by App Hosting)
+      // App Hosting verifies user via session cookie in hooks.server.ts
+      // Function is protected by IAM (only App Hosting can call via service account)
+      const rawUid = request.body?.uid;
+      if (!rawUid || typeof rawUid !== 'string') {
+        response.status(400).json({
+          error: 'MISSING_UID',
+          message: 'uid is required in request body.',
           request_id: requestId,
         });
         return;
       }
 
-      let verifiedUid: string;
+      const verifiedUid = rawUid.trim();
+      if (!verifiedUid) {
+        response.status(400).json({
+          error: 'INVALID_UID',
+          message: 'uid must be a non-empty string.',
+          request_id: requestId,
+        });
+        return;
+      }
+
+      // Validate UID format (Firebase Auth UIDs are typically 28 characters)
+      // Also allow longer UIDs for custom auth
+      if (verifiedUid.length < 10 || verifiedUid.length > 128) {
+        response.status(400).json({
+          error: 'INVALID_UID',
+          message: 'uid has invalid format.',
+          request_id: requestId,
+        });
+        return;
+      }
+
+      // Optionally verify user exists in Firebase Auth (non-blocking)
+      // This adds an extra layer of validation but is optional
       try {
-        const decoded = await auth.verifyIdToken(idToken);
-        verifiedUid = decoded.uid;
+        await auth.getUser(verifiedUid);
       } catch (error) {
-        response.status(401).json({
-          error: 'UNAUTHENTICATED',
-          message: 'Invalid or expired ID token.',
-          details: error instanceof Error ? error.message : String(error),
+        // If user doesn't exist, log but don't fail (App Hosting already verified)
+        console.warn('[Pipeline] User not found in Firebase Auth (non-blocking)', {
+          uid: verifiedUid,
           request_id: requestId,
+          error: error instanceof Error ? error.message : String(error),
         });
-        return;
-      }
-
-      if (!verifiedUid || typeof verifiedUid !== 'string') {
-        response.status(401).json({
-          error: 'UNAUTHENTICATED',
-          message: 'Unable to resolve caller identity.',
-          request_id: requestId,
-        });
-        return;
-      }
-
-      const requestedUid = typeof request.body?.uid === 'string' ? request.body.uid.trim() : null;
-      if (requestedUid && requestedUid !== verifiedUid) {
-        response.status(403).json({
-          error: 'UID_MISMATCH',
-          message: 'Authenticated user does not match uid in request body.',
-          request_id: requestId,
-        });
-        return;
+        // Continue anyway - App Hosting already verified the user
       }
 
       const rawCampaignId = request.body?.campaign_id ?? request.query?.campaign_id;

@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "penni-ai-platform"
-  }
+    "default": "penni-ai-platform",
+    "dev": "penni-ai-platform-dev"
+  },
+  "targets": {},
+  "etags": {}
 }

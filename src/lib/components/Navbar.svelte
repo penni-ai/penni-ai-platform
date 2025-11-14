@@ -28,7 +28,6 @@
 				<a href="/" class="text-gray-700 hover:text-black transition-colors">Home</a>
 				<a href="/how-it-works" class="text-gray-700 hover:text-black transition-colors">How it works</a>
 				<a href="/pricing" class="text-gray-700 hover:text-black transition-colors">Pricing</a>
-				<a href="/" class="text-gray-700 hover:text-black transition-colors">Product</a>
 			</div>
 
 			<!-- Auth Buttons -->
@@ -37,10 +36,12 @@
 					<div class="hidden sm:flex flex-col items-end text-xs text-gray-500">
 						<span class="font-semibold text-gray-800">{displayName()}</span>
 					</div>
-					<a href="/" class="text-gray-700 hover:text-black transition-colors hidden sm:inline-block">
+					<a href="/dashboard" class="text-gray-700 hover:text-black transition-colors hidden sm:inline-block">
 						Dashboard
 					</a>
-					<Button size="sm" variant="outline" href="/logout">Sign out</Button>
+					<a href="/logout" data-sveltekit-reload class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-full border-2 border-black text-black hover:bg-black hover:text-white transition-all duration-200">
+						Sign out
+					</a>
 				{:else}
 					<a href="/sign-up" class="text-gray-700 hover:text-black transition-colors hidden sm:inline-block">
 						Sign up

@@ -1,9 +1,8 @@
 <script lang="ts">
-	import Logo from '$lib/components/Logo.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import { invalidateAll } from '$app/navigation';
 
-	type PlanKey = 'starter' | 'growth' | 'event';
+	type PlanKey = 'free' | 'starter' | 'growth' | 'event';
 
 type Plan = {
 		key: PlanKey;
@@ -25,7 +24,44 @@ function formatCurrency(amount: number, currency: string) {
 	}).format(amount / 100);
 }
 
+function getFeatureColor(feature: string): string {
+	const lower = feature.toLowerCase();
+	if (lower.includes('influencer profile') || lower.includes('profile')) {
+		return 'text-blue-500';
+	}
+	if (lower.includes('connected outreach inbox') || lower.includes('connected inbox')) {
+		return 'text-purple-500';
+	}
+	if (lower.includes('outreach email') || lower.includes('email outreach') || lower.includes('email')) {
+		return 'text-orange-500';
+	}
+	if (lower.includes('active campaign') || lower.includes('campaign')) {
+		return 'text-green-500';
+	}
+	if (lower.includes('search')) {
+		return 'text-pink-500';
+	}
+	if (lower.includes('csv') || lower.includes('export') || lower.includes('reporting')) {
+		return 'text-indigo-500';
+	}
+	return 'text-gray-500';
+}
+
 const plans: Plan[] = [
+		{
+			key: 'free',
+			name: 'Free Plan',
+			price: '$0',
+			cadence: 'forever',
+			description: 'Perfect for trying out Penny with basic features.',
+			estimatedAttendance: 'Great for testing',
+			features: [
+				'Access to 10 influencer profiles (one-time)',
+				'1 search total',
+				'No email outreach capabilities'
+			],
+			oneTime: false
+		},
 		{
 			key: 'starter',
 			name: 'Starter Plan',
@@ -36,12 +72,10 @@ const plans: Plan[] = [
 			estimatedAttendance: 'Estimated 10-60 attendees',
 			trialCopy: '3-day free trial • 20 influencers • 10 emails • paywall on CSV export',
 			features: [
-				'Access to 300 fresh influencer profiles each month',
+				'Access to 300 influencer profiles per month',
 				'1 connected outreach inbox',
 				'Send up to 200 outreach emails per month',
-				'1 active campaign at a time (upgrade prompt when exceeded)',
-				'Basic campaign analytics dashboard',
-				'CSV export locked behind upgrade'
+				'1 active campaign at a time'
 			],
 			oneTime: false
 		},
@@ -54,13 +88,11 @@ const plans: Plan[] = [
 			badge: 'Most popular',
 			estimatedAttendance: 'Estimated 50-120 attendees',
 			features: [
-				'Access to 1,000 new influencer profiles each month',
-				'Connect up to 3 outreach inboxes',
+				'Access to 1,000 influencer profiles per month',
+				'3 connected outreach inboxes',
 				'Send up to 700 outreach emails per month',
-				'Multiple active campaigns at once',
-				'Advanced analytics & performance insights',
-				'Full CSV export and reporting',
-				'Priority email support'
+				'3 active campaigns at once',
+				'CSV export capabilities'
 			],
 			oneTime: false
 		},
@@ -73,9 +105,9 @@ const plans: Plan[] = [
 				'Festivals, launches, or venue takeovers that need instant reach and concierge help.',
 			estimatedAttendance: 'Designed for 500-1,500 attendees / interest',
 			features: [
-				'One-time import of 5,000 influencer profiles',
-				'Up to 5 connected inboxes for parallel outreach',
-				'Send up to 5,000 outreach messages for the event',
+				'Access to 5,000 influencer profiles (one-time)',
+				'5 connected outreach inboxes',
+				'Send up to 5,000 outreach messages',
 				'Full CSV export + CRM sync included',
 				'Concierge onboarding and campaign setup support'
 			],
@@ -193,6 +225,39 @@ async function startCheckout(plan: Plan) {
 		return;
 	}
 	if (loadingPlan) return;
+
+	// Free plan doesn't need Stripe checkout
+	if (plan.key === 'free') {
+		loadingPlan = plan.key;
+		checkoutError = null;
+		checkoutSuccess = null;
+		try {
+			const response = await fetch('/api/billing/set-free-plan', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json'
+				}
+			});
+
+			if (response.status === 401) {
+				window.location.href = `/sign-in?redirectTo=${encodeURIComponent('/pricing')}`;
+				return;
+			}
+
+			const payload = await response.json();
+			if (!response.ok) {
+				throw new Error(payload?.error ?? 'Unable to set free plan.');
+			}
+
+			checkoutSuccess = `Plan updated to ${plan.name}.`;
+			await invalidateAll();
+		} catch (error) {
+			checkoutError = error instanceof Error ? error.message : 'Failed to set free plan. Please try again.';
+		} finally {
+			loadingPlan = null;
+		}
+		return;
+	}
 
 	if (!plan.oneTime && hasSubscription() && currentPlanKey() && currentPlanKey() !== plan.key) {
 		const handled = await previewUpgradePlan(plan);
@@ -357,20 +422,8 @@ function closeUpgradeModal() {
 }
 </script>
 
-<div class="min-h-screen bg-gray-50">
-	<header class="bg-white border-b border-gray-200">
-		<div class="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
-			<a href="/" class="flex items-center gap-3 text-gray-700 hover:text-gray-900 transition" aria-label="Back to home">
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-				</svg>
-			</a>
-			<Logo size="md" />
-			<div class="w-5"></div>
-		</div>
-	</header>
-
-	<main class="max-w-7xl mx-auto px-6 py-16 space-y-12">
+<main class="pt-16 bg-gray-50">
+	<div class="max-w-7xl mx-auto px-6 py-16 space-y-12">
 		<section class="text-center space-y-4 max-w-3xl mx-auto">
 			<h1 class="text-4xl sm:text-5xl font-bold">Plans built for every launch</h1>
 			<p class="text-lg text-gray-600">
@@ -381,27 +434,28 @@ function closeUpgradeModal() {
 			</div>
 		</section>
 
-		{#if hasSubscription() && activePlan()}
+		{#if hasSubscription() && activePlan() && currentPlanKey() !== 'free'}
 			<section class="mx-auto max-w-4xl rounded-3xl border border-sky-200 bg-sky-50 px-6 py-5 text-sm text-sky-800">
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div class="space-y-1">
 						<p class="font-semibold text-sky-900">
-							You’re on the {activePlan()?.name} ({statusLabel()}).
+							You're on the {activePlan()?.name} ({statusLabel()}).
 						</p>
 						{#if bannerMessage()}
 							<p>{bannerMessage()}</p>
-	{/if}
-{#if checkoutSuccess}
-	<div class="mx-auto max-w-2xl rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-		{checkoutSuccess}
-	</div>
-{/if}
+						{/if}
 					</div>
 					<div class="flex gap-3">
 						<Button variant="outline" href="/my-account">Manage billing</Button>
 					</div>
 				</div>
 			</section>
+		{/if}
+		
+		{#if checkoutSuccess}
+			<div class="mx-auto max-w-2xl rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+				{checkoutSuccess}
+			</div>
 		{/if}
 
 		{#if checkoutError}
@@ -451,8 +505,8 @@ function closeUpgradeModal() {
 					<ul class="space-y-3 text-sm text-gray-700 flex-1">
 						{#each plan.features as feature}
 							<li class="flex items-start gap-2">
-								<svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.536-10.95a1 1 0 010 1.414l-4.243 4.243a1 1 0 01-1.414 0L6.464 12.95a1 1 0 011.414-1.414l1.414 1.414 3.536-3.536a1 1 0 011.414 0z" clip-rule="evenodd" />
+								<svg class={`mt-0.5 h-4 w-4 shrink-0 ${getFeatureColor(feature)}`} fill="currentColor" viewBox="0 0 20 20">
+									<circle cx="10" cy="10" r="4" />
 								</svg>
 								<span>{feature}</span>
 							</li>
@@ -461,16 +515,18 @@ function closeUpgradeModal() {
 
 			<Button
 				class="w-full justify-center mt-8"
-				variant={plan.oneTime ? 'outline' : isCurrentPlan(plan) ? 'outline' : 'primary'}
+				variant={plan.oneTime ? 'outline' : plan.key === 'free' ? 'outline' : isCurrentPlan(plan) ? 'outline' : 'primary'}
 				disabled={loadingPlan === plan.key || (!plan.oneTime && isCurrentPlan(plan))}
 				onclick={() => startCheckout(plan)}
 			>
 				{#if !plan.oneTime && isCurrentPlan(plan)}
 					Current plan
 				{:else if loadingPlan === plan.key}
-					Redirecting…
+					{plan.key === 'free' ? 'Setting up…' : 'Redirecting…'}
 				{:else if plan.oneTime}
 					Book event blast
+				{:else if plan.key === 'free'}
+					Get started free
 				{:else if plan.key === 'growth' && isStarterPlan()}
 					Upgrade to Growth
 				{:else if plan.key === 'starter' && !hasSubscription()}
@@ -493,8 +549,8 @@ function closeUpgradeModal() {
 				<Button variant="outline" href="/">Preview the product UI</Button>
 			</div>
 		</section>
-	</main>
-</div>
+	</div>
+</main>
 
 {#if upgradeModalOpen && upgradePreview && upgradePlan}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">

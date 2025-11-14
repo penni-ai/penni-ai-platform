@@ -9,8 +9,14 @@ export function getOutreachLimit(planKey: string | null | undefined): number {
 	if (planKey === 'starter') {
 		return 200; // Starter plan: 200 outreach emails/month
 	}
-	// Free plan (or no plan): 10 outreach emails
-	return 10;
+	if (planKey === 'growth') {
+		return 700; // Growth plan: 700 outreach emails/month
+	}
+	if (planKey === 'event') {
+		return 5000; // Event plan: 5000 outreach emails (one-time)
+	}
+	// Free plan (or no plan): 0 emails (no email capabilities)
+	return 0;
 }
 
 /**

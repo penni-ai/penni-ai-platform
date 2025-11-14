@@ -39,6 +39,7 @@
 		search: { count: number; limit: number; remaining: number; resetDate: number };
 		outreach: { count: number; limit: number; remaining: number; resetDate: number };
 	} | null>(null);
+	let currentPlanKey = $state<string | null>(null);
 
 	function toggleMenu(campaignId: string, event: MouseEvent) {
 		event.preventDefault();
@@ -81,21 +82,31 @@
 	onMount(() => {
 		function handleClickOutside(event: MouseEvent) {
 			if (openMenuId !== null) {
+				const target = event.target as HTMLElement | null;
+				if (target?.closest('[data-campaign-menu]') || target?.closest('[data-campaign-menu-trigger]')) {
+					return;
+				}
 				closeMenu();
 			}
 		}
 
 		function handleEscape(event: KeyboardEvent) {
-			if (event.key === 'Escape' && infoCampaignId !== null) {
-				closeInfoModal();
+			if (event.key === 'Escape') {
+				if (infoCampaignId !== null) {
+					closeInfoModal();
+				}
+				if (openMenuId !== null) {
+					closeMenu();
+				}
 			}
 		}
 
 		document.addEventListener('click', handleClickOutside);
 		document.addEventListener('keydown', handleEscape);
 		
-		// Load usage
+		// Load usage and plan
 		void loadUsage();
+		void loadPlan();
 		
 		return () => {
 			document.removeEventListener('click', handleClickOutside);
@@ -114,6 +125,29 @@
 		} catch (error) {
 			console.error('Failed to load usage:', error);
 		}
+	}
+
+	async function loadPlan() {
+		try {
+			const response = await fetch('/api/billing/current-plan');
+			if (response.ok) {
+				const result = await response.json();
+				currentPlanKey = result.data?.planKey ?? result.planKey ?? null;
+			}
+		} catch (error) {
+			console.error('Failed to load plan:', error);
+		}
+	}
+
+	function getPlanName(planKey: string | null): string {
+		if (!planKey) return 'Free Plan';
+		const planNames: Record<string, string> = {
+			free: 'Free Plan',
+			starter: 'Starter Plan',
+			growth: 'Growth Plan',
+			event: 'Event Plan'
+		};
+		return planNames[planKey] ?? 'Free Plan';
 	}
 	
 	function formatResetDate(timestamp: number): string {
@@ -153,8 +187,8 @@
 
 <div class="flex h-full flex-1 flex-col">
 	<div class="px-6 pt-6 pb-5 border-b border-gray-100">
-		<Button
-			onclick={async () => {
+	<Button
+		onclick={async () => {
 				try {
 					const response = await fetch('/api/campaigns', { method: 'POST' });
 					if (!response.ok) {
@@ -193,9 +227,10 @@
 						>
 							{campaign.name}
 						</a>
-						<button
-							type="button"
-							onclick={(e) => toggleMenu(campaign.id, e)}
+		<button
+			type="button"
+			data-campaign-menu-trigger
+			onclick={(e) => toggleMenu(campaign.id, e)}
 							class="ml-2 flex items-center justify-center rounded-lg p-1 text-gray-400 opacity-0 transition hover:bg-gray-200 hover:text-gray-600 group-hover:opacity-100"
 							aria-label="Campaign options"
 						>
@@ -203,29 +238,30 @@
 								<path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
 							</svg>
 						</button>
-						{#if openMenuId === campaign.id}
-							<div
-								class="absolute right-0 top-full z-10 mt-1 w-40 rounded-lg border border-gray-200 bg-white shadow-lg"
-								onclick={(e) => e.stopPropagation()}
-								role="menu"
-								aria-label="Campaign options menu"
-							>
-								<button
-									type="button"
-									onclick={(e) => showCampaignInfo(campaign.id, e)}
-									class="w-full rounded-lg px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-								>
-									Info
-								</button>
-								<button
-									type="button"
-									onclick={(e) => deleteCampaign(campaign.id, e)}
-									class="w-full rounded-lg px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-								>
-									Delete
-								</button>
-							</div>
-						{/if}
+			{#if openMenuId === campaign.id}
+				<div
+					class="absolute right-0 top-full z-10 mt-1 w-40 rounded-lg border border-gray-200 bg-white shadow-lg"
+					role="menu"
+					aria-label="Campaign options menu"
+					tabindex="-1"
+					data-campaign-menu
+				>
+					<button
+						type="button"
+						onclick={(e) => showCampaignInfo(campaign.id, e)}
+						class="w-full rounded-lg px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+					>
+						Info
+					</button>
+					<button
+						type="button"
+						onclick={(e) => deleteCampaign(campaign.id, e)}
+						class="w-full rounded-lg px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+					>
+						Delete
+					</button>
+				</div>
+			{/if}
 					</div>
 				{/each}
 			</div>
@@ -265,12 +301,12 @@
 		{/each}
 	</nav>
 	
-	<!-- Usage Remaining Panel -->
+	<!-- Current Plan Panel -->
 	{#if usage}
 		<div class="mx-6 mb-4 rounded-lg border-2 border-gray-200 bg-white p-3">
 			<div class="space-y-3">
 				<div class="flex items-center justify-between">
-					<p class="text-xs font-semibold text-gray-900">Usage Remaining</p>
+					<p class="text-sm font-semibold text-gray-900">{getPlanName(currentPlanKey)}</p>
 					<Button
 						href="/pricing"
 						variant="primary"
@@ -322,10 +358,16 @@
 </div>
 
 <!-- Campaign Info Modal -->
+
+
 {#if infoCampaignId}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		onclick={closeInfoModal}
+		onclick={(event) => {
+			if (event.target === event.currentTarget) {
+				closeInfoModal();
+			}
+		}}
 		onkeydown={(e) => e.key === 'Escape' && closeInfoModal()}
 		role="dialog"
 		aria-modal="true"
@@ -334,8 +376,8 @@
 	>
 		<div
 			class="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl"
-			onclick={(e) => e.stopPropagation()}
 			role="document"
+			tabindex="-1"
 		>
 			<div class="sticky top-0 border-b border-gray-200 bg-white px-6 py-4">
 				<div class="flex items-center justify-between">

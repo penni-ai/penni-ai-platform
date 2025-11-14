@@ -28,6 +28,82 @@
 		tiktok: ''
 	});
 	
+	interface GmailConnectionView {
+		id: string;
+		email: string;
+		primary: boolean;
+		connectedAt: number | null;
+		lastRefreshedAt: number | null;
+	}
+
+	let gmailConnections = $state<GmailConnectionView[]>([]);
+	let selectedGmailConnectionId = $state<string | null>(null);
+	let isLoadingGmailStatus = $state(false);
+	const gmailConnected = $derived(gmailConnections.length > 0);
+	const selectedGmailConnection = $derived(() => {
+		if (!selectedGmailConnectionId) return null;
+		return gmailConnections.find((c) => c.id === selectedGmailConnectionId) ?? null;
+	});
+	
+	// Check Gmail connection status when panel opens
+	$effect(() => {
+		if (open) {
+			checkGmailStatus();
+		}
+	});
+	
+	// Update selected platform if Gmail is not connected and it's selected
+	$effect(() => {
+		if (!gmailConnected && selectedPlatform === 'gmail' && !isLoadingGmailStatus) {
+			selectedPlatform = 'instagram';
+		}
+		if (gmailConnected && !selectedGmailConnectionId) {
+			const preferred = gmailConnections.find((c) => c.primary) ?? gmailConnections[0];
+			selectedGmailConnectionId = preferred ? preferred.id : null;
+		}
+	});
+	
+	async function checkGmailStatus() {
+		isLoadingGmailStatus = true;
+		try {
+			const response = await fetch('/api/auth/gmail/status');
+			if (response.ok) {
+				const data = await response.json();
+				const connections: GmailConnectionView[] = Array.isArray(data.connections)
+					? data.connections.map((conn: any) => ({
+						id: conn.id,
+						email: conn.email,
+						primary: Boolean(conn.primary),
+						connectedAt: conn.connected_at ?? conn.connectedAt ?? null,
+						lastRefreshedAt: conn.last_refreshed_at ?? conn.lastRefreshedAt ?? null
+					}))
+					: [];
+				gmailConnections = connections;
+				const preferred = connections.find((c) => c.primary) ?? connections[0];
+				if (preferred) {
+					selectedGmailConnectionId = preferred.id;
+				} else {
+					selectedGmailConnectionId = null;
+				}
+			}
+		} catch (error) {
+			console.error('Failed to check Gmail status:', error);
+			gmailConnections = [];
+			selectedGmailConnectionId = null;
+		} finally {
+			isLoadingGmailStatus = false;
+		}
+	}
+	
+	function handleConnectGmail() {
+		// Redirect to Gmail OAuth connect endpoint
+		window.location.href = '/api/auth/gmail/connect';
+	}
+
+	function handleReconnectGmail(connectionId: string) {
+		window.location.href = `/api/auth/gmail/connect?connectionId=${encodeURIComponent(connectionId)}`;
+	}
+	
 	// Filter and sort influencers based on selected platform
 	const sortedInfluencers = $derived.by(() => {
 		const matchingPlatform = influencers.filter(inf => {
@@ -97,8 +173,10 @@
 		<div
 			class="relative h-full w-full bg-white shadow-2xl rounded-2xl overflow-hidden"
 			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.key === 'Escape' && onClose()}
 			role="dialog"
 			aria-modal="true"
+			tabindex="-1"
 			transition:fly={{ y: 20, duration: 300 }}
 		>
 			<!-- Header -->
@@ -175,21 +253,41 @@
 					<div class="border-b border-gray-200 px-6 py-4">
 						<h3 class="text-sm font-semibold text-gray-900 mb-3">Send With</h3>
 						<div class="flex items-center gap-3">
-							<!-- Gmail Button -->
-							<button
-								type="button"
-								onclick={() => selectedPlatform = 'gmail'}
-								class="flex items-center justify-center gap-2 rounded-xl border-2 px-6 py-3 text-sm font-medium transition-colors {
-									selectedPlatform === 'gmail' 
-										? 'border-[#FF6F61] bg-[#FFF1ED] text-gray-900' 
-										: 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'
-								}"
-							>
-								<svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-									<path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
-								</svg>
-								<span>Gmail</span>
-							</button>
+							{#if gmailConnected}
+								<!-- Gmail Button (only shown when connected) -->
+				<button
+					type="button"
+					onclick={() => selectedPlatform = 'gmail'}
+					class="flex items-center justify-center gap-2 rounded-xl border-2 px-6 py-3 text-sm font-medium transition-colors {
+										selectedPlatform === 'gmail' 
+											? 'border-[#FF6F61] bg-[#FFF1ED] text-gray-900' 
+											: 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+									}"
+								>
+									<svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+									</svg>
+					<span>Gmail</span>
+					{#if selectedGmailConnection()}
+						<span class="text-xs text-gray-500">({selectedGmailConnection()?.email})</span>
+					{:else if gmailConnections.length > 1}
+						<span class="text-xs text-gray-500">({gmailConnections.length} accounts)</span>
+					{/if}
+				</button>
+							{:else}
+								<!-- Connect Gmail Button (shown when not connected) -->
+								<button
+									type="button"
+									onclick={handleConnectGmail}
+									disabled={isLoadingGmailStatus}
+									class="flex items-center justify-center gap-2 rounded-xl border-2 border-[#FF6F61] bg-[#FF6F61] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#FF5A4A] hover:border-[#FF5A4A] disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									<svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+									</svg>
+									<span>{isLoadingGmailStatus ? 'Checking...' : 'Connect with Gmail'}</span>
+								</button>
+							{/if}
 							
 							<!-- Instagram Button -->
 							<button
@@ -222,11 +320,60 @@
 								</svg>
 								<span>TikTok</span>
 							</button>
-						</div>
+			</div>
+		</div>
+
+		{#if selectedPlatform === 'gmail'}
+			<div class="border-b border-gray-200 px-6 py-4 bg-gray-50/60">
+				<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<p class="text-sm font-semibold text-gray-900">Send from</p>
+						<p class="text-xs text-gray-500">Choose which Gmail account will send this outreach.</p>
 					</div>
-					
-					<!-- Email Editor -->
-					<div class="flex-1 overflow-hidden">
+					<div class="flex flex-wrap items-center gap-3">
+						{#if gmailConnections.length > 0}
+							<select
+								class="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none"
+								bind:value={selectedGmailConnectionId}
+							>
+								{#each gmailConnections as connection}
+									<option value={connection.id}>
+										{connection.email}
+										{connection.primary ? ' (Primary)' : ''}
+									</option>
+								{/each}
+							</select>
+							<button
+								type="button"
+								class="rounded-xl border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-white"
+								onclick={() => selectedGmailConnectionId && handleReconnectGmail(selectedGmailConnectionId)}
+								disabled={!selectedGmailConnectionId}
+							>
+								Reconnect
+							</button>
+						{:else}
+							<button
+								type="button"
+								class="rounded-xl border-2 border-[#FF6F61] bg-[#FF6F61] px-4 py-2 text-sm font-medium text-white"
+								onclick={handleConnectGmail}
+							>
+								Connect Gmail
+							</button>
+						{/if}
+						<button
+							type="button"
+							class="rounded-xl border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-600 hover:border-[#FF6F61]"
+							onclick={handleConnectGmail}
+						>
+							Connect another Gmail
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+		
+		<!-- Email Editor -->
+		<div class="flex-1 overflow-hidden">
 						<EmailEditor 
 							content={emailContents[selectedPlatform]}
 							onUpdate={(content) => emailContents[selectedPlatform] = content}
@@ -244,4 +391,3 @@
 		</div>
 	</div>
 {/if}
-

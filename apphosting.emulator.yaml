@@ -121,3 +121,11 @@ env:
   - variable: FIRESTORE_EMULATOR_HOST
     value: 127.0.0.1:6201
     availability: [ RUNTIME ]
+
+
+  - variable: GMAIL_OAUTH_REDIRECT_URI
+    value: http://localhost:5002/api/auth/gmail/callback
+    availability:
+      - BUILD
+      - RUNTIME
+

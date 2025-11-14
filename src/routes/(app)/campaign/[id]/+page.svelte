@@ -381,8 +381,19 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 		}
 	}
 	
+	// Simple hash function for creating unique keys
+	function simpleHash(str: string): string {
+		let hash = 0;
+		for (let i = 0; i < str.length; i++) {
+			const char = str.charCodeAt(i);
+			hash = ((hash << 5) - hash) + char;
+			hash = hash & hash; // Convert to 32-bit integer
+		}
+		return Math.abs(hash).toString(36);
+	}
+
 	// Generate a unique ID for a profile based on its properties
-	function getProfileId(profile: { profile_url?: string; display_name?: string; platform?: string; followers?: number; _id?: string }): string {
+	function getProfileId(profile: { profile_url?: string; display_name?: string; platform?: string; followers?: number; _id?: string; email_address?: string; business_email?: string; [key: string]: any }): string {
 		// Use existing _id if available
 		if (profile._id) {
 			return profile._id;
@@ -391,7 +402,18 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 		if (profile.profile_url) {
 			return profile.profile_url;
 		}
-		return `${profile.platform ?? 'unknown'}_${profile.display_name ?? 'unknown'}_${profile.followers ?? 0}`;
+		// Include email in key to ensure uniqueness
+		const email = profile.email_address || profile.business_email || '';
+		const baseKey = `${profile.platform ?? 'unknown'}_${profile.display_name ?? 'unknown'}_${profile.followers ?? 0}_${email}`;
+		
+		// If we still might have duplicates (no email), create a hash of the entire profile
+		// to ensure uniqueness
+		if (!email) {
+			const profileStr = JSON.stringify(profile);
+			return `${baseKey}_${simpleHash(profileStr)}`;
+		}
+		
+		return baseKey;
 	}
 
 	// Get platform logo SVG

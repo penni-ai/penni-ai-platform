@@ -29,6 +29,7 @@
 		"vite": "^7.1.10"
 	},
 	"dependencies": {
+		"@anthropic-ai/vertex-sdk": "^0.14.0",
 		"@mozilla/readability": "^0.4.4",
 		"@tailwindcss/forms": "^0.5.10",
 		"@tailwindcss/typography": "^0.5.19",
@@ -37,6 +38,8 @@
 		"@tiptap/starter-kit": "^3.10.7",
 		"firebase": "^12.5.0",
 		"firebase-admin": "^13.5.0",
+		"google-auth-library": "^10.5.0",
+		"googleapis": "^166.0.0",
 		"html-to-text": "^9.0.5",
 		"jsdom": "^24.0.0",
 		"openai": "^5.23.2",

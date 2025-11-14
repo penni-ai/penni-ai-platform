@@ -110,3 +110,27 @@ env:
     value: gpt-4o-mini
     availability:
       - RUNTIME
+
+
+  - variable: GMAIL_OAUTH_REDIRECT_URI
+    value: https://penni-ai.com/api/auth/gmail/callback
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: GMAIL_TOKEN_ENCRYPTION_KEY
+    secret: GMAIL_TOKEN_ENCRYPTION_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: GMAIL_OAUTH_CLIENT_SECRET
+    secret: GMAIL_OAUTH_CLIENT_SECRET
+    availability:
+      - RUNTIME
+
+  - variable: GMAIL_OAUTH_CLIENT_ID
+    value: 562451436384-jg8cv8j37c3hove8m1nehkvst9uisp8v.apps.googleusercontent.com
+    availability:
+      - BUILD
+      - RUNTIME

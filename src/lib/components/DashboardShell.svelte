@@ -16,7 +16,9 @@ export let activeCampaignId: string | null = null;
 		<aside class={`${sidebarWidthClass} bg-white border-r border-gray-200 flex flex-col`}>
 			<div class="px-2 py-2 border-b border-gray-200 flex items-center justify-between">
 				<slot name="sidebar-header">
-					<Logo size="md" />
+					<a href="/" aria-label="Penny home">
+						<Logo size="md" />
+					</a>
 				</slot>
 				{#if showToggleControls}
 					<button

@@ -1,7 +1,7 @@
 import Stripe from 'stripe';
 import { env } from '$env/dynamic/private';
 
-export type PlanKey = 'starter' | 'growth' | 'event';
+export type PlanKey = 'free' | 'starter' | 'growth' | 'event';
 
 type PlanConfig = {
 	plan: PlanKey;
@@ -13,7 +13,7 @@ type PlanConfig = {
 
 type StripeState = {
 	stripe: Stripe;
-	planCatalog: Record<PlanKey, PlanConfig>;
+	planCatalog: Partial<Record<PlanKey, PlanConfig>>;
 	priceToPlan: Record<string, PlanKey>;
 };
 
@@ -35,7 +35,8 @@ function ensureConfig(): StripeState {
 	};
 
 	const secret = requireEnv('STRIPE_SECRET_KEY');
-	const planCatalog: Record<PlanKey, PlanConfig> = {
+	const planCatalog: Partial<Record<PlanKey, PlanConfig>> = {
+		// Note: 'free' plan doesn't need Stripe configuration
 		starter: {
 			plan: 'starter',
 			productId: requireEnv('STRIPE_PRODUCT_STARTER'),

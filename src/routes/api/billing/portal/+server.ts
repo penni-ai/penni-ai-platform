@@ -24,7 +24,7 @@ export const POST = handleApiRoute(async (event) => {
 		const origin = resolveOrigin(event.url);
 		const session = await stripe.billingPortal.sessions.create({
 			customer: customer.id,
-			return_url: `${origin}/my-account`
+			return_url: `${origin}/my-account/billing`
 		});
 
 		if (!session.url) {

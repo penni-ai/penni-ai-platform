@@ -9,8 +9,14 @@ export function getSearchLimit(planKey: string | null | undefined): number {
 	if (planKey === 'starter') {
 		return 300; // Starter plan: 300 searches/month
 	}
-	// Free plan (or no plan): 30 searches/month
-	return 30;
+	if (planKey === 'growth') {
+		return 1000; // Growth plan: 1000 searches/month
+	}
+	if (planKey === 'event') {
+		return 5000; // Event plan: 5000 searches (one-time)
+	}
+	// Free plan (or no plan): 1 search/month
+	return 1;
 }
 
 /**

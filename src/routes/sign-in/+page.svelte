@@ -2,7 +2,8 @@
 import { goto } from '$app/navigation';
 import Button from '$lib/components/Button.svelte';
 import Logo from '$lib/components/Logo.svelte';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
+import { GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
 import { firebaseAuth } from '$lib/firebase/client';
 import { onMount } from 'svelte';
 
@@ -23,6 +24,29 @@ const TEST_USER = {
 		verifiedNotice = params.get('verified') === '1';
 	});
 
+async function createSession(idToken: string, rememberChoice: boolean) {
+	const response = await fetch('/api/public/session', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ idToken, remember: rememberChoice })
+	});
+
+	if (!response.ok) {
+		const payload = await response.json().catch(() => ({}));
+		if (response.status === 403) {
+			await signOut(firebaseAuth);
+		}
+		const code = typeof payload?.error?.code === 'string' ? payload.error.code : null;
+		const message = typeof payload?.error?.message === 'string' ? payload.error.message : 'Unable to start session.';
+		const combined = code ? `${code}: ${message}` : message;
+		throw new Error(combined);
+	}
+
+	await goto('/dashboard', { invalidateAll: true });
+}
+
 async function authenticate() {
 	if (loading) return;
 	errorMessage = null;
@@ -32,28 +56,7 @@ async function authenticate() {
 		const credential = await signInWithEmailAndPassword(firebaseAuth, email, password);
 		await credential.user.reload();
 		const idToken = await credential.user.getIdToken(true);
-
-		const response = await fetch('/api/public/session', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ idToken, remember })
-		});
-
-		if (!response.ok) {
-			const payload = await response.json().catch(() => ({}));
-			if (response.status === 403) {
-				await signOut(firebaseAuth);
-			}
-			const code = typeof payload?.error?.code === 'string' ? payload.error.code : null;
-			const message = typeof payload?.error?.message === 'string' ? payload.error.message : 'Unable to start session.';
-			const combined = code ? `${code}: ${message}` : message;
-			throw new Error(combined);
-		}
-
-		// Redirect to dashboard
-		await goto('/dashboard', { invalidateAll: true });
+		await createSession(idToken, remember);
 	} catch (error) {
 		console.error('[auth] sign-in failed', error);
 		await signOut(firebaseAuth);
@@ -61,6 +64,41 @@ async function authenticate() {
 			errorMessage = error.message;
 		} else {
 			errorMessage = 'Unexpected error during sign-in.';
+		}
+	} finally {
+		loading = false;
+	}
+}
+
+function buildGoogleProvider() {
+	const provider = new GoogleAuthProvider();
+	provider.setCustomParameters({ prompt: 'select_account' });
+	return provider;
+}
+
+async function signInWithGoogle() {
+	if (loading) return;
+	errorMessage = null;
+	loading = true;
+
+	try {
+		const provider = buildGoogleProvider();
+		const result = await signInWithPopup(firebaseAuth, provider);
+		const idToken = await result.user.getIdToken(true);
+		await createSession(idToken, remember);
+	} catch (error) {
+		console.error('[auth] google sign-in failed', error);
+		await signOut(firebaseAuth);
+		if (error instanceof FirebaseError) {
+			if (error.code === 'auth/popup-closed-by-user') {
+				errorMessage = 'Google sign-in was closed before completion. Please try again.';
+			} else {
+				errorMessage = error.message;
+			}
+		} else if (error instanceof Error) {
+			errorMessage = error.message;
+		} else {
+			errorMessage = 'Unexpected error during Google sign-in.';
 		}
 	} finally {
 		loading = false;
@@ -150,17 +188,17 @@ async function loginAsTestUser() {
 		>
 			{loading ? 'Signing in…' : 'Sign in'}
 		</Button>
-		<Button
-			type="button"
-			variant="outline"
-			size="lg"
-			class="w-full justify-center rounded-2xl border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-			onclick={loginAsTestUser}
-			disabled={loading}
-		>
-			Log in as test user
-		</Button>
-		</form>
+	<Button
+		type="button"
+		variant="outline"
+		size="lg"
+		class="w-full justify-center rounded-2xl border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+		onclick={loginAsTestUser}
+		disabled={loading}
+	>
+		Log in as test user
+	</Button>
+	</form>
 
 			<div class="relative">
 				<div class="absolute inset-0 flex items-center" aria-hidden="true">
@@ -171,17 +209,23 @@ async function loginAsTestUser() {
 				</div>
 			</div>
 
-			<Button variant="outline" href="javascript:void(0)" class="w-full justify-center rounded-2xl border-gray-200 bg-white text-gray-700 hover:bg-gray-50">
-				<span class="mr-2 inline-flex h-4 w-4 items-center justify-center">
-					<svg viewBox="0 0 24 24" class="h-4 w-4">
-						<path fill="#4285F4" d="M21.805 10.023h-9.18v3.955h5.3c-.229 1.248-.917 2.304-1.955 3.005l3.155 2.447c1.843-1.699 2.881-4.201 2.881-7.187 0-.692-.069-1.365-.201-2.02z" />
+	<Button
+		variant="outline"
+		type="button"
+		class="w-full justify-center rounded-2xl border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+		onclick={signInWithGoogle}
+		disabled={loading}
+	>
+		<span class="mr-2 inline-flex h-4 w-4 items-center justify-center">
+			<svg viewBox="0 0 24 24" class="h-4 w-4">
+				<path fill="#4285F4" d="M21.805 10.023h-9.18v3.955h5.3c-.229 1.248-.917 2.304-1.955 3.005l3.155 2.447c1.843-1.699 2.881-4.201 2.881-7.187 0-.692-.069-1.365-.201-2.02z" />
 						<path fill="#34A853" d="M12.625 21.5c2.479 0 4.56-.82 6.08-2.223l-3.156-2.447c-.874.586-1.989.93-3.21.93-2.464 0-4.555-1.664-5.298-3.907l-3.248 2.522C5.534 19.632 8.825 21.5 12.625 21.5z" />
 						<path fill="#FBBC05" d="M7.327 13.853a5.983 5.983 0 0 1-.314-1.853c0-.646.114-1.27.314-1.853l-3.25-2.523A10.248 10.248 0 0 0 3.5 12c0 1.667.402 3.246 1.13 4.576l3.248-2.723z" />
 						<path fill="#EA4335" d="M12.625 6.25a5.56 5.56 0 0 1 3.922 1.495l2.94-2.94C17.192 3.273 14.9 2.25 12.625 2.25 8.825 2.25 5.534 4.118 3.93 7.147l3.248 2.523C7.07 7.427 9.161 6.25 12.625 6.25z" />
 					</svg>
 				</span>
-				Sign in with Google
-			</Button>
+		{loading ? 'Opening Google…' : 'Sign in with Google'}
+	</Button>
 
 			<p class="text-center text-sm text-gray-600">
 				Don't have an account?

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
 import { getSearchUsage, incrementSearchUsage } from '$lib/server/search-usage';
-import { functionsConfig, mintIdToken } from '$lib/server/functions-client';
+import { functionsConfig, getServiceAccountAccessToken } from '$lib/server/functions-client';
 import { campaignDocRef, serverTimestamp, firestore } from '$lib/server/firestore';
 
 const PIPELINE_BIND_RETRY_DELAYS_MS = [0, 100, 500, 1000];
@@ -103,6 +103,8 @@ export const POST = handleApiRoute(async (event) => {
 	const pipelineLogger = logger as ApiLogger | undefined;
 	
 	try {
+		logger?.info('Search request received', { userId: user.uid, request_id: requestId });
+		
 		const body = await event.request.json();
 		const { business_description, top_n, min_followers, max_followers, campaign_id } = body;
 		
@@ -180,7 +182,30 @@ export const POST = handleApiRoute(async (event) => {
 		}
 		
 		// Check user's search usage limit
-		const usage = await getSearchUsage(user.uid);
+		logger?.info('Checking search usage', { userId: user.uid, request_id: requestId });
+		let usage;
+		try {
+			usage = await getSearchUsage(user.uid);
+			logger?.info('Search usage retrieved', { 
+				userId: user.uid, 
+				usage: { count: usage.count, limit: usage.limit, remaining: usage.remaining },
+				request_id: requestId 
+			});
+		} catch (error) {
+			logger?.error('Failed to get search usage', { 
+				userId: user.uid, 
+				error: error instanceof Error ? error.message : String(error),
+				request_id: requestId 
+			});
+			throw new ApiProblem({
+				status: 500,
+				code: 'USAGE_CHECK_FAILED',
+				message: 'Failed to check search usage limit.',
+				cause: error,
+				details: { request_id: requestId }
+			});
+		}
+		
 		if (usage.remaining < topN) {
 			throw new ApiProblem({
 				status: 403,
@@ -196,13 +221,14 @@ export const POST = handleApiRoute(async (event) => {
 		}
 		
 		// Call the cloud function
+		// Note: Using service account authentication (no user ID token needed)
+		// User is already verified in hooks.server.ts via session cookie
 		const functionUrl = `${functionsConfig.FUNCTION_BASE}/${INFLUENCER_ANALYSIS_FUNCTION_NAME}`;
-		const idToken = await mintIdToken(user.uid);
 		
 		const requestBody: Record<string, unknown> = {
 			business_description: business_description.trim(),
 			top_n: topN,
-			uid: user.uid,
+			uid: user.uid, // User ID already verified in hooks.server.ts
 			request_id: requestId
 		};
 		
@@ -218,6 +244,7 @@ export const POST = handleApiRoute(async (event) => {
 		
 		logger?.info('Calling influencer analysis function', {
 			userId: user.uid,
+			functionUrl,
 			topN,
 			minFollowers,
 			maxFollowers,
@@ -225,14 +252,40 @@ export const POST = handleApiRoute(async (event) => {
 			request_id: requestId
 		});
 		
-		const functionResponse = await fetch(functionUrl, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${idToken}`
-			},
-			body: JSON.stringify(requestBody)
-		});
+		let functionResponse: Response;
+		try {
+			// Get per-audience ID token for Cloud Run authentication (required for private invokers)
+			const idToken = await getServiceAccountAccessToken(functionUrl);
+			
+			// Call Cloud Function with service account token
+			// User ID is passed in request body (already verified by App Hosting)
+			functionResponse = await fetch(functionUrl, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${idToken}`
+				},
+				body: JSON.stringify(requestBody)
+			});
+		} catch (error) {
+			logger?.error('Failed to call Cloud Function', {
+				userId: user.uid,
+				functionUrl,
+				error: error instanceof Error ? error.message : String(error),
+				errorName: error instanceof Error ? error.name : undefined,
+				request_id: requestId
+			});
+			throw new ApiProblem({
+				status: 500,
+				code: 'FUNCTION_CALL_FAILED',
+				message: 'Failed to reach Cloud Function. The service may be temporarily unavailable.',
+				cause: error,
+				details: { 
+					functionUrl,
+					request_id: requestId 
+				}
+			});
+		}
 
 		const rawFunctionResponse = await functionResponse.text();
 		let functionResult: Record<string, unknown> = {};
@@ -285,39 +338,51 @@ export const POST = handleApiRoute(async (event) => {
 			});
 		}
 		
-		// Save pipeline ID to campaign if campaign_id is provided
+		// Save pipeline ID to campaign if campaign_id is provided (non-critical - don't fail if this fails)
 		if (campaignId && pipelineId) {
-			const result = await bindCampaignPipelineId({
-				uid: user.uid,
-				campaignId,
-				pipelineId,
-				logger: pipelineLogger,
-				requestId: functionRequestId
-			});
-			if (result.status === 'missing_campaign') {
-				logger?.warn('Campaign document missing while binding pipeline ID', {
-					userId: user.uid,
+			try {
+				const result = await bindCampaignPipelineId({
+					uid: user.uid,
 					campaignId,
 					pipelineId,
-					request_id: functionRequestId
+					logger: pipelineLogger,
+					requestId: functionRequestId
 				});
-			} else if (result.status === 'failed') {
-				logger?.error('Failed to bind pipeline ID to campaign after retries', {
+				if (result.status === 'missing_campaign') {
+					logger?.warn('Campaign document missing while binding pipeline ID', {
+						userId: user.uid,
+						campaignId,
+						pipelineId,
+						request_id: functionRequestId
+					});
+				} else if (result.status === 'failed') {
+					logger?.error('Failed to bind pipeline ID to campaign after retries', {
+						userId: user.uid,
+						campaignId,
+						pipelineId,
+						attempts: result.attempts,
+						campaign_binding_ms: result.campaign_binding_ms,
+						error: result.error,
+						request_id: functionRequestId
+					});
+					// Don't throw - this is non-critical
+				} else if (result.status === 'noop_same' || result.status === 'noop_other') {
+					logger?.info('Campaign pipeline binding already satisfied (API fallback)', {
+						userId: user.uid,
+						campaignId,
+						pipelineId,
+						status: result.status,
+						existingPipelineId: result.existingPipelineId,
+						request_id: functionRequestId
+					});
+				}
+			} catch (error) {
+				// Log but don't fail the request - campaign binding is non-critical
+				logger?.warn('Campaign pipeline binding failed (non-critical)', {
 					userId: user.uid,
 					campaignId,
 					pipelineId,
-					attempts: result.attempts,
-					campaign_binding_ms: result.campaign_binding_ms,
-					error: result.error,
-					request_id: functionRequestId
-				});
-			} else if (result.status === 'noop_same' || result.status === 'noop_other') {
-				logger?.info('Campaign pipeline binding already satisfied (API fallback)', {
-					userId: user.uid,
-					campaignId,
-					pipelineId,
-					status: result.status,
-					existingPipelineId: result.existingPipelineId,
+					error: error instanceof Error ? error.message : String(error),
 					request_id: functionRequestId
 				});
 			}
@@ -335,8 +400,19 @@ export const POST = handleApiRoute(async (event) => {
 			});
 		}
 		
-		// Increment search usage (only count the top_n requested)
-		await incrementSearchUsage(user.uid, topN);
+		// Increment search usage (non-critical - log but don't fail if this fails)
+		try {
+			await incrementSearchUsage(user.uid, topN);
+			logger?.info('Search usage incremented', { userId: user.uid, topN, request_id: functionRequestId });
+		} catch (error) {
+			// Log but don't fail - usage tracking is non-critical for the request
+			logger?.warn('Failed to increment search usage (non-critical)', {
+				userId: user.uid,
+				topN,
+				error: error instanceof Error ? error.message : String(error),
+				request_id: functionRequestId
+			});
+		}
 		
 		logger?.info('Search completed successfully', {
 			userId: user.uid,
@@ -381,15 +457,31 @@ export const POST = handleApiRoute(async (event) => {
 		});
 	} catch (error) {
 		if (error instanceof ApiProblem) {
+			// Re-throw ApiProblem as-is (already properly formatted)
 			throw error;
 		}
-		logger?.error('Unexpected error in search endpoint', { error, request_id: functionRequestId });
+		
+		// Log unexpected errors with full context
+		logger?.error('Unexpected error in search endpoint', { 
+			error: error instanceof Error ? {
+				name: error.name,
+				message: error.message,
+				stack: error.stack
+			} : String(error),
+			request_id: functionRequestId,
+			userId: user?.uid
+		});
+		
+		// Return a user-friendly error with request ID for support
 		throw new ApiProblem({
 			status: 500,
 			code: 'INTERNAL_ERROR',
 			message: 'An unexpected error occurred while processing your search request.',
 			cause: error,
-			details: { request_id: functionRequestId }
+			details: { 
+				request_id: functionRequestId,
+				error_type: error instanceof Error ? error.name : typeof error
+			}
 		});
 	}
 }, { component: 'search/influencers' });

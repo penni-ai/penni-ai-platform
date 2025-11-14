@@ -1,4 +1,4 @@
-import { json, type RequestEvent } from '@sveltejs/kit';
+import { json, type HttpError, type Redirect, type RequestEvent } from '@sveltejs/kit';
 import { env as publicEnv } from '$env/dynamic/public';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { createLogger, type Logger } from '$lib/server/logger';
@@ -156,6 +156,26 @@ const ensureLogger = (event: RequestEvent): Logger => {
 	return fallback;
 };
 
+function isRedirectError(error: unknown): error is Redirect {
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		'location' in error &&
+		typeof (error as { location?: unknown }).location === 'string' &&
+		'status' in error
+	);
+}
+
+function isHttpError(error: unknown): error is HttpError {
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		'status' in error &&
+		typeof (error as { status?: unknown }).status === 'number' &&
+		'body' in error
+	);
+}
+
 export function handleApiRoute(
 	handler: (event: RequestEvent) => Promise<Response> | Response,
 	options?: { component?: string }
@@ -171,6 +191,9 @@ export function handleApiRoute(
 		try {
 			return await handler(event);
 		} catch (error) {
+			if (isRedirectError(error) || isHttpError(error)) {
+				throw error;
+			}
 			if (error instanceof ApiProblem) {
 				return apiProblemResponse(error, logger);
 			}

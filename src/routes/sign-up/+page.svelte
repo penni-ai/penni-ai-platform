@@ -1,9 +1,10 @@
 <script lang="ts">
 	import Button from '$lib/components/Button.svelte';
 	import Logo from '$lib/components/Logo.svelte';
-	import { createUserWithEmailAndPassword, sendEmailVerification, signOut } from 'firebase/auth';
+	import { createUserWithEmailAndPassword, sendEmailVerification, signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 	import { firebaseAuth } from '$lib/firebase/client';
 	import { goto } from '$app/navigation';
+	import { FirebaseError } from 'firebase/app';
 
 let email = $state('');
 let password = $state('');
@@ -72,6 +73,64 @@ function confirmInputType() {
 				errorMessage = error.message;
 			} else {
 				errorMessage = 'Unexpected error while creating your account.';
+			}
+		} finally {
+			loading = false;
+		}
+	}
+
+	function buildGoogleProvider() {
+		const provider = new GoogleAuthProvider();
+		provider.setCustomParameters({ prompt: 'select_account' });
+		return provider;
+	}
+
+	async function createSession(idToken: string, rememberChoice: boolean) {
+		const response = await fetch('/api/public/session', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ idToken, remember: rememberChoice })
+		});
+
+		if (!response.ok) {
+			const payload = await response.json().catch(() => ({}));
+			if (response.status === 403) {
+				await signOut(firebaseAuth);
+			}
+			const code = typeof payload?.error?.code === 'string' ? payload.error.code : null;
+			const message = typeof payload?.error?.message === 'string' ? payload.error.message : 'Unable to start session.';
+			const combined = code ? `${code}: ${message}` : message;
+			throw new Error(combined);
+		}
+
+		await goto('/dashboard', { invalidateAll: true });
+	}
+
+	async function signUpWithGoogle() {
+		if (loading) return;
+		errorMessage = null;
+		loading = true;
+
+		try {
+			const provider = buildGoogleProvider();
+			const result = await signInWithPopup(firebaseAuth, provider);
+			const idToken = await result.user.getIdToken(true);
+			await createSession(idToken, true);
+		} catch (error) {
+			console.error('[auth] google sign-up failed', error);
+			await signOut(firebaseAuth);
+			if (error instanceof FirebaseError) {
+				if (error.code === 'auth/popup-closed-by-user') {
+					errorMessage = 'Google sign-up was closed before completion. Please try again.';
+				} else {
+					errorMessage = error.message;
+				}
+			} else if (error instanceof Error) {
+				errorMessage = error.message;
+			} else {
+				errorMessage = 'Unexpected error during Google sign-up.';
 			}
 		} finally {
 			loading = false;
@@ -205,8 +264,10 @@ function confirmInputType() {
 
 			<Button
 				variant="outline"
-				href="javascript:void(0)"
+				type="button"
 				class="w-full justify-center rounded-2xl border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+				onclick={signUpWithGoogle}
+				disabled={loading}
 			>
 				<span class="mr-2 inline-flex h-4 w-4 items-center justify-center">
 					<svg viewBox="0 0 24 24" class="h-4 w-4">
@@ -216,7 +277,7 @@ function confirmInputType() {
 						<path fill="#EA4335" d="M12.625 6.25a5.56 5.56 0 0 1 3.922 1.495l2.94-2.94C17.192 3.273 14.9 2.25 12.625 2.25 8.825 2.25 5.534 4.118 3.93 7.147l3.248 2.523C7.07 7.427 9.161 6.25 12.625 6.25z" />
 					</svg>
 				</span>
-				Continue with Google
+				{loading ? 'Opening Google…' : 'Continue with Google'}
 			</Button>
 
 			<p class="text-center text-sm text-gray-600">

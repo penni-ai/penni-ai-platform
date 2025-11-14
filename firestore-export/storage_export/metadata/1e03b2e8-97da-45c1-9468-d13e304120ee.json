@@ -1,0 +1,21 @@
+{
+  "name": "pipeline_jobs/job_1763082687290_8z5bglw/profiles.json",
+  "bucket": "penni-ai-platform.firebasestorage.app",
+  "metageneration": 2,
+  "generation": 1763082900175,
+  "contentType": "application/json",
+  "storageClass": "STANDARD",
+  "cacheControl": "public, max-age=3600",
+  "downloadTokens": [],
+  "etag": "VKI/aH+clGfCwbYazKYAsNgXETs",
+  "customMetadata": {
+    "jobId": "job_1763082687290_8z5bglw",
+    "profileCount": "30",
+    "updatedAt": "2025-11-14T01:15:00.165Z"
+  },
+  "timeCreated": "2025-11-14T01:15:00.176Z",
+  "updated": "2025-11-14T01:15:00.183Z",
+  "size": 446746,
+  "md5Hash": "t49k1FtnLgcx13vthwHcLA==",
+  "crc32c": "782628632"
+}

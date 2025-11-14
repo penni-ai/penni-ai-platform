@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { GoogleAuth, type IdTokenClient } from 'google-auth-library';
 
 import { adminAuth } from '$lib/firebase/admin';
 import { ApiProblem } from '$lib/server/api';
@@ -120,6 +121,50 @@ export const functionsConfig = {
 	FUNCTION_BASE,
 	AUTH_EMULATOR_ORIGIN
 };
+
+/**
+ * Gets a service account access token for authenticating with Cloud Run services.
+ * In App Hosting, this uses the default service account credentials.
+ * In local development, this uses Application Default Credentials (ADC).
+ */
+let cachedAuth: GoogleAuth | null = null;
+const cachedIdTokenClients = new Map<string, IdTokenClient>();
+
+export async function getServiceAccountAccessToken(audience: string): Promise<string> {
+    // In emulator, no token needed
+    if (FUNCTIONS_EMULATOR_ORIGIN) {
+        return 'emulator-token';
+    }
+
+    try {
+        if (!cachedAuth) {
+            cachedAuth = new GoogleAuth();
+        }
+
+        let client = cachedIdTokenClients.get(audience);
+        if (!client) {
+            client = await cachedAuth.getIdTokenClient(audience);
+            cachedIdTokenClients.set(audience, client);
+        }
+
+        const headers = await client.getRequestHeaders(audience);
+        const authorization = headers.get('Authorization') ?? headers.get('authorization');
+        if (!authorization?.startsWith('Bearer ')) {
+            throw new Error('Failed to obtain ID token for Cloud Function call');
+        }
+        return authorization.slice('Bearer '.length);
+    } catch (error) {
+        throw new ApiProblem({
+            status: 500,
+            code: 'SERVICE_ACCOUNT_AUTH_FAILED',
+            message: 'Failed to authenticate with service account for Cloud Function call.',
+            cause: error,
+            details: {
+                error: error instanceof Error ? error.message : String(error)
+            }
+        });
+    }
+}
 
 function resolveAuthEmulatorOrigin(): string | null {
 	const fromProcess = process.env.FIREBASE_AUTH_EMULATOR_HOST;

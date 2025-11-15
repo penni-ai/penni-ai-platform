@@ -1,0 +1,20 @@
+# Inherit defaults from .gitignore if present
+#.gitignore
+
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+.env.*
+.DS_Store
+.git/
+.idea/
+.vscode/
+checkpoints.db
+README.md
+.tests/
+tests/
+.dockerignore

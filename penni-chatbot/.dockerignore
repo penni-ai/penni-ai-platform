@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.git/
+.env
+checkpoints.db
+.idea/
+*.log
+*.coverage
+coverage/
+tests/
+README.md

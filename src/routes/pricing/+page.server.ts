@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { userDocRef } from '$lib/server/firestore';
-import type { UserStripeState } from '$lib/server/firestore';
+import { userDocRef } from '$lib/server/core';
+import type { UserStripeState } from '$lib/server/core';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const uid = locals.user?.uid ?? null;

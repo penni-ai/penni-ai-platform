@@ -1,6 +1,6 @@
 import type { LayoutServerLoad } from './$types';
-import { userDocRef } from '$lib/server/firestore';
-import type { UserStripeState, SubscriptionSnapshot } from '$lib/server/firestore';
+import { userDocRef } from '$lib/server/core';
+import type { UserStripeState, SubscriptionSnapshot } from '$lib/server/core';
 
 function formatPeriodEnd(periodEnd: number | null) {
 	if (!periodEnd) return null;

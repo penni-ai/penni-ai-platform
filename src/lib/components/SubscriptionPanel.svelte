@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import Button from './Button.svelte';
+import Button from './Button.svelte';
+import { fly } from 'svelte/transition';
 	import { invalidateAll } from '$app/navigation';
+	import { startCheckout } from '$lib/billing/checkout';
 
 	type PlanKey = 'free' | 'starter' | 'growth' | 'event';
 
@@ -50,8 +52,8 @@
 			description: 'Perfect for trying out Penny with basic features.',
 			estimatedAttendance: 'Great for testing',
 			features: [
-				'Access to 10 influencer profiles (one-time)',
-				'1 search total',
+				'Access to 30 influencer profiles (one-time)',
+				'Up to 30 influencer searches per month',
 				'No email outreach capabilities'
 			],
 			oneTime: false
@@ -118,7 +120,7 @@
 	let loadingPlan = $state<PlanKey | null>(null);
 	let checkoutError = $state<string | null>(null);
 
-	async function startCheckout(plan: Plan) {
+	async function handleCheckout(plan: Plan) {
 		if (loadingPlan) return;
 		loadingPlan = plan.key;
 		checkoutError = null;
@@ -147,35 +149,20 @@
 				return;
 			}
 
-			const response = await fetch('/api/billing/checkout', {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json'
+			const result = await startCheckout({
+				plan: plan.key,
+				redirectTo: '/dashboard',
+				onUpdated: async () => {
+					await invalidateAll();
 				},
-				body: JSON.stringify({ plan: plan.key })
+				onError: (error) => {
+					checkoutError = error;
+			}
 			});
 
-			if (response.status === 401) {
-				window.location.href = `/sign-in?redirectTo=${encodeURIComponent('/dashboard')}`;
-				return;
+			if (result.type === 'redirect') {
+				window.location.href = result.url;
 			}
-
-			const payload = await response.json();
-			if (!response.ok) {
-				throw new Error(payload?.error ?? 'Unable to start checkout.');
-			}
-
-			if (payload?.status === 'updated') {
-				// Plan was updated without checkout
-				await invalidateAll();
-				return;
-			}
-
-			if (!payload?.url) {
-				throw new Error('Checkout URL missing from response.');
-			}
-
-			window.location.href = payload.url;
 		} catch (error) {
 			checkoutError = error instanceof Error ? error.message : 'Checkout failed. Please try again.';
 		} finally {
@@ -272,7 +259,7 @@
 								class="w-full justify-center"
 								variant={plan.oneTime ? 'outline' : plan.key === 'free' ? 'outline' : 'primary'}
 								disabled={loadingPlan === plan.key}
-								onclick={() => startCheckout(plan)}
+								onclick={() => handleCheckout(plan)}
 							>
 								{#if loadingPlan === plan.key}
 									{plan.key === 'free' ? 'Setting up…' : 'Redirecting…'}
@@ -300,4 +287,3 @@
 		</div>
 	</div>
 {/if}
-

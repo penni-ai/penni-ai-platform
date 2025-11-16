@@ -1,6 +1,6 @@
-import { apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
-import { userDocRef } from '$lib/server/firestore';
-import { buildEntitlements } from '$lib/server/billing-utils';
+import { apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
+import { userDocRef } from '$lib/server/core';
+import { getRefreshDate, updateUserFeatureCapabilities } from '$lib/server/billing';
 
 export const POST = handleApiRoute(async (event) => {
 	const user = requireUser(event);
@@ -13,11 +13,8 @@ export const POST = handleApiRoute(async (event) => {
 		const userSnap = await userRef.get();
 		const userData = userSnap.data();
 
-		// Set free plan
-		const entitlements = buildEntitlements('free');
-		if (!entitlements) {
-			throw new Error('Failed to build entitlements for free plan');
-		}
+		// Update feature capabilities (single source of truth for features/limits)
+		await updateUserFeatureCapabilities(user.uid, 'free');
 
 		await userRef.set(
 			{
@@ -25,7 +22,7 @@ export const POST = handleApiRoute(async (event) => {
 				currentPlan: {
 					planKey: 'free',
 					status: 'active',
-					...entitlements
+					refreshDate: getRefreshDate()
 				},
 				updatedAt: Date.now()
 			},

@@ -11,8 +11,11 @@ import { randomUUID } from 'crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import { GoogleAuth, type IdTokenClient } from 'google-auth-library';
 import OpenAI from 'openai';
+import weaviate, { type WeaviateClient } from 'weaviate-client';
+import type { MultiTargetVectorJoin } from 'weaviate-client';
 import type { BrightDataUnifiedProfile } from '../types/brightdata.js';
 import { normalizeProfiles } from '../utils/profile-normalizer.js';
+import { performParallelHybridSearches } from '../utils/weaviate-search.js';
 import {
   createPipelineJob,
   updatePipelineJobStatus,
@@ -31,6 +34,7 @@ import {
 } from '../utils/firestore-tracker.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAuthInstance, getFirestoreInstance } from '../utils/firebase-admin.js';
+import type { WeaviateHybridSearchResponse } from '../types/weaviate-search.js';
 
 const db = getFirestoreInstance();
 const auth = getAuthInstance();
@@ -239,18 +243,139 @@ function getOpenAIApiKey(): string {
  * Get OpenAI model (default: gpt-5-nano)
  */
 function getOpenAIModel(): string {
-  return process.env.OPENAI_MODEL || 'gpt-5-nano';
+  const model = process.env.OPENAI_MODEL || 'gpt-5-nano';
+  console.log(`[OpenAI] Using model: ${model}`);
+  return model;
+}
+
+function getWeaviateURL(): string {
+  const url = process.env.WEAVIATE_URL;
+  if (!url) {
+    throw new Error('WEAVIATE_URL environment variable is required');
+  }
+  return url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
+}
+
+function getWeaviateApiKey(): string {
+  const apiKey = process.env.WEAVIATE_API_KEY;
+  if (!apiKey) {
+    throw new Error('WEAVIATE_API_KEY environment variable is required');
+  }
+  return apiKey;
+}
+
+function getWeaviateCollectionName(): string {
+  return process.env.WEAVIATE_COLLECTION_NAME || 'influencer_profiles';
+}
+
+function getDeepInfraApiKey(): string {
+  const apiKey = process.env.DEEPINFRA_API_KEY;
+  if (!apiKey) {
+    throw new Error('DEEPINFRA_API_KEY environment variable is required');
+  }
+  return apiKey;
+}
+
+function getDeepInfraModel(): string {
+  return process.env.DEEPINFRA_EMBEDDING_MODEL || 'Qwen/Qwen3-Embedding-8B';
+}
+
+let cachedWeaviateClient: WeaviateClient | null = null;
+let clientInitPromise: Promise<WeaviateClient> | null = null; // Mutex for client initialization
+
+const DEFAULT_WEAVIATE_TIMEOUT_MS = 120_000;
+const MAX_CONCURRENT_SEARCHES = Number(process.env.MAX_CONCURRENT_WEAVIATE_SEARCHES || 4); // Limit concurrent searches (default: 4)
+
+async function getWeaviateClientInstance(): Promise<WeaviateClient> {
+  // If client exists and is ready, return it immediately
+  if (cachedWeaviateClient) {
+    const ready = await cachedWeaviateClient.isReady();
+    if (ready) {
+      return cachedWeaviateClient;
+    }
+    // Client not ready, reset it
+    cachedWeaviateClient = null;
+    clientInitPromise = null;
+  }
+
+  // If initialization is already in progress, wait for it
+  if (clientInitPromise) {
+    return clientInitPromise;
+  }
+
+  // Start new initialization (with mutex protection)
+  clientInitPromise = (async () => {
+    try {
+      const timeoutMs = Number(process.env.WEAVIATE_REQUEST_TIMEOUT_MS || DEFAULT_WEAVIATE_TIMEOUT_MS);
+
+      const client = await weaviate.connectToWeaviateCloud(getWeaviateURL(), {
+        authCredentials: new weaviate.ApiKey(getWeaviateApiKey()),
+        timeout: {
+          init: timeoutMs,
+          insert: timeoutMs,
+          query: timeoutMs,
+        },
+      });
+
+      const ready = await client.isReady();
+      if (!ready) {
+        throw new Error('Failed to establish connection to Weaviate');
+      }
+
+      cachedWeaviateClient = client;
+      return client;
+    } finally {
+      // Clear the promise once initialization completes (success or failure)
+      clientInitPromise = null;
+    }
+  })();
+
+  return clientInitPromise;
 }
 
 /**
- * Get Weaviate hybrid search base URL
+ * Generate embedding for a query using DeepInfra HTTP API
  */
-function getWeaviateHybridSearchUrl(): string {
-  const baseUrl = process.env.FUNCTIONS_EMULATOR
-    ? 'http://127.0.0.1:6200/penni-ai-platform/us-central1'
-    : process.env.FUNCTIONS_URL || 'https://us-central1-penni-ai-platform.cloudfunctions.net';
-  return `${baseUrl}/weaviateHybridSearch`;
+async function generateQueryEmbedding(query: string): Promise<number[]> {
+  const apiKey = getDeepInfraApiKey();
+  const model = getDeepInfraModel();
+  
+  const response = await fetch('https://api.deepinfra.com/v1/openai/embeddings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      input: query,
+      model: model,
+      encoding_format: 'float',
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`DeepInfra API error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+  
+  const data = await response.json();
+  
+  if (!data.data || !Array.isArray(data.data) || !data.data[0] || !data.data[0].embedding) {
+    throw new Error('Failed to generate embedding from DeepInfra: invalid response format');
+  }
+  
+  return data.data[0].embedding;
 }
+
+const HYBRID_TARGET_VECTOR: MultiTargetVectorJoin<any> = {
+  combination: 'relative-score',
+  targetVectors: ['profile', 'hashtag', 'post'] as any,
+  weights: {
+    profile: 2.5,
+    hashtag: 1.5,
+    post: 1.0,
+  } as any,
+};
 
 /**
  * Get query generation base URL
@@ -296,55 +421,78 @@ async function performHybridSearch(
   minFollowers?: number | null,
   maxFollowers?: number | null,
   platform?: string | null
-): Promise<any> {
-  const url = getWeaviateHybridSearchUrl();
-  const params = new URLSearchParams({
-    query: query,
-    alpha: alpha.toString(),
-    limit: limit.toString(),
-  });
-  
+): Promise<WeaviateHybridSearchResponse> {
+  const client = await getWeaviateClientInstance();
+  const collectionName = getWeaviateCollectionName();
+  const collection = client.collections.get(collectionName);
+
+  const embedding = await generateQueryEmbedding(query);
+
+  const conditions: any[] = [];
   if (minFollowers !== undefined && minFollowers !== null) {
-    params.append('min_followers', minFollowers.toString());
+    conditions.push({
+      path: ['followers'],
+      operator: 'GreaterThanEqual',
+      valueNumber: minFollowers,
+    });
   }
   if (maxFollowers !== undefined && maxFollowers !== null) {
-    params.append('max_followers', maxFollowers.toString());
+    conditions.push({
+      path: ['followers'],
+      operator: 'LessThanEqual',
+      valueNumber: maxFollowers,
+    });
   }
-  if (platform !== undefined && platform !== null && platform.trim() !== '') {
-    params.append('platform', platform.trim());
+  if (platform && platform.trim()) {
+    conditions.push({
+      path: ['platform'],
+      operator: 'Equal',
+      valueString: platform.toLowerCase(),
+    });
   }
-  
-  const searchUrl = `${url}?${params.toString()}`;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 minute timeout
-
-  try {
-    const response = await fetchWithServiceIdentity(
-      searchUrl,
-      {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-      },
-      url
-    );
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Hybrid search failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Hybrid search timed out after 1 minute');
-    }
-    throw error;
+  let whereFilter: any = undefined;
+  if (conditions.length === 1) {
+    whereFilter = conditions[0];
+  } else if (conditions.length > 1) {
+    whereFilter = {
+      operator: 'And',
+      operands: conditions,
+    };
   }
+
+  const hybridOptions: any = {
+    vector: { vector: embedding },
+    alpha,
+    limit,
+    targetVector: HYBRID_TARGET_VECTOR,
+    queryProperties: ['biography', 'profile_text', 'post_text', 'hashtag_text'],
+    returnMetadata: ['score', 'distance'],
+  };
+
+  if (whereFilter) {
+    hybridOptions.where = whereFilter;
+  }
+
+  const result = await collection.query.hybrid(query, hybridOptions);
+  const objects = result.objects || [];
+
+  return {
+    query,
+    collection: collectionName,
+    limit,
+    alpha,
+    embedding_model: getDeepInfraModel(),
+    embedding_dimensions: embedding.length,
+    count: objects.length,
+    results: objects.map((item: any) => ({
+      id: item.uuid,
+      score: item.metadata?.score,
+      distance: item.metadata?.distance,
+      data: item.properties,
+    })),
+    timestamp: new Date().toISOString(),
+  };
 }
 
 /**
@@ -447,10 +595,17 @@ ${profileText}
 
 Evaluate this influencer's fit for the business need described above. Be critical, direct, and concise.
 
+CRITICAL SCORING GUIDELINES:
+- LOCATION MATCHING IS HEAVILY WEIGHTED: If the influencer's location (from bio, posts, or profile) matches or is in the same area/region as the business's target location, add +2 to +3 points to the base score. Location matching is a top priority.
+- If location matches: Base score should be at least 7-8, even if other factors are moderate.
+- If location does NOT match: Reduce score by 2-3 points, as location mismatch significantly reduces fit.
+- Check the influencer's bio and post captions for location indicators (city names, regions, landmarks, local references).
+
 Give your honest business assessment:
 - Score >7 (very strong): List 1-2 pros only. Short sentences.
 - Score ≤7: List 1 pro and 1 con. Short sentences.
 - Maximum 1-2 sentences total. Be critical and to the point.
+- Always mention location match/mismatch in your rationale if location information is available.
 
 Return ONLY a strict JSON object with the following schema, no extra text:
 
@@ -622,7 +777,9 @@ export const pipelineInfluencerAnalysis = onRequest(
   {
     region: 'us-central1',
     timeoutSeconds: 3600, // 1 hour max
-    memory: '1GiB',
+    memory: '2GiB', // Increased from 1GiB to handle 12 concurrent searches + batch embeddings
+    cpu: 2, // Allocate 2 CPUs for better parallel processing
+    minInstances: 1, // Keep at least 1 instance warm to prevent cold starts
     invoker: 'private',
   },
   async (request, response) => {
@@ -911,6 +1068,9 @@ export const pipelineInfluencerAnalysis = onRequest(
       setImmediate(async () => {
         if (!jobId) return; // Safety check
         
+        // Track function start time (in seconds)
+        const functionStartTimeSeconds = Date.now() / 1000;
+        
         try {
           // Step 1: Generate search queries
           console.log('[Pipeline] Step 1: Generating search queries...', {
@@ -918,6 +1078,7 @@ export const pipelineInfluencerAnalysis = onRequest(
             job_id: jobId,
           });
           let queries: string[] = [];
+          const queryExpansionStartTimeSeconds = Date.now() / 1000;
           try {
             // Check for cancellation
             if (await isJobCancelled(jobId)) {
@@ -932,7 +1093,18 @@ export const pipelineInfluencerAnalysis = onRequest(
               throw new Error('Pipeline job was cancelled');
             }
             
-            await updateQueryExpansionStage(jobId, 'completed', queries);
+            const queryExpansionEndTimeSeconds = Date.now() / 1000;
+            const queryExpansionStartRelativeSeconds = queryExpansionStartTimeSeconds - functionStartTimeSeconds;
+            const queryExpansionDurationSeconds = queryExpansionEndTimeSeconds - queryExpansionStartTimeSeconds;
+            
+            await updateQueryExpansionStage(
+              jobId,
+              'completed',
+              queries,
+              undefined,
+              queryExpansionStartRelativeSeconds,
+              queryExpansionDurationSeconds
+            );
             await completeStage(jobId, 'query_expansion');
           } catch (error) {
             if (error instanceof Error && error.message === 'Pipeline job was cancelled') {
@@ -940,66 +1112,94 @@ export const pipelineInfluencerAnalysis = onRequest(
               return; // Don't send response - already sent 202
             }
             const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-            await updateQueryExpansionStage(jobId, 'error', undefined, errorMsg);
+            const queryExpansionEndTimeSeconds = Date.now() / 1000;
+            const queryExpansionStartRelativeSeconds = queryExpansionStartTimeSeconds - functionStartTimeSeconds;
+            const queryExpansionDurationSeconds = queryExpansionEndTimeSeconds - queryExpansionStartTimeSeconds;
+            await updateQueryExpansionStage(
+              jobId,
+              'error',
+              undefined,
+              errorMsg,
+              queryExpansionStartRelativeSeconds,
+              queryExpansionDurationSeconds
+            );
             throw error;
           }
 
-          // Step 2: Perform multi-alpha searches
+          // Step 2: Perform multi-alpha searches using parallel hybrid search function
           await updatePipelineStage(jobId, 'weaviate_search', 25);
-          await updateWeaviateSearchStage(jobId, 'running');
+          const weaviateSearchStartTimeSeconds = Date.now() / 1000;
+          await updateWeaviateSearchStage(
+            jobId,
+            'running',
+            undefined,
+            undefined,
+            undefined,
+            undefined, // error
+            weaviateSearchStartTimeSeconds - functionStartTimeSeconds,
+            undefined // duration - not set yet
+          );
           
-          console.log('[Pipeline] Step 2: Performing multi-alpha Weaviate searches...', {
+          console.log('[Pipeline] Step 2: Performing parallel hybrid searches...', {
             request_id: requestId,
             job_id: jobId,
           });
-          const alphaValues = [0.2, 0.5, 0.8];
-          const searchLimit = 500;
-          const allSearchResults: any[] = [];
+          const alphaValues = [0.2, 0.8];
+          let allSearchResults: any[] = [];
           let queriesExecuted = 0;
           let deduplicatedResults: any[] = [];
 
           try {
-            for (const query of queries) {
-              // Check for cancellation before each query
-              if (await isJobCancelled(jobId)) {
-                throw new Error('Pipeline job was cancelled');
-              }
-              
-              for (const alpha of alphaValues) {
-                console.log(`[Pipeline] Searching: "${query}" with alpha=${alpha} (limit=${searchLimit})${minFollowers !== null && minFollowers !== undefined ? `, min_followers=${minFollowers}` : ''}${maxFollowers !== null && maxFollowers !== undefined ? `, max_followers=${maxFollowers}` : ''}${platform ? `, platform=${platform}` : ''}`);
-                try {
-                  const searchResults = await performHybridSearch(query, alpha, searchLimit, minFollowers, maxFollowers, platform);
-                  if (searchResults.results && Array.isArray(searchResults.results)) {
-                    allSearchResults.push(...searchResults.results);
-                  }
-                  queriesExecuted++;
-                } catch (error) {
-                  console.error(`[Pipeline] Search failed for query "${query}" with alpha=${alpha}:`, error);
-                }
+            // Check for cancellation before starting all searches
+            if (await isJobCancelled(jobId)) {
+              throw new Error('Pipeline job was cancelled');
+            }
+            
+            console.log(`[Pipeline] Calling parallel hybrid search with ${queries.length} keywords and ${alphaValues.length} alphas...`);
+            
+            // Use the shared parallel hybrid search function (direct import, no HTTP call)
+            const searchLimit = 300; // Fixed limit per individual search
+            const searchResults = await performParallelHybridSearches(
+              queries,
+              alphaValues,
+              searchLimit,
+              minFollowers ?? undefined,
+              maxFollowers ?? undefined,
+              platform ?? undefined
+            );
+            
+            // Extract individual results for compatibility with existing pipeline code
+            allSearchResults = [];
+            for (const searchResult of searchResults.allSearchResults) {
+              if (searchResult.results && Array.isArray(searchResult.results)) {
+                allSearchResults.push(...searchResult.results);
               }
             }
+            
+            deduplicatedResults = searchResults.deduplicatedResults;
+            queriesExecuted = searchResults.queriesExecuted;
             
             // Check for cancellation after searches
             if (await isJobCancelled(jobId)) {
               throw new Error('Pipeline job was cancelled');
             }
 
-            console.log(`[Pipeline] Collected ${allSearchResults.length} total search results`);
-
-            // Step 3: Deduplicate results
-            console.log('[Pipeline] Step 3: Deduplicating results...', {
-              request_id: requestId,
-              job_id: jobId,
-            });
-            deduplicatedResults = deduplicateResults(allSearchResults);
+            console.log(`[Pipeline] Collected ${allSearchResults.length} total search results from ${queriesExecuted} successful searches`);
             console.log(`[Pipeline] After deduplication: ${deduplicatedResults.length} unique profiles`);
+
+            const weaviateSearchEndTimeSeconds = Date.now() / 1000;
+            const weaviateSearchStartRelativeSeconds = weaviateSearchStartTimeSeconds - functionStartTimeSeconds;
+            const weaviateSearchDurationSeconds = weaviateSearchEndTimeSeconds - weaviateSearchStartTimeSeconds;
 
             await updateWeaviateSearchStage(
               jobId,
               'completed',
               allSearchResults.length,
               deduplicatedResults.length,
-              queriesExecuted
+              queriesExecuted,
+              undefined,
+              weaviateSearchStartRelativeSeconds,
+              weaviateSearchDurationSeconds
             );
             await completeStage(jobId, 'weaviate_search');
           } catch (error) {
@@ -1008,7 +1208,19 @@ export const pipelineInfluencerAnalysis = onRequest(
               return; // Don't send response - already sent 202
             }
             const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-            await updateWeaviateSearchStage(jobId, 'error', undefined, undefined, queriesExecuted, errorMsg);
+            const weaviateSearchEndTimeSeconds = Date.now() / 1000;
+            const weaviateSearchStartRelativeSeconds = weaviateSearchStartTimeSeconds - functionStartTimeSeconds;
+            const weaviateSearchDurationSeconds = weaviateSearchEndTimeSeconds - weaviateSearchStartTimeSeconds;
+            await updateWeaviateSearchStage(
+              jobId,
+              'error',
+              undefined,
+              undefined,
+              queriesExecuted,
+              errorMsg,
+              weaviateSearchStartRelativeSeconds,
+              weaviateSearchDurationSeconds
+            );
             throw error;
           }
 
@@ -1035,9 +1247,24 @@ export const pipelineInfluencerAnalysis = onRequest(
 
           // Step 5: Collect profiles from BrightData (STREAMING - process batches as they complete)
           await updatePipelineStage(jobId, 'brightdata_collection', 50);
-          await updateBrightDataStage(jobId, 'running', topProfileUrls.length);
+          const brightDataStartTimeSeconds = Date.now() / 1000;
+          await updateBrightDataStage(
+            jobId,
+            'running',
+            topProfileUrls.length,
+            undefined,
+            undefined,
+            brightDataStartTimeSeconds - functionStartTimeSeconds
+          );
           await updatePipelineStage(jobId, 'llm_analysis', 60); // Start LLM stage early
-          await updateLLMAnalysisStage(jobId, 'running');
+          const llmAnalysisStartTimeSeconds = Date.now() / 1000;
+          await updateLLMAnalysisStage(
+            jobId,
+            'running',
+            undefined,
+            undefined,
+            llmAnalysisStartTimeSeconds - functionStartTimeSeconds
+          );
           
           console.log(`[Pipeline] Step 5: Streaming collection of ${topProfileUrls.length} profiles from BrightData...`, {
             request_id: requestId,
@@ -1132,14 +1359,60 @@ export const pipelineInfluencerAnalysis = onRequest(
             // Sort all profiles by fit score
             allAnalyzedProfiles.sort((a, b) => b.fit_score - a.fit_score);
             
-            await updateBrightDataStage(jobId, 'completed', topProfileUrls.length, allAnalyzedProfiles.length);
+            const brightDataEndTimeSeconds = Date.now() / 1000;
+            const brightDataStartRelativeSeconds = brightDataStartTimeSeconds - functionStartTimeSeconds;
+            const brightDataDurationSeconds = brightDataEndTimeSeconds - brightDataStartTimeSeconds;
+            
+            const llmAnalysisEndTimeSeconds = Date.now() / 1000;
+            const llmAnalysisStartRelativeSeconds = llmAnalysisStartTimeSeconds - functionStartTimeSeconds;
+            const llmAnalysisDurationSeconds = llmAnalysisEndTimeSeconds - llmAnalysisStartTimeSeconds;
+            
+            await updateBrightDataStage(
+              jobId,
+              'completed',
+              topProfileUrls.length,
+              allAnalyzedProfiles.length,
+              undefined,
+              brightDataStartRelativeSeconds,
+              brightDataDurationSeconds
+            );
             await completeStage(jobId, 'brightdata_collection');
-            await updateLLMAnalysisStage(jobId, 'completed', allAnalyzedProfiles.length);
+            await updateLLMAnalysisStage(
+              jobId,
+              'completed',
+              allAnalyzedProfiles.length,
+              undefined,
+              llmAnalysisStartRelativeSeconds,
+              llmAnalysisDurationSeconds
+            );
             await completeStage(jobId, 'llm_analysis');
           } catch (error) {
             const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-            await updateBrightDataStage(jobId, 'error', topProfileUrls.length, undefined, errorMsg);
-            await updateLLMAnalysisStage(jobId, 'error', undefined, errorMsg);
+            const brightDataEndTimeSeconds = Date.now() / 1000;
+            const brightDataStartRelativeSeconds = brightDataStartTimeSeconds - functionStartTimeSeconds;
+            const brightDataDurationSeconds = brightDataEndTimeSeconds - brightDataStartTimeSeconds;
+            
+            const llmAnalysisEndTimeSeconds = Date.now() / 1000;
+            const llmAnalysisStartRelativeSeconds = llmAnalysisStartTimeSeconds - functionStartTimeSeconds;
+            const llmAnalysisDurationSeconds = llmAnalysisEndTimeSeconds - llmAnalysisStartTimeSeconds;
+            
+            await updateBrightDataStage(
+              jobId,
+              'error',
+              topProfileUrls.length,
+              undefined,
+              errorMsg,
+              brightDataStartRelativeSeconds,
+              brightDataDurationSeconds
+            );
+            await updateLLMAnalysisStage(
+              jobId,
+              'error',
+              undefined,
+              errorMsg,
+              llmAnalysisStartRelativeSeconds,
+              llmAnalysisDurationSeconds
+            );
             throw error;
           }
 

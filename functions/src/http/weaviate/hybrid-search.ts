@@ -1,7 +1,6 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import weaviate, { WeaviateClient } from 'weaviate-client';
 import type { MultiTargetVectorJoin } from 'weaviate-client';
-import { Embeddings } from 'deepinfra';
 import type { WeaviateHybridSearchResponse, WeaviateSearchErrorResponse } from '../../types/weaviate-search.js';
 
 let client: WeaviateClient | null = null;
@@ -89,25 +88,37 @@ async function getWeaviateClient(): Promise<WeaviateClient> {
 }
 
 /**
- * Generate embedding for a query using DeepInfra
+ * Generate embedding for a query using DeepInfra HTTP API
  */
 async function generateEmbedding(query: string): Promise<number[]> {
   const apiKey = getDeepInfraApiKey();
   const model = getDeepInfraModel();
   
-  const embeddingsClient = new Embeddings(model, apiKey);
+  const response = await fetch('https://api.deepinfra.com/v1/openai/embeddings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      input: query,
+      model: model,
+      encoding_format: 'float',
+    }),
+  });
   
-  const body = {
-    inputs: [query],
-  };
-  
-  const output = await embeddingsClient.generate(body);
-  
-  if (!output.embeddings || !output.embeddings[0]) {
-    throw new Error('Failed to generate embedding from DeepInfra');
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`DeepInfra API error: ${response.status} ${response.statusText} - ${errorText}`);
   }
   
-  return output.embeddings[0];
+  const data = await response.json();
+  
+  if (!data.data || !Array.isArray(data.data) || !data.data[0] || !data.data[0].embedding) {
+    throw new Error('Failed to generate embedding from DeepInfra: invalid response format');
+  }
+  
+  return data.data[0].embedding;
 }
 
 /**

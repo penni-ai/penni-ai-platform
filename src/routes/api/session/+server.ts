@@ -1,5 +1,5 @@
 import { adminAuth } from '$lib/firebase/admin';
-import { apiOk, assertSameOrigin, handleApiRoute } from '$lib/server/api';
+import { apiOk, assertSameOrigin, handleApiRoute } from '$lib/server/core';
 
 const SESSION_COOKIE_NAME = '__session';
 

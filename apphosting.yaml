@@ -134,3 +134,9 @@ env:
     availability:
       - BUILD
       - RUNTIME
+
+  # Chatbot service configuration
+  - variable: CHATBOT_SERVICE_URL
+    value: https://penni-chatbot-function-szs2cmou6q-uc.a.run.app
+    availability:
+      - RUNTIME

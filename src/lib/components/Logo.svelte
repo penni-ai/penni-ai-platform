@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+	
 	interface Props {
 		size?: 'sm' | 'md' | 'lg';
 	}
@@ -12,9 +14,14 @@ const sizeStyles = {
 };
 </script>
 
+{#if browser}
 	<img
 	src="/images/branding/main%20logo%20SVG.svg"
 		alt="Penny logo"
 		loading="lazy"
 	class={`${sizeStyles[size].width} ${sizeStyles[size].height} object-cover`}
 	/>
+{:else}
+	<!-- SSR placeholder to prevent hydration mismatch -->
+	<div class={`${sizeStyles[size].width} ${sizeStyles[size].height} bg-gray-200 animate-pulse`}></div>
+{/if}

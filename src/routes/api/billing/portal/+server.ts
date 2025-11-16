@@ -1,6 +1,6 @@
 import { env as publicEnv } from '$env/dynamic/public';
-import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
-import { getOrCreateStripeCustomer, getStripeClient } from '$lib/server/stripe';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
+import { getOrCreateStripeCustomer, getStripeClient } from '$lib/server/billing';
 
 const resolveOrigin = (url: URL) => publicEnv.PUBLIC_SITE_URL?.trim() || `${url.protocol}//${url.host}`;
 

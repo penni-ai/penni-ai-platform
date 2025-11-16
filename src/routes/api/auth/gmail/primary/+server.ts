@@ -1,5 +1,5 @@
-import { handleApiRoute, requireUser, apiOk, ApiProblem } from '$lib/server/api';
-import { setPrimaryGmailConnection } from '$lib/server/gmail-auth';
+import { handleApiRoute, requireUser, apiOk, ApiProblem } from '$lib/server/core';
+import { setPrimaryGmailConnection } from '$lib/server/gmail';
 
 export const POST = handleApiRoute(async (event) => {
 	const user = requireUser(event);

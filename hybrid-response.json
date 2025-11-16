@@ -1,0 +1,69 @@
+{
+  "query": "travel",
+  "collection": "influencer_profiles",
+  "limit": 3,
+  "alpha": 0.3,
+  "embedding_model": "Qwen/Qwen3-Embedding-8B",
+  "embedding_dimensions": 4096,
+  "count": 3,
+  "results": [
+    {
+      "id": "6ebdfbc8-2e4d-4f34-96ba-3f109fba1455",
+      "score": 0.699999988079071,
+      "data": {
+        "lance_db_id": "instagram_insta100kemail1_csv_006470",
+        "platform": "instagram",
+        "biography": "Travel & Food content creator ~ Detailed Travel Guides with the best food, hotels & activities\n📍London foodie from 🇮🇪\n🌍Travel Blog⬇️ 💌 bec@becboop.com",
+        "profile_url": "https://instagram.com/boopfoodie",
+        "external_url": "http://becboop.com/links/",
+        "followers": 63723,
+        "post_text": "🇨🇭Switzerland’s Chocolate Train Mini Guide ⤵️ Comment CHOC for my Switzerland trains full travel guide. Don’t forget to follow @Boopfoodie for the best travel tips! Save for your Switzerland travel trip and send it to someone you want to go on the chocolate train with! The Chocolate train in Switzerland The best food I ate in London recently. If you’re looking for more of the best London food recommendations make sure to follow @BoopFoodie we’ve also got some Dublin food finds in this month’s food round-up! 😋 Tried @oma.london as part of my Michelin Star Menus YouTube video series. The ☕️Send it to someone who owes you a creme brulatte! Comment GUIDE and I’ll DM you my full New York City Travel guide on my blog BecBoop.com! It includes my 5-day NYC travel itinerary, restaurants, activities, tours, hotels and food spots you won’t want to miss! This was the most ad 📣 My top travel tips for vlogging on the go without missing out on special moments with your travel buddy! Whether you’re exploring beautiful cities in Europe or relaxing by Lake Bled, these are the habits that help me stay present, making special travel memories with my husband and Everything you need to know about the Michelin Star restaurant @daylesfordfarm Save for your Cotswolds trip and send it to someone you want to visit with! Chigsy and I recently spent a weekend in the Cotswolds to celebrate our anniversary. A visit to Daylesford farm was definitely on the cards 🥾Seven Sisters Hike mini guide 📣Comment VIEWS and I’ll DM you my ultimate Seven Sisters hike guide with extra tips, food stops & photo spots! 📍 Hiking route Seaford → Eastbourne We followed a scenic coastal trail - exact route linked in my travel guide at BecBoop.com (or link in I hope this post finds the travel girlies who *like* to plan! Welcome to the type-A travel girlies club! ➡️Follow @BoopFoodie for the best travel & food tips ©️Content copyright @BoopFoodie — no usage ———————————————— European travel, travel, foodie, food blog, travel content creator, Europe travel guide, hidden gems Europe, 🇮🇹🍝 Comment NYC for my ultimate New York City Travel guide! It includes my full 5-day NYC travel itinerary, restaurants, activities, tours and food spots you won’t want to miss! ➡️Follow @BoopFoodie for more of the best travel & food recommendations and send this to someone you want to eat 🇮🇪 Let’s try Dublin’s viral steak restaurant @boeufdublin This is my second time visiting Boeuf & Frites in the Temple Bar area of Dublin. Last year before the Eras Tour and it made such perfect pre-concert fuel that I had to book it for our lunch before the Oasis concert 🇮🇪Nothing beats the Irish deli! Perfect cure after seeing Oasis play Croke Park. Tell me your favourite Irish deli order and follow @BoopFoodie for more ©️ Content copyright, no reposts without permission Food, Irish food, Irish in London, hot food counter, Irish deli, Irish hot food counter, food blog, content",
+        "username": "boopfoodie",
+        "display_name": "Rebecca Casserly | Travel & Food Content Creator",
+        "following": 2065,
+        "posts_count": "940",
+        "profile_text": "Travel & Food content creator ~ Detailed Travel Guides with the best food, hotels & activities\n📍London foodie from 🇮🇪\n🌍Travel Blog⬇️ 💌 bec@becboop.com London, England Irish Travel & Food Content Creator travel food Michelin London Slovenia Switzerland Dublin Cotswolds Seven Sisters travelguide",
+        "hashtag_text": ""
+      }
+    },
+    {
+      "id": "d9fd8b60-ef34-45a3-b514-74235bc2d5bc",
+      "score": 0.6867093443870544,
+      "data": {
+        "followers": 24790,
+        "posts_count": "509",
+        "post_text": "What's your interpretation of \"I wanna go out? \" For me, it's definitely a getaway somewhere 😌! _ _ Full day beach anyone? 📌Share with someone who deserves a beach day _ _ Do you feel the same? Then you found the right account!! Follow @veennessa for more relatable travel * * Tropical Oasis and you don't have to travel to Italy! Cool getaway and you don't have to leave NY! Follow for more travel recommendations _ _ _ ✨️ Happy Friday!! Last weekend before the holiday ❄️⛄️🎄!! As you can see, it's full festive season in our house 🏠 Are you celebrating the holiday this season? _ _ Overrated or Magical? Dive into the holiday magic at the Bronx Zoo! 🎄✨ 🎄❄️Experience a festive spectacle with dazzling Christmas lights, immersive displays at the Zoo Center, and enchanting rides on the Holiday Express. With lots of food to eat! I couldn't stop drinking hot chocolate and funnel cakes. Create Maybe its Confidential!! I am 1 month in advance, kinda traveler cause that's when I get the best deals. So nope, nothing booked until my mood shifts!! Do you have any trips booked for 2024? Follow @veennessa for more relatable travel Affordable Luxury, Affordable Travel, luxury travel, travel blogger, my 🧑‍🎄🎅Christmas decor🎄 Christmas is all about extravagant decor or just don't bother ouch! ❄️Favorite time of the year, and there is no where I would spend it than home!! 🎄I don't travel during Christmas season and I totally love it!! Like and Share with someone who would love this decoration! ✨️ Tip to have a better experience in Manhattan at Christmas 🎄 ❄️ If you want to see the decorations, best go on WEEK DAYS and early! The crowd is even worse than this video now! Be safe traveling! 📌SAVE and SHARE with someone going to NYC this Christmas! -",
+        "hashtag_text": "",
+        "display_name": "Venessa | Travel Creator | NY",
+        "biography": "Affordable Luxury Travel \n🛩Providing travel tips, savings and inspiration for your next travel destination\n📍NY\nEmail:Veennessa1@gmail.com",
+        "external_url": "https://www.facebook.com/veennessa?mibextid=ZbWKwL",
+        "following": 382,
+        "profile_text": "Affordable Luxury Travel \n🛩Providing travel tips, savings and inspiration for your next travel destination\n📍NY\nEmail:Veennessa1@gmail.com New York, NY Travel Creator travel new york family baby babymoon beach festivals nails holiday savings",
+        "lance_db_id": "instagram_insta100kemail2_csv_013107",
+        "platform": "instagram",
+        "username": "veennessa",
+        "profile_url": "https://instagram.com/veennessa"
+      }
+    },
+    {
+      "id": "80f9f280-3031-4be9-a569-d8fcc3522049",
+      "score": 0.6206826567649841,
+      "data": {
+        "external_url": "",
+        "followers": 33200,
+        "following": 608,
+        "username": "risaarenee",
+        "posts_count": "232",
+        "profile_text": "Photography + Travel + Foodie\nElopement Photographer\n📸Pricing + Booking info↴ Elopement Photographer Photography Travel Foodie Elopement Photographer Pricing Booking Wedding Travel Photography Elopement Photography",
+        "post_text": "Get ready with me with , I created a Fall inspired look with @wetnwildbeauty available at @Walmart and Linked in bio #ad #trendingwnwwmt #wnwviral #wnwpartner #linkinbio #grwmfall #thanksgivingmakeuplook Las Vegas Elopement Photographer, Now Booking 2024 🤍📸✨ Inquire on my website! Amazon Must Have Travel Essentials!! Under $15, the cuo holder has a trolley pass & a strap to hold it on your shoulder as well! Amazon Travel Must Haves, Amazon Travel Essentials, luggage cup holder ✨Amazon Travel Cosmetic Case Find For Under $15! I ordered a size Medium, Amazon Link in My Bio under Travel Favs! #amazontravel #amazontoiletrybag #amazonmakeupbag #amazonmusthaves Affordable Amazon Travel Must Haves, Amazon Toiletry Bag, Amazon Makeup Bag, CALPAK DUPE, Amazon travel bag, Travel Must Have Perfect nails for Spooky Season at Disneyland 😍🎃👻 follow my nail tech @Jeanx Found the cutest Skull Ice Cube Trays on Amazon! All set for Disney Next Week 🥰🥰 Thank you @Jeanx Thanks Sis 🥰@Jeanx Labor Day Sale - Offering 20% off Bookings if your book for Sep. 21,22, 24 & 25!! 🎰💕📸 www.risaarenee.com 🖤📸💍 I had so much fun capture Febrianas & Moh’s Elopement photos",
+        "hashtag_text": "chickenpotpierecipe chickenpotpie falldinners cozydinners comfortfood cookwithme vintagehomedecor thrifttok thrifting goodwillfinds vintagehome hironoricraftramen michelinstarguide socaleats ocfoodie tustincalifornia socalfoodie ad trendingwnwwmt wnwviral wnwpartner linkinbio grwmfall thanksgivingmakeuplook amazontravel amazontoiletrybag amazonmakeupbag amazonmusthaves",
+        "lance_db_id": "tiktok_tiktok_csv_075431",
+        "platform": "tiktok",
+        "display_name": "Risaa Renee | Photographer",
+        "biography": "Photography + Travel + Foodie\nElopement Photographer\n📸Pricing + Booking info↴",
+        "profile_url": "https://www.tiktok.com/@risaarenee"
+      }
+    }
+  ],
+  "timestamp": "2025-11-16T00:05:24.141Z"
+}

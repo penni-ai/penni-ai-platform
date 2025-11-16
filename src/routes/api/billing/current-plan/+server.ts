@@ -1,6 +1,6 @@
-import { apiOk, handleApiRoute, requireUser } from '$lib/server/api';
-import { userDocRef } from '$lib/server/firestore';
-import type { UserStripeState } from '$lib/server/firestore';
+import { apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { userDocRef } from '$lib/server/core';
+import type { UserStripeState } from '$lib/server/core';
 
 export const GET = handleApiRoute(async (event) => {
 	const user = requireUser(event);

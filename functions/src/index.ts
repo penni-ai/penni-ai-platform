@@ -2,6 +2,7 @@
 export { test_weaviateHealth } from './http/weaviate/health.js';
 export { test_weaviateBm25Search } from './http/weaviate/bm25-search.js';
 export { weaviateHybridSearch } from './http/weaviate/hybrid-search.js';
+export { weaviateParallelHybridSearch } from './http/weaviate/parallel-hybrid-search.js';
 
 // BrightData functions
 export { brightdataCollect } from './http/brightdata/collect.js';
@@ -14,3 +15,4 @@ export { generateSearchQueries } from './http/search/generate-queries.js';
 export { test_pipelineLifestyleSearch } from './pipeline/lifestyle-search.js';
 export { pipelineInfluencerAnalysis } from './pipeline/influencer-analysis.js';
 export { cancelPipelineJobFunction } from './pipeline/cancel-job.js';
+export { pipelineHealth } from './http/pipeline-health.js';

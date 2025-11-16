@@ -1,7 +1,7 @@
-import { handleApiRoute } from '$lib/server/api';
-import { requireUser } from '$lib/server/api';
-import { apiOk, ApiProblem } from '$lib/server/api';
-import { revokeGmailTokens } from '$lib/server/gmail-auth';
+import { handleApiRoute } from '$lib/server/core';
+import { requireUser } from '$lib/server/core';
+import { apiOk, ApiProblem } from '$lib/server/core';
+import { revokeGmailTokens } from '$lib/server/gmail';
 
 export const POST = handleApiRoute(async (event) => {
 	const user = requireUser(event);

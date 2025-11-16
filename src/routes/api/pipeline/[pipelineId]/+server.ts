@@ -1,5 +1,5 @@
-import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/api';
-import { firestore } from '$lib/server/firestore';
+import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { firestore } from '$lib/server/core';
 import { adminStorage } from '$lib/firebase/admin';
 
 const PIPELINE_COLLECTION = 'pipeline_jobs';
@@ -122,6 +122,7 @@ export const GET = handleApiRoute(async (event) => {
 	const doc = await firestore.collection(PIPELINE_COLLECTION).doc(pipelineId).get();
 	
 	if (!doc.exists) {
+		console.log(`[API] Pipeline ${pipelineId} not found in Firestore for user ${user.uid}`);
 		throw new ApiProblem({
 			status: 404,
 			code: 'PIPELINE_NOT_FOUND',
@@ -130,9 +131,11 @@ export const GET = handleApiRoute(async (event) => {
 	}
 	
 	const data = doc.data() as PipelineJobDocument;
+	console.log(`[API] Pipeline ${pipelineId} found. Document uid: ${data.uid}, Requesting user uid: ${user.uid}`);
 
 	let userOwnsPipeline = data.uid === user.uid;
 	if (!userOwnsPipeline && (!data.uid || data.uid === null)) {
+		console.log(`[API] Pipeline ${pipelineId} has no uid, checking campaign fallback for user ${user.uid}`);
 		const fallbackCampaignSnapshot = await firestore
 			.collection('users')
 			.doc(user.uid)
@@ -141,9 +144,11 @@ export const GET = handleApiRoute(async (event) => {
 			.limit(1)
 			.get();
 		userOwnsPipeline = !fallbackCampaignSnapshot.empty;
+		console.log(`[API] Campaign fallback check for ${pipelineId}: ${userOwnsPipeline ? 'found' : 'not found'}`);
 	}
 
 	if (!userOwnsPipeline) {
+		console.log(`[API] User ${user.uid} does not own pipeline ${pipelineId} (document uid: ${data.uid})`);
 		throw new ApiProblem({
 			status: 404,
 			code: 'PIPELINE_NOT_FOUND',

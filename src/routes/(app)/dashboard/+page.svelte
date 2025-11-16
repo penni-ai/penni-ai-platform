@@ -71,6 +71,19 @@
 					<div class="mt-3 flex items-center gap-4 text-sm text-gray-500">
 						<span>Updated {formatDate(campaign.updatedAt ?? campaign.createdAt)}</span>
 					</div>
+					
+					<!-- Statistics -->
+					<div class="mt-4 grid grid-cols-2 gap-3">
+						<div class="rounded-lg bg-gray-50 p-3">
+							<div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Outreach Sent</div>
+							<div class="mt-1 text-2xl font-semibold text-gray-900">{campaign.stats?.outreachSent ?? 0}</div>
+						</div>
+						<div class="rounded-lg bg-gray-50 p-3">
+							<div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Influencers Found</div>
+							<div class="mt-1 text-2xl font-semibold text-gray-900">{campaign.stats?.influencersFound ?? 0}</div>
+						</div>
+					</div>
+					
 					{#if campaign.status}
 						<div class="mt-3">
 							<span

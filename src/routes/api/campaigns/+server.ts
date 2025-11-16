@@ -1,7 +1,7 @@
-import { createCampaign } from '$lib/server/chat-assistant';
-import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
+import { createCampaign } from '$lib/server/campaigns';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { serializeCampaignSnapshot } from '$lib/server/campaigns';
-import { userDocRef } from '$lib/server/firestore';
+import { userDocRef } from '$lib/server/core';
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;

@@ -1,7 +1,8 @@
 import { redirect } from '@sveltejs/kit';
 import { serializeCampaignSnapshot, type SerializedCampaign } from '$lib/server/campaigns';
-import { userDocRef } from '$lib/server/firestore';
+import { userDocRef } from '$lib/server/core';
 import type { LayoutServerLoad } from './$types';
+import type { UserStripeState } from '$lib/server/core';
 
 const SIDEBAR_CAMPAIGN_LIMIT = 25;
 
@@ -37,10 +38,21 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		locals.logger?.warn('Failed to load sidebar campaigns', { error });
 	}
 
+	// Get user's current plan
+	let currentPlan = null;
+	try {
+		const userSnap = await userDocRef(user.uid).get();
+		const userData = userSnap.data() as UserStripeState | undefined;
+		currentPlan = userData?.currentPlan ?? null;
+	} catch (error) {
+		locals.logger?.warn('Failed to load user plan', { error });
+	}
+
 	return {
 		user: {
 			uid: user.uid,
-			email: user.email ?? null
+			email: user.email ?? null,
+			currentPlan
 		},
 		campaigns
 	};

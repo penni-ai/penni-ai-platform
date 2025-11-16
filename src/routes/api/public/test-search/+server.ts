@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
-import { apiOk, ApiProblem, assertSameOrigin, handleApiRoute } from '$lib/server/api';
-import { invokeSearchPipeline } from '$lib/server/functions-client';
+import { apiOk, ApiProblem, assertSameOrigin, handleApiRoute } from '$lib/server/core';
+import { invokeSearchPipeline } from '$lib/server/firebase';
 import {
 	isSearchPipelineResponse,
 	STAGE_NAMES,

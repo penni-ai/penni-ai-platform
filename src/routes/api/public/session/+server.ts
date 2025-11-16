@@ -1,5 +1,8 @@
 import { adminAuth } from '$lib/firebase/admin';
-import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute } from '$lib/server/api';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute } from '$lib/server/core';
+import { ensureFeatureCapabilities } from '$lib/server/billing';
+
+const firebaseAudience = process.env.PUBLIC_FIREBASE_PROJECT_ID;
 
 const SESSION_COOKIE_NAME = '__session';
 const WEEK = 1000 * 60 * 60 * 24 * 7;
@@ -60,6 +63,14 @@ export const POST = handleApiRoute(async (event) => {
 			sameSite: 'lax',
 			maxAge: Math.floor(expiresIn / 1000)
 		});
+
+		// Ensure user has feature capabilities set (initialize with free plan if missing)
+		try {
+			await ensureFeatureCapabilities(decoded.uid);
+		} catch (error) {
+			// Log but don't fail session creation if capabilities initialization fails
+			logger.warn('Failed to ensure feature capabilities', { error, uid: decoded.uid });
+		}
 
 		logger.info('Session cookie issued', { uid: decoded.uid });
 

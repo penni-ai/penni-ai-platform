@@ -1,8 +1,8 @@
 import { redirect } from '@sveltejs/kit';
-import { handleApiRoute } from '$lib/server/api';
-import { requireUser } from '$lib/server/api';
-import { ApiProblem } from '$lib/server/api';
-import { exchangeCodeForTokens, storeGmailTokens } from '$lib/server/gmail-auth';
+import { handleApiRoute } from '$lib/server/core';
+import { requireUser } from '$lib/server/core';
+import { ApiProblem } from '$lib/server/core';
+import { exchangeCodeForTokens, storeGmailTokens } from '$lib/server/gmail';
 
 export const GET = handleApiRoute(async (event) => {
 	const user = requireUser(event);
@@ -25,7 +25,7 @@ export const GET = handleApiRoute(async (event) => {
 	
 	// Verify state parameter (CSRF protection)
 	const storedState = event.cookies.get('gmail_oauth_state');
-	let statePayload: { csrf: string; connectionId?: string | null; makePrimary?: boolean } | null = null;
+	let statePayload: { csrf: string; connectionId?: string | null; makePrimary?: boolean; accountType?: 'draft' | 'send' } | null = null;
 	if (storedState) {
 		try {
 			statePayload = JSON.parse(storedState);
@@ -47,7 +47,8 @@ export const GET = handleApiRoute(async (event) => {
 		// Store tokens in Firestore
 		await storeGmailTokens(user.uid, tokens, {
 			connectionId: statePayload.connectionId,
-			makePrimary: statePayload.makePrimary
+			makePrimary: statePayload.makePrimary,
+			accountType: statePayload.accountType || 'send'
 		});
 		
 		// Redirect to success page or back to outreach panel

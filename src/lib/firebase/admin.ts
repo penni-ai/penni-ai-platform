@@ -1,3 +1,16 @@
+/**
+ * Firebase Admin SDK initialization
+ * 
+ * This module initializes Firebase Admin SDK for server-side use.
+ * It automatically detects and connects to emulators when configured.
+ * 
+ * Exports:
+ * - adminApp: The Firebase Admin app instance
+ * - adminAuth: The Firebase Admin Auth instance
+ * - adminDb: The Firestore Admin instance
+ * - adminStorage: The Storage Admin instance
+ */
+
 import { initializeApp, getApp, getApps, type App, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -95,12 +108,15 @@ function logAdminConfig(app: App) {
 	});
 }
 
+// Log emulator status (Admin SDK automatically detects emulators via environment variables)
 const firestoreEmulatorHost = process.env.FIRESTORE_EMULATOR_HOST;
-if (firestoreEmulatorHost) {
-	console.info(`Using Firestore emulator at ${firestoreEmulatorHost}`);
-}
-
 const storageEmulatorHost = process.env.FIREBASE_STORAGE_EMULATOR_HOST;
-if (storageEmulatorHost) {
-	console.info(`Using Storage emulator at ${storageEmulatorHost}`);
+const authEmulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+
+if (firestoreEmulatorHost || storageEmulatorHost || authEmulatorHost) {
+	console.info('[FirebaseAdmin] Emulator configuration detected', {
+		firestore: firestoreEmulatorHost || 'none',
+		storage: storageEmulatorHost || 'none',
+		auth: authEmulatorHost || 'none'
+	});
 }

@@ -9,6 +9,7 @@ export let mainClass = 'relative flex-1 overflow-y-auto bg-gray-50';
 export let showToggleControls = false;
 export let campaigns: Array<{ id: string; name: string; href?: string } > = [];
 export let activeCampaignId: string | null = null;
+export let onUpgrade: (() => void) | undefined = undefined;
 </script>
 
 <div class="flex h-screen bg-white overflow-hidden">
@@ -35,7 +36,7 @@ export let activeCampaignId: string | null = null;
 					</button>
 				{/if}
 			</div>
-			<SidebarNavigation campaigns={campaigns} selectedCampaignId={activeCampaignId} />
+			<SidebarNavigation campaigns={campaigns} selectedCampaignId={activeCampaignId} onUpgrade={onUpgrade} />
 		</aside>
 	{/if}
 

@@ -64,6 +64,10 @@ export const generateSearchQueries = onRequest(
       
       const client = new OpenAI({ apiKey });
 
+      // Get and log the model being used
+      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      console.log(`[OpenAI] Using model: ${model}`);
+
       // Exact system prompt from Python code
       const prompt = `Based on this influencer description, generate EXACTLY 12 simple, keyword-based search queries for an INFLUENCER SEARCH ENGINE.
 
@@ -163,7 +167,7 @@ Now generate EXACTLY 12 queries following the structure above (4 broad + 2 speci
 
       // Call OpenAI API
       const completion = await client.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        model: model,
         messages: [
           {
             role: 'user',

@@ -7,6 +7,7 @@ interface GmailConnectionView {
 	email: string;
 	connectedAt: number | null;
 	lastRefreshedAt: number | null;
+	accountType?: 'draft' | 'send';
 }
 
 let gmailConnections = $state<GmailConnectionView[]>([]);
@@ -17,6 +18,8 @@ let gmailReconnectId = $state<string | null>(null);
 let openMenuId = $state<string | null>(null);
 let menuButtonRefs = $state<Map<string, HTMLElement>>(new Map());
 let menuPosition = $state<{ top: number; right: number } | null>(null);
+let showAccountTypeModal = $state(false);
+let selectedAccountType = $state<'draft' | 'send'>('send');
 
 function formatGmailTimestamp(value: number | null): string | null {
 	if (!value) return null;
@@ -86,7 +89,8 @@ async function checkGmailStatus() {
 					id: conn.id,
 					email: conn.email,
 					connectedAt: conn.connected_at ?? conn.connectedAt ?? null,
-					lastRefreshedAt: conn.last_refreshed_at ?? conn.lastRefreshedAt ?? null
+					lastRefreshedAt: conn.last_refreshed_at ?? conn.lastRefreshedAt ?? null,
+					accountType: conn.accountType || 'send'
 				}))
 				: [];
 			gmailConnections = connections;
@@ -127,7 +131,12 @@ async function disconnectGmail(connectionId: string, email: string) {
 }
 
 function connectNewGmail() {
-	window.location.href = '/api/auth/gmail/connect';
+	showAccountTypeModal = true;
+}
+
+function confirmConnectGmail() {
+	showAccountTypeModal = false;
+	window.location.href = `/api/auth/gmail/connect?accountType=${selectedAccountType}`;
 }
 
 function toggleMenu(connectionId: string, event?: MouseEvent) {
@@ -182,6 +191,7 @@ function reconnectGmail(connectionId: string) {
 						<thead class="text-xs font-medium text-gray-500 border-b border-gray-200 bg-gray-50">
 							<tr>
 								<th class="px-4 py-3">Email</th>
+								<th class="px-4 py-3">Account Type</th>
 								<th class="px-4 py-3">Connected</th>
 								<th class="px-4 py-3">Last refreshed</th>
 								<th class="px-4 py-3 text-right">Actions</th>
@@ -197,6 +207,15 @@ function reconnectGmail(connectionId: string) {
 											</svg>
 											<span class="text-gray-900 font-medium">{connection.email}</span>
 										</div>
+									</td>
+									<td class="px-4 py-3">
+										<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium {
+											connection.accountType === 'draft' 
+												? 'bg-blue-100 text-blue-700' 
+												: 'bg-green-100 text-green-700'
+										}">
+											{connection.accountType === 'draft' ? 'Draft Only' : 'Send & Draft'}
+										</span>
 									</td>
 									<td class="px-4 py-3 text-gray-600">
 										{#if connection.connectedAt}
@@ -219,6 +238,7 @@ function reconnectGmail(connectionId: string) {
 													type="button"
 													data-gmail-menu-trigger
 													onclick={(e) => toggleMenu(connection.id, e)}
+													aria-label="Menu options for {connection.email}"
 													class="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600"
 												>
 													<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -276,4 +296,87 @@ function reconnectGmail(connectionId: string) {
 		{/if}
 	</div>
 </section>
+
+<!-- Account Type Selection Modal -->
+{#if showAccountTypeModal}
+	<div 
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+		onclick={() => showAccountTypeModal = false}
+		onkeydown={(e) => e.key === 'Escape' && (showAccountTypeModal = false)}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<div 
+			class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+			role="none"
+		>
+			<h3 class="text-lg font-semibold text-gray-900 mb-4">Choose Account Type</h3>
+			<p class="text-sm text-gray-600 mb-6">
+				Select the type of Gmail account you want to connect. Draft accounts can only create drafts, while Send accounts can both create drafts and send emails directly.
+			</p>
+			
+			<div class="space-y-3 mb-6">
+				<label class="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors {
+					selectedAccountType === 'draft' 
+						? 'border-blue-500 bg-blue-50' 
+						: 'border-gray-200 hover:border-gray-300'
+				}">
+					<input 
+						type="radio" 
+						name="accountType" 
+						value="draft"
+						bind:group={selectedAccountType}
+						class="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500"
+					/>
+					<div class="flex-1">
+						<div class="font-medium text-gray-900">Draft Account</div>
+						<div class="text-sm text-gray-600 mt-1">
+							Can create drafts in Gmail. Use this for accounts where you want to review and send manually.
+						</div>
+					</div>
+				</label>
+				
+				<label class="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors {
+					selectedAccountType === 'send' 
+						? 'border-green-500 bg-green-50' 
+						: 'border-gray-200 hover:border-gray-300'
+				}">
+					<input 
+						type="radio" 
+						name="accountType" 
+						value="send"
+						bind:group={selectedAccountType}
+						class="mt-0.5 h-4 w-4 text-green-600 focus:ring-green-500"
+					/>
+					<div class="flex-1">
+						<div class="font-medium text-gray-900">Send Account</div>
+						<div class="text-sm text-gray-600 mt-1">
+							Can create drafts and send emails directly. Use this for accounts where you want automated sending enabled.
+						</div>
+					</div>
+				</label>
+			</div>
+			
+			<div class="flex gap-3">
+				<Button
+					variant="outline"
+					onclick={() => showAccountTypeModal = false}
+					class="flex-1"
+				>
+					Cancel
+				</Button>
+				<Button
+					variant="primary"
+					onclick={confirmConnectGmail}
+					class="flex-1"
+				>
+					Connect Gmail
+				</Button>
+			</div>
+		</div>
+	</div>
+{/if}
 

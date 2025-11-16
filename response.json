@@ -1,0 +1,63 @@
+{
+  "query": "fitness",
+  "collection": "influencer_profiles",
+  "limit": 3,
+  "count": 3,
+  "results": [
+    {
+      "id": "cefc4547-b1a9-47ad-9b2a-f0745e74770f",
+      "data": {
+        "following": 109,
+        "profile_text": "Online coaching \nPro International Fitness Model Online fitness coach and international fitness model fitness coaching model online international training workouts health motivation nutrition",
+        "platform": "tiktok",
+        "username": "jacodbruyn",
+        "display_name": "Jaco de Bruyn",
+        "followers": 128600,
+        "posts_count": "310",
+        "post_text": "But I’ll definitely share, who wants a glass? The most beautiful moment captured! We love you @Tris Roth and @charise981 Get a grip 🤣💪🏻 @fitdads @USNSA @Planet Fitness SA Still playing with toys Meet pur Top 10 best DadBod transformation out of 1652 entries. Thank you to our partners @Planet Fitness SA @USNSA @fitdads Enjoy your day! Any other guys wife’s struggle with these words Join TeamJDB, www.Jdbfitness.coach - summer bodies are build in the winter 💪🏻 no excuse The Micowave saved my life🤣 Lets laugh a bit 🤣",
+        "hashtag_text": "Giveaway PhoneGiveaway Honor Honor400 dadbodsa dadbod bradjay jacodebruyn podcast mentalhealth nutrition health fitness",
+        "lance_db_id": "tiktok_tiktok_csv_076419",
+        "biography": "Online coaching \nPro International Fitness Model",
+        "profile_url": "https://www.tiktok.com/@jacodbruyn",
+        "external_url": ""
+      }
+    },
+    {
+      "id": "b8bccafe-2892-4d4e-b5fc-998c5979d02e",
+      "data": {
+        "platform": "instagram",
+        "profile_url": "https://instagram.com/imamul.fitness",
+        "following": 99,
+        "profile_text": "Welcome to my profile ☺️\n📩 DM for collaboration👇Email Contact imamul.fitness@gmail.com Fitness influencer fitness gym workout nopain bhai motivation collaboration explorepage fitnessmodel training",
+        "hashtag_text": "explorepage",
+        "lance_db_id": "instagram_insta100kemail3_csv_003928",
+        "username": "imamul.fitness",
+        "display_name": "I M A M U L  F I T N E S S 🇮🇳 🇯🇴",
+        "biography": "Welcome to my profile ☺️\n📩 DM for collaboration👇Email Contact imamul.fitness@gmail.com",
+        "external_url": "https://youtube.com/@imamulfit?si=qC0kY46fmq43-Oh5",
+        "followers": 100660,
+        "posts_count": "138",
+        "post_text": "Fitness model🔥 @imamul.fitness 🔹 No PAIN No GAIN Bhai log🔥 . . Ruk Tujhe Dikhata Ho🤣 . . @imamul.fitness 🔥 . . #explorepage✨ challenge😍 @imamul.fitness . . @imamul.fitness follow 👈. . . . @imamul.fitness . . challenge accept karo 💪 . full video on Facebook Amamul Rain . . . . Wait for end 😂😂 @sameer_fire_boy Impress ho gai 😍 @imamul.fitness . . . ."
+      }
+    },
+    {
+      "id": "90efc748-dd26-4db0-92fa-a06be5cd8ede",
+      "data": {
+        "profile_text": "𝐖𝐎𝐑𝐊𝐎𝐔𝐓𝐒 | 𝐌𝐈𝐍𝐃𝐒𝐄𝐓 \n\n✨let’s become the best version of ourselves✨ workouts mindset fitness motivation self-improvement discipline wellness growth routine goals",
+        "hashtag_text": "",
+        "platform": "tiktok",
+        "username": "spen_fitness",
+        "display_name": "Spen Fitness",
+        "profile_url": "https://www.tiktok.com/@spen_fitness",
+        "followers": 73700,
+        "posts_count": "1349",
+        "post_text": "",
+        "lance_db_id": "tiktok_tiktok_csv_020084",
+        "biography": "𝐖𝐎𝐑𝐊𝐎𝐔𝐓𝐒 | 𝐌𝐈𝐍𝐃𝐒𝐄𝐓 \n\n✨let’s become the best version of ourselves✨",
+        "external_url": "https://linktr.ee/spen_fitness",
+        "following": 706
+      }
+    }
+  ],
+  "timestamp": "2025-11-16T00:04:09.030Z"
+}

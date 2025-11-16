@@ -88,6 +88,9 @@ export interface PipelineJobDocument {
     queries: string[];
     completed_at?: Timestamp | null;
     error?: string | null;
+    start_time_seconds?: number; // Seconds relative to function start
+    end_time_seconds?: number; // Seconds relative to function start
+    duration_seconds?: number; // Duration in seconds
   };
   
   weaviate_search?: {
@@ -97,6 +100,9 @@ export interface PipelineJobDocument {
     queries_executed: number;
     completed_at?: Timestamp | null;
     error?: string | null;
+    start_time_seconds?: number; // Seconds relative to function start
+    end_time_seconds?: number; // Seconds relative to function start
+    duration_seconds?: number; // Duration in seconds
   };
   
   brightdata_collection?: {
@@ -105,6 +111,9 @@ export interface PipelineJobDocument {
     profiles_collected: number;
     completed_at?: Timestamp | null;
     error?: string | null;
+    start_time_seconds?: number; // Seconds relative to function start
+    end_time_seconds?: number; // Seconds relative to function start
+    duration_seconds?: number; // Duration in seconds
   };
   
   llm_analysis?: {
@@ -112,6 +121,9 @@ export interface PipelineJobDocument {
     profiles_analyzed: number;
     completed_at?: Timestamp | null;
     error?: string | null;
+    start_time_seconds?: number; // Seconds relative to function start
+    end_time_seconds?: number; // Seconds relative to function start
+    duration_seconds?: number; // Duration in seconds
   };
   
   // Results (stored in Storage for large datasets)
@@ -160,13 +172,16 @@ export async function createPipelineJob(
   };
   if (metadata?.uid && typeof metadata.uid === 'string' && metadata.uid.trim()) {
     jobDoc.uid = metadata.uid.trim();
+    console.log(`[Firestore] Setting uid for pipeline job ${jobId}: ${jobDoc.uid}`);
+  } else {
+    console.warn(`[Firestore] No uid provided for pipeline job ${jobId}. Metadata:`, metadata);
   }
   if (metadata?.campaignId && typeof metadata.campaignId === 'string' && metadata.campaignId.trim()) {
     jobDoc.campaign_id = metadata.campaignId.trim();
   }
   
   await db.collection(PIPELINE_COLLECTION).doc(jobId).set(jobDoc);
-  console.log(`[Firestore] Created pipeline job: ${jobId}`);
+  console.log(`[Firestore] Created pipeline job: ${jobId} with uid: ${jobDoc.uid || 'none'}`);
   
   return jobId;
 }
@@ -249,7 +264,9 @@ export async function updateQueryExpansionStage(
   jobId: string,
   status: StageStatus,
   queries?: string[],
-  error?: string | null
+  error?: string | null,
+  startTimeSeconds?: number,
+  durationSeconds?: number
 ): Promise<void> {
   const updates: any = {
     'query_expansion.status': status,
@@ -265,6 +282,18 @@ export async function updateQueryExpansionStage(
     updates['query_expansion.error'] = error;
   }
   
+  if (startTimeSeconds !== undefined) {
+    updates['query_expansion.start_time_seconds'] = startTimeSeconds;
+  }
+  
+  if (durationSeconds !== undefined) {
+    updates['query_expansion.duration_seconds'] = durationSeconds;
+    // Calculate end_time_seconds if we have both start and duration
+    if (startTimeSeconds !== undefined) {
+      updates['query_expansion.end_time_seconds'] = startTimeSeconds + durationSeconds;
+    }
+  }
+  
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
   console.log(`[Firestore] Updated query expansion stage for ${jobId}: ${status}`);
 }
@@ -278,7 +307,9 @@ export async function updateWeaviateSearchStage(
   totalResults?: number,
   deduplicatedResults?: number,
   queriesExecuted?: number,
-  error?: string | null
+  error?: string | null,
+  startTimeSeconds?: number,
+  durationSeconds?: number
 ): Promise<void> {
   const updates: any = {
     'weaviate_search.status': status,
@@ -302,6 +333,18 @@ export async function updateWeaviateSearchStage(
     updates['weaviate_search.error'] = error;
   }
   
+  if (startTimeSeconds !== undefined) {
+    updates['weaviate_search.start_time_seconds'] = startTimeSeconds;
+  }
+  
+  if (durationSeconds !== undefined) {
+    updates['weaviate_search.duration_seconds'] = durationSeconds;
+    // Calculate end_time_seconds if we have both start and duration
+    if (startTimeSeconds !== undefined) {
+      updates['weaviate_search.end_time_seconds'] = startTimeSeconds + durationSeconds;
+    }
+  }
+  
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
   console.log(`[Firestore] Updated Weaviate search stage for ${jobId}: ${status}`);
 }
@@ -314,7 +357,9 @@ export async function updateBrightDataStage(
   status: StageStatus,
   profilesRequested?: number,
   profilesCollected?: number,
-  error?: string | null
+  error?: string | null,
+  startTimeSeconds?: number,
+  durationSeconds?: number
 ): Promise<void> {
   const updates: any = {
     'brightdata_collection.status': status,
@@ -334,6 +379,18 @@ export async function updateBrightDataStage(
     updates['brightdata_collection.error'] = error;
   }
   
+  if (startTimeSeconds !== undefined) {
+    updates['brightdata_collection.start_time_seconds'] = startTimeSeconds;
+  }
+  
+  if (durationSeconds !== undefined) {
+    updates['brightdata_collection.duration_seconds'] = durationSeconds;
+    // Calculate end_time_seconds if we have both start and duration
+    if (startTimeSeconds !== undefined) {
+      updates['brightdata_collection.end_time_seconds'] = startTimeSeconds + durationSeconds;
+    }
+  }
+  
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
   console.log(`[Firestore] Updated BrightData stage for ${jobId}: ${status}`);
 }
@@ -345,7 +402,9 @@ export async function updateLLMAnalysisStage(
   jobId: string,
   status: StageStatus,
   profilesAnalyzed?: number,
-  error?: string | null
+  error?: string | null,
+  startTimeSeconds?: number,
+  durationSeconds?: number
 ): Promise<void> {
   const updates: any = {
     'llm_analysis.status': status,
@@ -359,6 +418,18 @@ export async function updateLLMAnalysisStage(
   
   if (error !== undefined) {
     updates['llm_analysis.error'] = error;
+  }
+  
+  if (startTimeSeconds !== undefined) {
+    updates['llm_analysis.start_time_seconds'] = startTimeSeconds;
+  }
+  
+  if (durationSeconds !== undefined) {
+    updates['llm_analysis.duration_seconds'] = durationSeconds;
+    // Calculate end_time_seconds if we have both start and duration
+    if (startTimeSeconds !== undefined) {
+      updates['llm_analysis.end_time_seconds'] = startTimeSeconds + durationSeconds;
+    }
   }
   
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
@@ -476,8 +547,9 @@ async function saveProfilesToStorage(
     },
   });
   
-  // Make file publicly readable (or use signed URLs if needed)
-  await file.makePublic();
+  // Note: With uniform bucket-level access enabled, we cannot use makePublic().
+  // Files are accessed server-side via admin credentials, so public access is not needed.
+  // If public access is required, use signed URLs or configure bucket IAM policy instead.
   
   const publicUrl = `https://storage.googleapis.com/${STORAGE_BUCKET_NAME}/${filePath}`;
   console.log(`[Storage] Saved ${profiles.length} profiles to ${filePath}`);

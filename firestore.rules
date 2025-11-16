@@ -32,7 +32,7 @@ service cloud.firestore {
       match /campaigns/{campaignId} {
         allow read, write: if isOwner(userId);
         
-        // Campaign subcollections (collected, chat, outreach, search)
+        // Campaign subcollections (collected, chat, outreach, search, outreach_contacts, outreach_state)
         match /{subcollection=**} {
           allow read, write: if isOwner(userId);
         }

@@ -1,10 +1,5 @@
-import { randomUUID } from 'crypto';
-import {
-	getConversation,
-	registerUserMessage,
-	handleAssistantTurn
-} from '$lib/server/chat-assistant';
-import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
+import { getConversation, sendMessage } from '$lib/server/chat/chatbot-client';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 
 export const GET = handleApiRoute(async (event) => {
 	const user = requireUser(event);
@@ -22,43 +17,50 @@ export const GET = handleApiRoute(async (event) => {
 		userId: user.uid
 	});
 
-	const conversation = await getConversation(user.uid, campaignId, logger);
-	if (!conversation) {
-		logger.warn('Conversation not found for campaign', {
-			campaignId,
-			userId: user.uid
+	try {
+		const response = await getConversation(campaignId, {
+			uid: user.uid,
+			logger
 		});
-		throw new ApiProblem({
-			status: 404,
-			code: 'CONVERSATION_NOT_FOUND',
-			message: 'Conversation not found.'
-		});
-	}
 
-	// Transform to UI-compatible format
-	const uiConversation = {
-		id: conversation.id,
-		status: conversation.status,
-		collected: {
-			website: conversation.collected.website ?? undefined,
-			business_location: conversation.collected.business_location ?? undefined,
-			business_about: conversation.collected.business_about ?? undefined,
-			locations: conversation.collected.influencer_location ?? undefined,
-			influencerTypes: conversation.collected.influencerTypes ?? undefined,
-			followers: conversation.collected.min_followers !== null || conversation.collected.max_followers !== null
-				? `${conversation.collected.min_followers ?? ''}-${conversation.collected.max_followers ?? ''}`
-				: undefined
-		},
-		missing: conversation.missing,
-		messages: conversation.messages,
-		keywords: conversation.collected.keywords,
-		followerRange: {
-			min: conversation.collected.min_followers,
-			max: conversation.collected.max_followers
+		const conversation = response.conversation;
+
+		// Transform to UI-compatible format
+		const uiConversation = {
+			id: conversation.id,
+			status: conversation.status,
+			collected: {
+				website: conversation.collected.website ?? undefined,
+				business_name: conversation.collected.business_name ?? undefined,
+				business_location: conversation.collected.business_location ?? undefined,
+				business_about: conversation.collected.business_about ?? undefined,
+				locations: conversation.collected.influencer_location ?? undefined,
+				platform: conversation.collected.platform ?? undefined,
+			type_of_influencer: conversation.collected.type_of_influencer ?? undefined,
+				followers: conversation.collected.min_followers !== null || conversation.collected.max_followers !== null
+					? `${conversation.collected.min_followers ?? ''}-${conversation.collected.max_followers ?? ''}`
+					: undefined
+			},
+			missing: conversation.missing,
+			messages: conversation.messages,
+			followerRange: {
+				min: conversation.collected.min_followers,
+				max: conversation.collected.max_followers
+			}
+		};
+
+		return apiOk({ conversation: uiConversation });
+	} catch (error) {
+		logger.error('Failed to get conversation', { error });
+		if (error instanceof ApiProblem && error.status === 404) {
+			throw new ApiProblem({
+				status: 404,
+				code: 'CONVERSATION_NOT_FOUND',
+				message: 'Conversation not found.'
+			});
 		}
-	};
-
-	return apiOk({ conversation: uiConversation });
+		throw error;
+	}
 }, { component: 'chat' });
 
 export const POST = handleApiRoute(async (event) => {
@@ -109,54 +111,52 @@ export const POST = handleApiRoute(async (event) => {
 		});
 	}
 
-	const turnId = randomUUID();
 	const logger = event.locals.logger.child({
 		campaignId,
-		turnId
+		userId: user.uid
 	});
 
 	try {
-		const userMessage = await registerUserMessage(user.uid, campaignId, trimmed, {
-			logger,
-			turnId
-		});
-		const assistantTurn = await handleAssistantTurn(user.uid, campaignId, trimmed, {
-			logger,
-			turnId
+		const response = await sendMessage(campaignId, trimmed, {
+			uid: user.uid,
+			logger
 		});
 
 		logger.info('Assistant turn completed', {
-			assistantMessages: assistantTurn.assistantMessages.length,
-			status: assistantTurn.snapshot.status
+			assistantMessages: response.assistantMessages.length,
+			status: response.conversation.status
 		});
+
+		const conversation = response.conversation;
 
 		// Transform to UI-compatible format
 		const uiConversation = {
-			id: assistantTurn.snapshot.id,
-			status: assistantTurn.snapshot.status,
+			id: conversation.id,
+			status: conversation.status,
 			collected: {
-				website: assistantTurn.snapshot.collected.website ?? undefined,
-				business_location: assistantTurn.snapshot.collected.business_location ?? undefined,
-				business_about: assistantTurn.snapshot.collected.business_about ?? undefined,
-				locations: assistantTurn.snapshot.collected.influencer_location ?? undefined,
-				influencerTypes: assistantTurn.snapshot.collected.influencerTypes ?? undefined,
-				followers: assistantTurn.snapshot.collected.min_followers !== null || assistantTurn.snapshot.collected.max_followers !== null
-					? `${assistantTurn.snapshot.collected.min_followers ?? ''}-${assistantTurn.snapshot.collected.max_followers ?? ''}`
+				website: conversation.collected.website ?? undefined,
+				business_name: conversation.collected.business_name ?? undefined,
+				business_location: conversation.collected.business_location ?? undefined,
+				business_about: conversation.collected.business_about ?? undefined,
+				locations: conversation.collected.influencer_location ?? undefined,
+				platform: conversation.collected.platform ?? undefined,
+			type_of_influencer: conversation.collected.type_of_influencer ?? undefined,
+				followers: conversation.collected.min_followers !== null || conversation.collected.max_followers !== null
+					? `${conversation.collected.min_followers ?? ''}-${conversation.collected.max_followers ?? ''}`
 					: undefined
 			},
-			missing: assistantTurn.snapshot.missing,
-			messages: assistantTurn.snapshot.messages,
-			keywords: assistantTurn.snapshot.collected.keywords,
+			missing: conversation.missing,
+			messages: conversation.messages,
 			followerRange: {
-				min: assistantTurn.snapshot.collected.min_followers,
-				max: assistantTurn.snapshot.collected.max_followers
+				min: conversation.collected.min_followers,
+				max: conversation.collected.max_followers
 			}
 		};
 
 		return apiOk({
-			campaignId,
-			userMessage,
-			assistantMessages: assistantTurn.assistantMessages,
+			campaignId: response.campaignId,
+			userMessage: response.userMessage,
+			assistantMessages: response.assistantMessages,
 			conversation: uiConversation
 		});
 	} catch (error) {

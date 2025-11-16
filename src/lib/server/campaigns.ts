@@ -1,6 +1,7 @@
+import { randomUUID } from 'crypto';
 import type { QueryDocumentSnapshot } from 'firebase-admin/firestore';
-import { chatCollectedDocRef } from './firestore';
-import type { ChatCollectedData } from './firestore';
+import { campaignDocRef, chatCollectedDocRef, type ChatCollectedData } from './core';
+import type { Logger } from './core';
 
 export type SerializedCampaign = {
 	id: string | null;
@@ -8,23 +9,26 @@ export type SerializedCampaign = {
 	updatedAt: number | null;
 	title: string | null;
 	website: string | null;
-	influencerTypes: string | null;
+	business_name: string | null;
+	type_of_influencer: string | null;
 	locations: string | null;
 	followers: string | null;
 	business_location: string | null;
+	platform: string | null;
 	followersMin: number | null;
 	followersMax: number | null;
-	keywords: string[];
 	businessSummary: string | null;
-	influencerSearchQuery: string | null;
 	lastUpdatedTurnId: string | null;
 	pipeline_id: string | null;
+	influencerTypes?: string | null;
+	influencerSearchQuery?: string | null;
 	// Detailed fields for info panel
 	status?: 'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error';
 	collected?: Record<string, string | undefined>;
 	missing?: string[];
 	fieldStatus?: {
 		website?: 'not_collected' | 'collected' | 'confirmed';
+		business_name?: 'not_collected' | 'collected' | 'confirmed';
 		business_location?: 'not_collected' | 'collected' | 'confirmed';
 		business_about?: 'not_collected' | 'collected' | 'confirmed';
 		influencer_location?: 'not_collected' | 'collected' | 'confirmed';
@@ -81,22 +85,24 @@ export async function serializeCampaignRecord(
 		}
 	}
 
-	const influencerTypes = collectedData?.influencerTypes ?? null;
+	const typeOfInfluencer = collectedData?.type_of_influencer ?? null;
 	const website = collectedData?.website ?? null;
+	const businessName = collectedData?.business_name ?? null;
 	const businessLocation = collectedData?.business_location ?? null;
 	const locations = collectedData?.influencer_location ?? null;
-	const keywords = collectedData?.keywords ?? [];
+	const platform = collectedData?.platform ?? null;
 	const followersMin = collectedData?.min_followers ?? null;
 	const followersMax = collectedData?.max_followers ?? null;
 	const businessSummary = collectedData?.business_about ?? null;
-	const influencerSearchQuery = collectedData?.influencer_search_query ?? null;
 
 	// Build collected record for backward compatibility
 	const collected: Record<string, string | undefined> = {};
 	if (collectedData?.website) collected.website = collectedData.website;
+	if (collectedData?.business_name) collected.business_name = collectedData.business_name;
 	if (collectedData?.business_location) collected.business_location = collectedData.business_location;
 	if (collectedData?.influencer_location) collected.locations = collectedData.influencer_location;
-	if (collectedData?.influencerTypes) collected.influencerTypes = collectedData.influencerTypes;
+	if (collectedData?.platform) collected.platform = collectedData.platform;
+	if (collectedData?.type_of_influencer) collected.type_of_influencer = collectedData.type_of_influencer;
 
 	return {
 		id,
@@ -104,15 +110,15 @@ export async function serializeCampaignRecord(
 		updatedAt: toMillis(data.updatedAt) ?? (typeof data.updatedAtMs === 'number' ? data.updatedAtMs : null),
 		title: typeof data.title === 'string' ? data.title : null,
 		website,
-		influencerTypes,
+		business_name: businessName,
+		type_of_influencer: typeOfInfluencer,
 		locations,
 		followers: null, // No longer stored as text, use followersMin/followersMax
 		business_location: businessLocation,
+		platform,
 		followersMin,
 		followersMax,
-		keywords,
 		businessSummary,
-		influencerSearchQuery,
 		lastUpdatedTurnId: typeof data.lastUpdatedTurnId === 'string' ? data.lastUpdatedTurnId : null,
 		pipeline_id: typeof data.pipeline_id === 'string' ? data.pipeline_id : null,
 		// Include detailed fields
@@ -136,4 +142,45 @@ export async function serializeCampaignRecord(
 
 export async function serializeCampaignSnapshot(doc: QueryDocumentSnapshot, uid?: string): Promise<SerializedCampaign> {
 	return serializeCampaignRecord(doc.data() ?? {}, doc.id, uid);
+}
+
+/**
+ * Create a new campaign document in Firestore.
+ * The chatbot service will handle messages and sync collected data.
+ */
+export async function createCampaign(uid: string, logger?: Logger): Promise<string> {
+	const campaignId = randomUUID();
+	const now = Date.now();
+	
+	const campaignRef = campaignDocRef(uid, campaignId);
+	
+	// Create minimal campaign document
+	await campaignRef.set({
+		id: campaignId,
+		title: 'New Campaign',
+		status: 'collecting' as const,
+		createdAt: now,
+		updatedAt: now
+	});
+
+	// Create initial collected data document (will be synced by chatbot service)
+	const collectedRef = chatCollectedDocRef(uid, campaignId);
+	await collectedRef.set({
+		website: null,
+		business_name: null,
+		business_location: null,
+		business_about: null,
+		influencer_location: null,
+		platform: null,
+		type_of_influencer: null,
+		min_followers: null,
+		max_followers: null,
+		campaign_title: null,
+		fieldStatus: {},
+		updatedAt: now
+	});
+
+	logger?.info('Campaign created', { campaignId });
+
+	return campaignId;
 }

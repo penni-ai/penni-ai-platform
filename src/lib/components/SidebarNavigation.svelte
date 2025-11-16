@@ -19,6 +19,7 @@
 	interface Props {
 		campaigns?: CampaignLink[];
 		selectedCampaignId?: string | null;
+		onUpgrade?: () => void;
 	}
 
 	const navItems: NavItem[] = [
@@ -28,18 +29,121 @@
 
 	let {
 		campaigns = [],
-		selectedCampaignId = null
+		selectedCampaignId = null,
+		onUpgrade
 	}: Props = $props();
 
 	let openMenuId = $state<string | null>(null);
 	let infoCampaignId = $state<string | null>(null);
 	let infoCampaignData = $state<any>(null);
 	let isLoadingInfo = $state(false);
+	
+	// Editable campaign fields state
+	let editingFields = $state<Record<string, string>>({});
+	let isSaving = $state(false);
+	let saveError = $state<string | null>(null);
+	let saveSuccess = $state(false);
+	
+	// Initialize editing fields when campaign data loads
+	$effect(() => {
+		if (infoCampaignData) {
+			editingFields = {
+				title: infoCampaignData.title ?? '',
+				website: infoCampaignData.collected?.website ?? infoCampaignData.website ?? '',
+				business_name: infoCampaignData.collected?.business_name ?? infoCampaignData.business_name ?? '',
+				business_location: infoCampaignData.collected?.business_location ?? infoCampaignData.business_location ?? '',
+				businessSummary: infoCampaignData.businessSummary ?? '',
+				locations: infoCampaignData.collected?.locations ?? infoCampaignData.locations ?? '',
+				type_of_influencer: infoCampaignData.collected?.type_of_influencer ?? infoCampaignData.type_of_influencer ?? '',
+				platform: infoCampaignData.collected?.platform ?? infoCampaignData.platform ?? '',
+				followersMin: infoCampaignData.followersMin?.toString() ?? infoCampaignData.followerRange?.min?.toString() ?? '',
+				followersMax: infoCampaignData.followersMax?.toString() ?? infoCampaignData.followerRange?.max?.toString() ?? ''
+			};
+		}
+	});
+	
+	async function saveCampaignFields() {
+		if (!infoCampaignId || isSaving) return;
+		
+		isSaving = true;
+		saveError = null;
+		saveSuccess = false;
+		
+		try {
+			const updateData: Record<string, unknown> = {};
+			
+			// Convert string values to appropriate types
+			if (editingFields.title !== undefined) updateData.title = editingFields.title || null;
+			if (editingFields.website !== undefined) updateData.website = editingFields.website || null;
+			if (editingFields.business_name !== undefined) updateData.business_name = editingFields.business_name || null;
+			if (editingFields.business_location !== undefined) updateData.business_location = editingFields.business_location || null;
+			if (editingFields.businessSummary !== undefined) updateData.businessSummary = editingFields.businessSummary || null;
+			if (editingFields.locations !== undefined) updateData.locations = editingFields.locations || null;
+			if (editingFields.type_of_influencer !== undefined) updateData.type_of_influencer = editingFields.type_of_influencer || null;
+			if (editingFields.platform !== undefined) updateData.platform = editingFields.platform || null;
+			if (editingFields.followersMin !== undefined) updateData.followersMin = editingFields.followersMin ? parseInt(editingFields.followersMin, 10) : null;
+			if (editingFields.followersMax !== undefined) updateData.followersMax = editingFields.followersMax ? parseInt(editingFields.followersMax, 10) : null;
+			
+			const response = await fetch(`/api/campaigns/${infoCampaignId}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(updateData)
+			});
+			
+			if (!response.ok) {
+				const data = await response.json();
+				throw new Error(data.error || 'Failed to update campaign');
+			}
+			
+			// Reload campaign data
+			const updatedResponse = await fetch(`/api/campaigns/${infoCampaignId}`);
+			if (updatedResponse.ok) {
+				infoCampaignData = await updatedResponse.json();
+			}
+			
+			saveSuccess = true;
+			setTimeout(() => {
+				saveSuccess = false;
+			}, 2000);
+		} catch (error) {
+			saveError = error instanceof Error ? error.message : 'Failed to save changes';
+			console.error('Failed to save campaign fields:', error);
+		} finally {
+			isSaving = false;
+		}
+	}
 	let usage = $state<{ 
-		search: { count: number; limit: number; remaining: number; resetDate: number };
-		outreach: { count: number; limit: number; remaining: number; resetDate: number };
+		influencersFound: { count: number; limit: number; remaining: number; resetDate: number };
+		outreachSent: { count: number; limit: number; remaining: number; resetDate: number };
 	} | null>(null);
 	let currentPlanKey = $state<string | null>(null);
+	
+	// Cache for prefetched conversations to avoid duplicate requests
+	const prefetchCache = new Map<string, Promise<void>>();
+	
+	// Prefetch conversation data when hovering on campaign link
+	function prefetchConversation(campaignId: string) {
+		// Skip if already prefetching or cached
+		if (prefetchCache.has(campaignId)) {
+			return;
+		}
+		
+		// Start prefetch
+		const prefetchPromise = fetch(`/api/chat/${campaignId}`, {
+			method: 'GET',
+			headers: { 'Content-Type': 'application/json' }
+		}).then(() => {
+			// Keep in cache for a short time to avoid re-fetching
+			setTimeout(() => {
+				prefetchCache.delete(campaignId);
+			}, 30000); // Clear after 30 seconds
+		}).catch(() => {
+			// Remove from cache on error so it can be retried
+			prefetchCache.delete(campaignId);
+		});
+		
+		prefetchCache.set(campaignId, prefetchPromise);
+	}
 
 	function toggleMenu(campaignId: string, event: MouseEvent) {
 		event.preventDefault();
@@ -172,9 +276,9 @@
 				throw new Error('Failed to delete campaign');
 			}
 
-			// If we're currently viewing this campaign, redirect to home
+			// If we're currently viewing this campaign, redirect to dashboard
 			if (selectedCampaignId === campaignId) {
-				await goto('/');
+				await goto('/dashboard');
 			}
 
 			closeMenu();
@@ -224,6 +328,7 @@
 						<a
 							href={campaign.href ?? `/campaign/${campaign.id}`}
 							class="flex-1 font-medium"
+							onmouseenter={() => prefetchConversation(campaign.id)}
 						>
 							{campaign.name}
 						</a>
@@ -308,10 +413,16 @@
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-semibold text-gray-900">{getPlanName(currentPlanKey)}</p>
 					<Button
-						href="/pricing"
 						variant="primary"
 						size="sm"
 						class="text-xs px-2.5 py-1 shrink-0"
+						onclick={() => {
+							if (onUpgrade) {
+								onUpgrade();
+							} else {
+								window.location.href = '/pricing';
+							}
+						}}
 					>
 						Upgrade
 					</Button>
@@ -322,13 +433,13 @@
 					<div class="flex items-center justify-between">
 						<p class="text-xs text-gray-600">Influencers Found</p>
 						<p class="text-xs font-medium text-gray-900">
-							{usage.search.remaining} / {usage.search.limit} remaining
+							{usage.influencersFound.remaining} / {usage.influencersFound.limit} remaining
 						</p>
 					</div>
 					<div class="h-2 w-full overflow-hidden rounded-full bg-gray-100">
 						<div
 							class="h-full bg-[#FF6F61] transition-all duration-300"
-							style="width: {usage.search.limit > 0 ? Math.min(100, (usage.search.remaining / usage.search.limit) * 100) : 0}%"
+							style="width: {usage.influencersFound.limit > 0 ? Math.min(100, (usage.influencersFound.remaining / usage.influencersFound.limit) * 100) : 0}%"
 						></div>
 					</div>
 				</div>
@@ -338,19 +449,19 @@
 					<div class="flex items-center justify-between">
 						<p class="text-xs text-gray-600">Outreach Sent</p>
 						<p class="text-xs font-medium text-gray-900">
-							{usage.outreach.remaining} / {usage.outreach.limit} remaining
+							{usage.outreachSent.remaining} / {usage.outreachSent.limit} remaining
 						</p>
 					</div>
 					<div class="h-2 w-full overflow-hidden rounded-full bg-gray-100">
 						<div
 							class="h-full bg-[#FF6F61] transition-all duration-300"
-							style="width: {usage.outreach.limit > 0 ? Math.min(100, (usage.outreach.remaining / usage.outreach.limit) * 100) : 0}%"
+							style="width: {usage.outreachSent.limit > 0 ? Math.min(100, (usage.outreachSent.remaining / usage.outreachSent.limit) * 100) : 0}%"
 						></div>
 					</div>
 				</div>
 				
 				<p class="text-[10px] text-gray-500">
-					Resets {formatResetDate(usage.search.resetDate)}
+					Resets {formatResetDate(usage.influencersFound.resetDate)}
 				</p>
 			</div>
 		</div>
@@ -441,9 +552,33 @@
 							<section>
 							<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Campaign Fields</h3>
 							<dl class="space-y-3">
+								<!-- Business Name -->
+								<div>
+									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+										Business Name
+										{#if infoCampaignData.fieldStatus?.business_name === 'confirmed'}
+											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
+										{:else if infoCampaignData.fieldStatus?.business_name === 'collected'}
+											<span class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800">Collected</span>
+										{:else if (infoCampaignData.collected?.business_name ?? infoCampaignData.business_name) !== null && (infoCampaignData.collected?.business_name ?? infoCampaignData.business_name) !== undefined}
+											<span class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800">Collected</span>
+										{:else}
+											<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
+										{/if}
+									</dt>
+									<dd class="mt-1">
+										<input
+											type="text"
+											bind:value={editingFields.business_name}
+											placeholder="Enter business name"
+											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+										/>
+									</dd>
+								</div>
+
 								<!-- Website -->
 								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2">
+									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
 										Website
 										{#if infoCampaignData.fieldStatus?.website === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -457,12 +592,19 @@
 											<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
 										{/if}
 									</dt>
-									<dd class="mt-1 text-sm text-gray-900">{infoCampaignData.collected?.website ?? infoCampaignData.website ?? '—'}</dd>
+									<dd class="mt-1">
+										<input
+											type="text"
+											bind:value={editingFields.website}
+											placeholder="Enter website URL"
+											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+										/>
+									</dd>
 								</div>
 
 								<!-- Business Location -->
 								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2">
+									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
 										Business Location
 										{#if infoCampaignData.fieldStatus?.business_location === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -476,12 +618,19 @@
 											<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
 										{/if}
 									</dt>
-									<dd class="mt-1 text-sm text-gray-900">{infoCampaignData.collected?.business_location ?? infoCampaignData.business_location ?? '—'}</dd>
+									<dd class="mt-1">
+										<input
+											type="text"
+											bind:value={editingFields.business_location}
+											placeholder="Enter business location"
+											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+										/>
+									</dd>
 								</div>
 
 								<!-- Business About -->
 								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2">
+									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
 										Business About
 										{#if infoCampaignData.fieldStatus?.business_about === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -493,12 +642,19 @@
 											<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
 										{/if}
 									</dt>
-									<dd class="mt-1 text-sm text-gray-900">{infoCampaignData.businessSummary ?? '—'}</dd>
+									<dd class="mt-1">
+										<textarea
+											bind:value={editingFields.businessSummary}
+											placeholder="Enter business description"
+											rows="3"
+											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61] resize-none"
+										></textarea>
+									</dd>
 								</div>
 
 								<!-- Influencer Location -->
 										<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2">
+									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
 										Influencer Location
 										{#if infoCampaignData.fieldStatus?.influencer_location === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -512,25 +668,61 @@
 											<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
 										{/if}
 									</dt>
-									<dd class="mt-1 text-sm text-gray-900">{infoCampaignData.collected?.locations ?? infoCampaignData.locations ?? '—'}</dd>
+									<dd class="mt-1">
+										<input
+											type="text"
+											bind:value={editingFields.locations}
+											placeholder="Enter influencer location"
+											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+										/>
+									</dd>
 										</div>
 
 								<!-- Influencer Types -->
 								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2">
-										Influencer Types
-										{#if (infoCampaignData.collected?.influencerTypes ?? infoCampaignData.influencerTypes) !== null && (infoCampaignData.collected?.influencerTypes ?? infoCampaignData.influencerTypes) !== undefined}
+								<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+									Type of Influencer
+									{#if (infoCampaignData.collected?.type_of_influencer ?? infoCampaignData.type_of_influencer) !== null && (infoCampaignData.collected?.type_of_influencer ?? infoCampaignData.type_of_influencer) !== undefined}
+										<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Collected</span>
+									{:else}
+										<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
+					{/if}
+								</dt>
+								<dd class="mt-1">
+									<input
+										type="text"
+										bind:value={editingFields.type_of_influencer}
+										placeholder="Enter type of influencer"
+										class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+									/>
+								</dd>
+							</div>
+
+							<!-- Platform -->
+							<div>
+								<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+									Platform
+									{#if (infoCampaignData.collected?.platform ?? infoCampaignData.platform) !== null && (infoCampaignData.collected?.platform ?? infoCampaignData.platform) !== undefined}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Collected</span>
 										{:else}
 											<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
 						{/if}
 									</dt>
-									<dd class="mt-1 text-sm text-gray-900">{infoCampaignData.collected?.influencerTypes ?? infoCampaignData.influencerTypes ?? '—'}</dd>
+								<dd class="mt-1">
+									<select
+										bind:value={editingFields.platform}
+										class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+									>
+										<option value="">Select platform</option>
+										<option value="instagram">Instagram</option>
+										<option value="tiktok">TikTok</option>
+									</select>
+								</dd>
 								</div>
 
 								<!-- Followers -->
 								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2">
+									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
 										Follower Range
 										{#if infoCampaignData.fieldStatus?.min_followers === 'confirmed' || infoCampaignData.fieldStatus?.max_followers === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -544,30 +736,48 @@
 											<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
 										{/if}
 									</dt>
-									<dd class="mt-1 text-sm text-gray-900">
-										{#if infoCampaignData.followerRange && (infoCampaignData.followerRange.min !== null || infoCampaignData.followerRange.max !== null)}
-											{infoCampaignData.followerRange.min ?? '—'} – {infoCampaignData.followerRange.max ?? '—'}
-										{:else if infoCampaignData.followersMin !== null || infoCampaignData.followersMax !== null}
-											{infoCampaignData.followersMin ?? '—'} – {infoCampaignData.followersMax ?? '—'}
-										{:else}
-											—
-										{/if}
+									<dd class="mt-1">
+										<div class="flex items-center gap-2">
+											<input
+												type="number"
+												bind:value={editingFields.followersMin}
+												placeholder="Min"
+												class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+											/>
+											<span class="text-gray-500">–</span>
+											<input
+												type="number"
+												bind:value={editingFields.followersMax}
+												placeholder="Max"
+												class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+											/>
+										</div>
 									</dd>
 								</div>
 							</dl>
-							</section>
 
-						<!-- Keywords -->
-						{#if infoCampaignData.keywords && infoCampaignData.keywords.length > 0}
-							<section>
-								<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Influencer Keywords</h3>
-								<div class="flex flex-wrap gap-2">
-									{#each infoCampaignData.keywords as keyword}
-										<span class="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800">{keyword}</span>
-									{/each}
+							<!-- Save Button -->
+							<div class="mt-4 pt-4 border-t border-gray-200">
+								<div class="flex items-center justify-between gap-3">
+									{#if saveError}
+										<p class="text-xs text-red-600">{saveError}</p>
+									{:else if saveSuccess}
+										<p class="text-xs text-green-600">Changes saved successfully!</p>
+									{:else}
+										<div></div>
+									{/if}
+									<button
+										type="button"
+										onclick={saveCampaignFields}
+										disabled={isSaving}
+										class="ml-auto rounded-md bg-[#FF6F61] px-4 py-2 text-sm font-medium text-white hover:bg-[#FF5A4A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+									>
+										{isSaving ? 'Saving...' : 'Save Changes'}
+									</button>
+								</div>
 								</div>
 							</section>
-						{/if}
+
 
 						<!-- Follower Range -->
 						{#if infoCampaignData.followerRange || infoCampaignData.followersMin !== null || infoCampaignData.followersMax !== null}

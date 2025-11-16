@@ -1,5 +1,5 @@
-import { apiOk, handleApiRoute, requireUser } from '$lib/server/api';
-import { getOutreachUsage } from '$lib/server/outreach-usage';
+import { apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { getOutreachUsage } from '$lib/server/usage';
 
 export const GET = handleApiRoute(async (event) => {
 	const user = requireUser(event);

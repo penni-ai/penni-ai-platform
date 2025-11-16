@@ -1,12 +1,13 @@
 import { createHash } from 'crypto';
 import { env as publicEnv } from '$env/dynamic/public';
-import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
-import { checkoutSessionDocRef, userDocRef } from '$lib/server/firestore';
-import { getPlanConfig, getOrCreateStripeCustomer, getStripeClient } from '$lib/server/stripe';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
+import { checkoutSessionDocRef, userDocRef } from '$lib/server/core';
+import { getPlanConfig, getOrCreateStripeCustomer, getStripeClient } from '$lib/server/billing';
 
 type CheckoutBody = {
 	plan?: string;
 	idempotencyKey?: string;
+	returnUrl?: string;
 };
 
 const redirectOrigin = (url: URL) => publicEnv.PUBLIC_SITE_URL?.trim() || `${url.protocol}//${url.host}`;
@@ -56,8 +57,35 @@ export const POST = handleApiRoute(async (event) => {
 		const stripe = getStripeClient();
 		const customer = await getOrCreateStripeCustomer(user.uid, user.email ?? '');
 		const origin = redirectOrigin(event.url);
-		const successUrl = `${origin}/billing/success?plan=${plan.plan}&session_id={CHECKOUT_SESSION_ID}`;
-		const cancelUrl = `${origin}/pricing?plan=${plan.plan}&cancelled=1`;
+		
+		// Helper to convert relative URLs to absolute URLs
+		const toAbsoluteUrl = (url: string): string => {
+			if (url.startsWith('http://') || url.startsWith('https://')) {
+				return url; // Already absolute
+			}
+			// Relative URL - prepend origin
+			const path = url.startsWith('/') ? url : `/${url}`;
+			return `${origin}${path}`;
+		};
+		
+		// Use returnUrl if provided, otherwise default to billing page
+		const returnUrlRaw = typeof body.returnUrl === 'string' && body.returnUrl.trim()
+			? body.returnUrl.trim()
+			: `${origin}/my-account/billing?session_id={CHECKOUT_SESSION_ID}`;
+		
+		// Convert to absolute URL if needed
+		const returnUrl = toAbsoluteUrl(returnUrlRaw);
+		
+		// For cancel URL, try to preserve the return URL context, otherwise default to pricing
+		const cancelUrlRaw = typeof body.returnUrl === 'string' && body.returnUrl.trim()
+			? body.returnUrl.trim()
+			: `${origin}/pricing?plan=${plan.plan}&cancelled=1`;
+		
+		const cancelUrl = toAbsoluteUrl(cancelUrlRaw);
+		
+		const successUrl = returnUrl.includes('{CHECKOUT_SESSION_ID}') 
+			? returnUrl 
+			: `${returnUrl}${returnUrl.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`;
 
 		const metadata: Record<string, string> = {
 			plan: plan.plan,
@@ -166,7 +194,19 @@ export const POST = handleApiRoute(async (event) => {
 		const changeVerb = changeKind === 'upgrade' ? 'upgrading' : changeKind ? 'changing' : null;
 		const changeTitle = changeKind === 'upgrade' ? 'Upgrade' : changeKind ? 'Change' : null;
 
-		const sessionIdempotencyKey = deriveKey(body, user.uid, plan.plan, 'checkout-session');
+		// Include parameters that affect the checkout session in the idempotency key
+		// This ensures the key matches the actual session parameters
+		const keyComponents = [
+			user.uid,
+			plan.plan,
+			plan.mode,
+			isPlanChange ? 'change' : 'new',
+			currentPlanKey || 'none',
+			'checkout-session'
+		];
+		const sessionIdempotencyKey = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim()
+			? `${body.idempotencyKey.trim()}::checkout-session`
+			: createHash('sha256').update(keyComponents.join(':')).digest('hex');
 		const session = await stripe.checkout.sessions.create(
 			{
 				mode: plan.mode,
@@ -197,7 +237,6 @@ export const POST = handleApiRoute(async (event) => {
 					isSubscription
 						? {
 							metadata,
-							trial_period_days: !isPlanChange ? plan.trialPeriodDays : undefined,
 							description:
 								changeTitle && currentPlanKey
 									? `${changeTitle} from ${titleCase(currentPlanKey)} to ${titleCase(plan.plan)}`

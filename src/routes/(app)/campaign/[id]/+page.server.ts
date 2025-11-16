@@ -1,6 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { campaignDocRef } from '$lib/server/firestore';
+import { campaignDocRef } from '$lib/server/core';
 import { serializeCampaignRecord } from '$lib/server/campaigns';
 
 export const load: PageServerLoad = async ({ params, locals }) => {

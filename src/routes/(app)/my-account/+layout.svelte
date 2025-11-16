@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 
-	let { data } = $props();
+	let { data, children } = $props();
 	
 	const currentPath = $derived($page.url.pathname);
 	const isAccount = $derived(currentPath === '/my-account' || currentPath === '/my-account/');
@@ -52,7 +52,7 @@
 			</div>
 		</div>
 
-		<slot />
+		{@render children()}
 	</main>
 </div>
 

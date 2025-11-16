@@ -1,10 +1,11 @@
 import type { RequestHandler } from './$types';
 import type Stripe from 'stripe';
 import { env } from '$env/dynamic/private';
-import { ApiProblem, apiOk, handleApiRoute } from '$lib/server/api';
-import type { Logger } from '$lib/server/logger';
-import { getStripeClient, getPlanKeyByPrice, type PlanKey } from '$lib/server/stripe';
-import { buildEntitlements } from '$lib/server/billing-utils';
+import { ApiProblem, apiOk, handleApiRoute } from '$lib/server/core';
+import type { Logger } from '$lib/server/core';
+import { getStripeClient, getPlanKeyByPrice, type PlanKey } from '$lib/server/billing';
+import { buildFeatureCapabilities, getRefreshDate } from '$lib/server/billing';
+import { updateUserFeatureCapabilities } from '$lib/server/billing';
 import {
 	addonDocRef,
 	checkoutSessionDocRef,
@@ -13,7 +14,7 @@ import {
 	subscriptionDocRef,
 	userDocRef,
 	webhookEventDocRef
-} from '$lib/server/firestore';
+} from '$lib/server/core';
 
 const timestamp = () => Date.now();
 
@@ -64,7 +65,6 @@ async function recordSubscription(
 	const now = timestamp();
 	const price = subscription.items.data[0]?.price || null;
 	const planKey = options.planKey ?? resolvePlanKey(subscription.metadata ?? null, price?.id ?? null);
-	const entitlements = buildEntitlements(planKey);
 	const subRef = subscriptionDocRef(uid, subscription.id);
 	const userRef = userDocRef(uid);
 	const raw = subscription as Record<string, any>;
@@ -119,14 +119,15 @@ async function recordSubscription(
 				status: subscription.status,
 				currentPeriodEnd: subscriptionSnapshot.currentPeriodEnd,
 				trialEnd: subscriptionSnapshot.trialEnd,
-				cancelAtPeriodEnd: subscriptionSnapshot.cancelAtPeriodEnd
+				cancelAtPeriodEnd: subscriptionSnapshot.cancelAtPeriodEnd,
+				refreshDate: getRefreshDate()
 			},
 			updatedAt: now
 		};
 
-		if (entitlements) {
-			userUpdate.entitlements = entitlements;
-		}
+		// Update feature capabilities (single source of truth for features/limits)
+		const featureCapabilities = buildFeatureCapabilities(planKey);
+		userUpdate.feature_capabilities = featureCapabilities;
 
 		tx.set(userRef, userUpdate, { merge: true });
 
@@ -171,11 +172,18 @@ async function handleSubscriptionDeleted(uid: string, subscription: Stripe.Subsc
 			{ merge: true }
 		);
 
+		// Update to free plan capabilities when subscription is deleted
+		const freeCapabilities = buildFeatureCapabilities('free');
+
 		tx.set(
 			userDocRef(uid),
 			{
-				currentPlan: null,
-				entitlements: {},
+				currentPlan: {
+					planKey: 'free',
+					status: 'active',
+					refreshDate: getRefreshDate()
+				},
+				feature_capabilities: freeCapabilities,
 				updatedAt: now
 			},
 			{ merge: true }

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Button from '$lib/components/Button.svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { startCheckout } from '$lib/billing/checkout';
 
 	type PlanKey = 'free' | 'starter' | 'growth' | 'event';
 
@@ -48,18 +49,18 @@ function getFeatureColor(feature: string): string {
 }
 
 const plans: Plan[] = [
-		{
-			key: 'free',
-			name: 'Free Plan',
-			price: '$0',
-			cadence: 'forever',
-			description: 'Perfect for trying out Penny with basic features.',
-			estimatedAttendance: 'Great for testing',
-			features: [
-				'Access to 10 influencer profiles (one-time)',
-				'1 search total',
-				'No email outreach capabilities'
-			],
+	{
+		key: 'free',
+		name: 'Free Plan',
+		price: '$0',
+		cadence: 'forever',
+		description: 'Perfect for trying out Penny with basic features.',
+		estimatedAttendance: 'Great for testing',
+		features: [
+			'Access to 30 influencer profiles (one-time)',
+			'Up to 30 influencer searches per month',
+			'No email outreach capabilities'
+		],
 			oneTime: false
 		},
 		{
@@ -220,7 +221,7 @@ function isCurrentPlan(plan: Plan) {
 	return currentPlanKey() === plan.key && status !== 'canceled';
 }
 
-async function startCheckout(plan: Plan) {
+async function handleCheckout(plan: Plan) {
 	if (!plan.oneTime && isCurrentPlan(plan)) {
 		return;
 	}
@@ -269,29 +270,23 @@ async function startCheckout(plan: Plan) {
 	loadingPlan = plan.key;
 	checkoutError = null;
 	checkoutSuccess = null;
+
 	try {
-		const response = await fetch('/api/billing/checkout', {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json'
+		const result = await startCheckout({
+			plan: plan.key,
+			redirectTo: '/pricing',
+			onUpdated: async () => {
+				// This won't be called for pricing page since we handle it below
 			},
-			body: JSON.stringify({ plan: plan.key })
+			onError: (error) => {
+				checkoutError = error;
+		}
 		});
 
-		if (response.status === 401) {
-			window.location.href = `/sign-in?redirectTo=${encodeURIComponent('/pricing')}`;
-			return;
-		}
-
-		const payload = await response.json();
-		if (!response.ok) {
-			throw new Error(payload?.error ?? 'Unable to start checkout.');
-		}
-
-		if (payload?.status === 'updated') {
+		if (result.type === 'updated') {
 			let successMessage = `Plan updated to ${plan.name}. Stripe will auto-prorate the difference.`;
-			if (payload.upcomingInvoice?.amount_due != null && payload.upcomingInvoice?.currency) {
-				const formatted = formatCurrency(payload.upcomingInvoice.amount_due, payload.upcomingInvoice.currency.toUpperCase());
+			if (result.payload?.upcomingInvoice?.amount_due != null && result.payload?.upcomingInvoice?.currency) {
+				const formatted = formatCurrency(result.payload.upcomingInvoice.amount_due, result.payload.upcomingInvoice.currency.toUpperCase());
 				successMessage += ` Upcoming invoice: ${formatted}.`;
 			}
 			checkoutSuccess = successMessage;
@@ -299,11 +294,9 @@ async function startCheckout(plan: Plan) {
 			return;
 		}
 
-		if (!payload?.url) {
-			throw new Error('Checkout URL missing from response.');
+		if (result.type === 'redirect') {
+			window.location.href = result.url;
 		}
-
-		window.location.href = payload.url;
 	} catch (error) {
 		checkoutError = error instanceof Error ? error.message : 'Checkout failed. Please try again.';
 	} finally {
@@ -517,7 +510,7 @@ function closeUpgradeModal() {
 				class="w-full justify-center mt-8"
 				variant={plan.oneTime ? 'outline' : plan.key === 'free' ? 'outline' : isCurrentPlan(plan) ? 'outline' : 'primary'}
 				disabled={loadingPlan === plan.key || (!plan.oneTime && isCurrentPlan(plan))}
-				onclick={() => startCheckout(plan)}
+				onclick={() => handleCheckout(plan)}
 			>
 				{#if !plan.oneTime && isCurrentPlan(plan)}
 					Current plan

@@ -1,8 +1,8 @@
 import { createHash } from 'crypto';
 import type Stripe from 'stripe';
-import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
-import { getPlanConfig, getStripeClient } from '$lib/server/stripe';
-import { userDocRef } from '$lib/server/firestore';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
+import { getPlanConfig, getStripeClient } from '$lib/server/billing';
+import { userDocRef } from '$lib/server/core';
 
 type UpgradeBody = {
 	plan?: string;

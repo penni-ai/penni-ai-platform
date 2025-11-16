@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
-import { streamAssistantTurn, registerUserMessage } from '$lib/server/chat-assistant';
-import { ApiProblem, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
+import { sendMessage } from '$lib/server/chat/chatbot-client';
+import { ApiProblem, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 
 const encoder = new TextEncoder();
 
@@ -58,11 +58,6 @@ export const POST = handleApiRoute(async (event) => {
 		mode: 'stream'
 	});
 
-	await registerUserMessage(user.uid, campaignId, trimmed, {
-		logger,
-		turnId
-	});
-
 	const abortController = new AbortController();
 	const stream = new ReadableStream({
 		start(controller) {
@@ -76,18 +71,49 @@ export const POST = handleApiRoute(async (event) => {
 
 			(async () => {
 				try {
-					const assistantTurn = await streamAssistantTurn(user.uid, campaignId, trimmed, {
+					// Call the non-streaming chatbot service
+					const response = await sendMessage(campaignId, trimmed, {
+						uid: user.uid,
 						logger,
-						turnId,
 						signal: abortController.signal
 					});
 
-					const primaryReply = assistantTurn.assistantMessages.find((msg) => msg.role === 'assistant' && msg.type !== 'summary');
+					// Find the primary assistant reply (first non-summary message)
+					const primaryReply = response.assistantMessages.find(
+						(msg) => msg.role === 'assistant' && msg.type !== 'summary'
+					);
+
+					// Simulate streaming by chunking the reply
 					if (primaryReply?.content) {
 						await replayAssistantReply(primaryReply.content, send);
 					}
 
-					send('final', { conversation: assistantTurn.snapshot });
+					// Transform conversation to UI format
+					const conversation = response.conversation;
+					const uiConversation = {
+						id: conversation.id,
+						status: conversation.status,
+						collected: {
+							website: conversation.collected.website ?? undefined,
+							business_name: conversation.collected.business_name ?? undefined,
+							business_location: conversation.collected.business_location ?? undefined,
+							business_about: conversation.collected.business_about ?? undefined,
+							locations: conversation.collected.influencer_location ?? undefined,
+							platform: conversation.collected.platform ?? undefined,
+							type_of_influencer: conversation.collected.type_of_influencer ?? undefined,
+							followers: conversation.collected.min_followers !== null || conversation.collected.max_followers !== null
+								? `${conversation.collected.min_followers ?? ''}-${conversation.collected.max_followers ?? ''}`
+								: undefined
+						},
+						missing: conversation.missing,
+						messages: conversation.messages,
+						followerRange: {
+							min: conversation.collected.min_followers,
+							max: conversation.collected.max_followers
+						}
+					};
+
+					send('final', { conversation: uiConversation });
 					controller.close();
 				} catch (error) {
 					logger.error('Streamed assistant turn failed', { error });

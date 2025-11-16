@@ -110,6 +110,10 @@ env:
     value: http://127.0.0.1:9100
     availability: [ BUILD, RUNTIME ]
 
+  - variable: PUBLIC_FIREBASE_FIRESTORE_EMULATOR_HOST
+    value: 127.0.0.1:6201
+    availability: [ BUILD, RUNTIME ]
+
   - variable: FIREBASE_AUTH_EMULATOR_HOST
     value: 127.0.0.1:9100
     availability: [ RUNTIME ]
@@ -121,6 +125,12 @@ env:
   - variable: FIRESTORE_EMULATOR_HOST
     value: 127.0.0.1:6201
     availability: [ RUNTIME ]
+
+  # Chatbot service configuration (local development)
+  - variable: CHATBOT_SERVICE_URL
+    value: http://localhost:8080
+    availability:
+      - RUNTIME
 
 
   - variable: GMAIL_OAUTH_REDIRECT_URI

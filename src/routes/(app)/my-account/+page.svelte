@@ -21,6 +21,11 @@ let sendDailyDigest = $state(true);
 let preferencesSaving = $state(false);
 let preferencesMessage = $state<string | null>(null);
 
+let directSend = $state(false);
+let outreachSettingsLoading = $state(false);
+let outreachSettingsSaving = $state(false);
+let outreachSettingsMessage = $state<string | null>(null);
+
 const hasUsage = $derived(() => usage.length > 0);
 
 function formatUsageDate(iso: string) {
@@ -36,6 +41,52 @@ function savePreferences() {
 		preferencesMessage = 'Preferences saved (demo only).';
 	}, 600);
 }
+
+async function loadOutreachSettings() {
+	if (outreachSettingsLoading) return;
+	outreachSettingsLoading = true;
+	try {
+		const response = await fetch('/api/settings/email');
+		if (response.ok) {
+			const data = await response.json();
+			directSend = data.directSend ?? false;
+		}
+	} catch (error) {
+		console.error('Failed to load outreach settings:', error);
+	} finally {
+		outreachSettingsLoading = false;
+	}
+}
+
+async function saveOutreachSettings() {
+	if (outreachSettingsSaving) return;
+	outreachSettingsSaving = true;
+	outreachSettingsMessage = null;
+	try {
+		const response = await fetch('/api/settings/email', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ directSend })
+		});
+		if (response.ok) {
+			outreachSettingsMessage = 'Outreach settings saved.';
+			setTimeout(() => {
+				outreachSettingsMessage = null;
+			}, 3000);
+		} else {
+			const error = await response.json();
+			outreachSettingsMessage = error.message || 'Failed to save settings.';
+		}
+	} catch (error) {
+		outreachSettingsMessage = 'Failed to save settings.';
+		console.error('Failed to save outreach settings:', error);
+	} finally {
+		outreachSettingsSaving = false;
+	}
+}
+
+// Load settings on mount
+loadOutreachSettings();
 
 let currentPassword = $state('');
 let newPassword = $state('');
@@ -189,6 +240,37 @@ async function handlePasswordChange(event: SubmitEvent) {
 			</Button>
 			{#if preferencesMessage}
 				<span class="text-xs font-medium text-emerald-600">{preferencesMessage}</span>
+			{/if}
+		</div>
+	</div>
+
+	<div class="border-t border-gray-200 pt-6">
+		<h2 class="text-base font-semibold text-gray-900 mb-4">Outreach Settings</h2>
+		<div class="space-y-3 text-sm">
+			<label class="flex items-start gap-2">
+				<input 
+					type="checkbox" 
+					bind:checked={directSend} 
+					class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#FF6F61] focus:ring-[#FF6F61]" 
+					disabled={outreachSettingsLoading || outreachSettingsSaving}
+				/>
+				<div>
+					<p class="font-medium text-gray-900">Direct Gmail Send</p>
+					<p class="text-xs text-gray-500">When enabled, emails will be sent directly instead of creating drafts. This will use your outreach credits.</p>
+				</div>
+			</label>
+		</div>
+		<div class="flex items-center gap-3 mt-4">
+			<Button 
+				type="button" 
+				class="px-4 py-1.5 text-sm" 
+				onclick={saveOutreachSettings} 
+				disabled={outreachSettingsSaving || outreachSettingsLoading}
+			>
+				{outreachSettingsSaving ? 'Saving…' : 'Save outreach settings'}
+			</Button>
+			{#if outreachSettingsMessage}
+				<span class="text-xs font-medium text-emerald-600">{outreachSettingsMessage}</span>
 			{/if}
 		</div>
 	</div>

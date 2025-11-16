@@ -7,16 +7,32 @@
 
 	let { data, children } = $props();
 
-	// Reset scroll position on navigation
+	// Track current pathname to handle navigation transitions
+	// Initialize with current pathname from page store
+	let currentPath = $state<string>($page.url.pathname);
+
+	// Sync with page store changes (handles navigation)
+	$effect(() => {
+		currentPath = $page.url.pathname;
+	});
+
 	afterNavigate(() => {
 		if (typeof window !== 'undefined') {
 			window.scrollTo(0, 0);
 		}
+		// Ensure pathname is updated immediately after navigation
+		currentPath = $page.url.pathname;
 	});
 
 	// Determine if we're on a public/marketing page (not in app routes)
 	const isPublicPage = $derived(() => {
-		const path = $page.url.pathname;
+		try {
+			// Use currentPath if available (handles navigation transitions), otherwise fall back to $page
+			const path = currentPath || $page?.url?.pathname;
+			// If pathname is not available yet, default to showing navbar (prevents flicker)
+			if (!path) {
+				return true;
+			}
 		return !path.startsWith('/dashboard') && 
 		       !path.startsWith('/campaign') && 
 		       !path.startsWith('/my-account') &&
@@ -26,6 +42,10 @@
 		       !path.startsWith('/sign-up') &&
 		       !path.startsWith('/logout') &&
 		       !path.startsWith('/auth');
+		} catch {
+			// Fallback: show navbar if we can't determine the path
+			return true;
+		}
 	});
 </script>
 

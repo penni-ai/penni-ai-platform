@@ -1,47 +1,52 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { fade, fly } from 'svelte/transition';
+	import { fade, fly, slide } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
+	
+	// Custom transition combining fade and slide
+	function slideFade(node: Element, { axis = 'x', duration = 300 } = {}) {
+		// Guard against SSR - only run on client
+		if (!browser) {
+			return {
+				duration: 0,
+				css: () => ''
+			};
+		}
+		
+		const style = getComputedStyle(node);
+		const opacity = +style.opacity;
+		const dimension = axis === 'y' ? 'height' : 'width';
+		const size = dimension === 'height' ? (node as HTMLElement).offsetHeight : (node as HTMLElement).offsetWidth;
+		
+		return {
+			duration,
+			easing: cubicOut,
+			css: (t: number) => {
+				const eased = cubicOut(t);
+				return `
+					opacity: ${eased * opacity};
+					transform: translate${axis.toUpperCase()}(${(1 - eased) * size}px);
+				`;
+			}
+		};
+	}
 	import Button from '$lib/components/Button.svelte';
-	import OutreachPanel from '$lib/components/OutreachPanel.svelte';
+	import CampaignOutreachPanel from '$lib/components/CampaignOutreachPanel.svelte';
+	import OutreachUpgradePanel from '$lib/components/OutreachUpgradePanel.svelte';
+	import SearchLimitExceededPanel from '$lib/components/SearchLimitExceededPanel.svelte';
+	import CampaignLoadingCover from '$lib/components/campaign/CampaignLoadingCover.svelte';
+	import CampaignTabs from '$lib/components/campaign/CampaignTabs.svelte';
+	import ChatTab from '$lib/components/campaign/ChatTab.svelte';
+	import OutreachTab from '$lib/components/campaign/OutreachTab.svelte';
 	import type { PageData } from './$types';
 	import { firebaseFirestore, firebaseAuth } from '$lib/firebase/client';
 	import { doc, onSnapshot } from 'firebase/firestore';
 	import { browser } from '$app/environment';
 	import { onAuthStateChanged } from 'firebase/auth';
 	import type { SerializedCampaign } from '$lib/server/campaigns';
-
-	type MessageSource = {
-		title?: string;
-		url: string;
-		query?: string;
-	};
-
-	type ApiMessage = {
-		id: string;
-		role: 'assistant' | 'user';
-		content: string;
-		type?: 'intro' | 'text' | 'summary';
-		createdAt: string;
-		sources?: MessageSource[];
-	};
-
-	type ConversationResponse = {
-		conversation: {
-			id: string;
-			status: 'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error';
-			collected: Record<string, string | undefined>;
-			missing: string[];
-			search?: {
-				status: 'idle' | 'pending' | 'complete' | 'error' | 'needs_config';
-				results?: unknown;
-				lastError?: string | null;
-			};
-			messages: ApiMessage[];
-			keywords: string[];
-			followerRange: { min: number | null; max: number | null };
-		};
-	};
+	import type { ApiMessage, ConversationResponse, PipelineStatus, SearchParams, SearchUsage } from '$lib/types/campaign';
+	import { getProfileId, calculateProgress } from '$lib/utils/campaign';
 
 	let { data }: { data: PageData } = $props();
 	const campaign = $derived(data.campaign);
@@ -51,7 +56,10 @@
 let localCampaign = $state<SerializedCampaign | null>(null);
 const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 
-	let activeTab = $state<'chat' | 'outreach'>('chat');
+	// Initialize activeTab from query parameter, default to 'chat'
+	const tabFromQuery = $page.url.searchParams.get('tab');
+	const initialTab = (tabFromQuery === 'chat' || tabFromQuery === 'outreach') ? tabFromQuery : 'chat';
+	let activeTab = $state<'chat' | 'outreach'>(initialTab);
 	let campaignId = $state<string | null>(null);
 	let messages = $state<ApiMessage[]>([]);
 	
@@ -68,25 +76,24 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	});
 	let draft = $state('');
 	let collected = $state<Record<string, string | undefined>>({});
-	let search = $state<{ status: 'idle' | 'pending' | 'complete' | 'error' | 'needs_config'; lastError?: string | null; results?: unknown }>({ status: 'idle' });
-	let keywords = $state<string[]>([]);
 	let followerRange = $state<{ min: number | null; max: number | null }>({ min: null, max: null });
 	let isInitializing = $state(true);
 	let isSending = $state(false);
 	let initError = $state<string | null>(null);
-	let openSourcesMessageId = $state<string | null>(null);
+	// Removed openSourcesMessageId - now using hover tooltips instead
 	const textDecoder = new TextDecoder();
 	let messagesContainer: HTMLDivElement | null = $state(null);
 	
+	// Influencer search form state (for embedded message)
+	let influencerSummary = $state('');
+	let searchFormTopN = $state(30);
+	let searchFormMinFollowers = $state<number | null>(null);
+	let searchFormMaxFollowers = $state<number | null>(null);
+	let isSearchFormSubmitting = $state(false);
+	let debugMode = $state(false);
+	
 	// Outreach tab state
-	let searchUsage = $state<{ count: number; limit: number; remaining: number; resetDate: number } | null>(null);
-	let searchQuery = $state('');
-	let searchTopN = $state(30);
-	let searchMinFollowers = $state<number | null>(null);
-	let searchMaxFollowers = $state<number | null>(null);
-	let isSearching = $state(false);
-	let searchError = $state<string | null>(null);
-	let searchResult = $state<{ job_id: string; profiles_count: number; profiles_storage_url: string | null } | null>(null);
+let searchUsage = $state<{ count: number; limit: number; remaining: number; resetDate: number } | null>(null);
 	
 	// Pipeline status state
 	let pipelineStatus = $state<{
@@ -119,7 +126,30 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	let pipelinePollInterval: ReturnType<typeof setInterval> | null = null;
 	let previousProfileIds = $state<Set<string>>(new Set());
 	let selectedInfluencerIds = $state<Set<string>>(new Set());
+	let contactedInfluencerIds = $state<Set<string>>(new Set());
+	let showContacted = $state(false); // When false, show uncontacted; when true, show contacted
 	let outreachPanelOpen = $state(false);
+	let upgradePanelOpen = $state(false);
+	let searchLimitExceededOpen = $state(false);
+	let searchLimitError = $state<{ remaining?: number; requested?: number; limit?: number } | null>(null);
+	
+	// Get user's current plan from layout data
+	const currentPlanKey = $derived(data.user?.currentPlan?.planKey ?? null);
+	const isFreePlan = $derived(currentPlanKey === 'free' || currentPlanKey === null);
+
+	function addUserMessage(id: string, content: string) {
+		messages = [
+			...messages,
+			{
+				id,
+				role: 'user',
+				content,
+				type: 'text',
+				createdAt: new Date().toISOString()
+			}
+		];
+		setTimeout(() => scrollToBottom(), 0);
+	}
 
 	function addAssistantPlaceholder(id: string) {
 		messages = [
@@ -144,9 +174,7 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 		messages = messages.filter((message) => message.id !== id);
 	}
 
-	function toggleSources(messageId: string) {
-		openSourcesMessageId = openSourcesMessageId === messageId ? null : messageId;
-	}
+	// Removed toggleSources - now using hover tooltips instead
 
 	function scrollToBottom() {
 		if (messagesContainer) {
@@ -161,10 +189,18 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 			setTimeout(() => scrollToBottom(), 0);
 		}
 	});
+	
+	// Auto-scroll to bottom when switching to chat tab
+	$effect(() => {
+		if (activeTab === 'chat' && messagesContainer) {
+			// Use setTimeout to ensure DOM has updated after tab switch
+			setTimeout(() => scrollToBottom(), 100);
+		}
+	});
 
 	// Reload conversation when campaign ID changes (e.g., when switching between campaigns)
 	$effect(() => {
-	const currentCampaignId = routeCampaignId;
+		const currentCampaignId = routeCampaignId;
 		if (currentCampaignId && activeTab === 'chat') {
 			// Only reload if campaign ID changed or we haven't loaded yet
 			if (campaignId !== currentCampaignId) {
@@ -172,12 +208,11 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 				campaignId = null;
 				messages = [];
 				collected = {};
-				search = { status: 'idle' };
-				keywords = [];
 				followerRange = { min: null, max: null };
 				isInitializing = true;
 				initError = null;
-				openSourcesMessageId = null;
+				// Reset localCampaign when switching campaigns to ensure reactivity
+				localCampaign = null;
 				// Load conversation for the new campaign
 				void loadConversation(currentCampaignId);
 			} else if (!campaignId && !isInitializing && campaign?.id) {
@@ -190,12 +225,13 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	onMount(() => {
 		if (!browser) return;
 		
-	// Load search usage when component mounts
-	void loadSearchUsage();
+		// Load search usage when component mounts
+		void loadSearchUsage();
 		
-		// Load pipeline status if pipeline_id exists
-		if (effectiveCampaign?.pipeline_id) {
+		// Load pipeline status if pipeline_id exists and we're on outreach tab
+		if (effectiveCampaign?.pipeline_id && activeTab === 'outreach') {
 			void loadPipelineStatus(effectiveCampaign.pipeline_id);
+			startPipelinePolling(effectiveCampaign.pipeline_id);
 		}
 		
 		// Set up real-time listener for campaign document to sync pipeline_id updates
@@ -222,24 +258,41 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 					const data = snapshot.data();
 					const updatedPipelineId = typeof data?.pipeline_id === 'string' ? data.pipeline_id : null;
 					
-					// Update localCampaign with the latest pipeline_id from Firestore
-					// Only update if pipeline_id changed or wasn't set before
-					const currentPipelineId = localCampaign?.pipeline_id ?? campaign?.pipeline_id ?? null;
+					// Ensure localCampaign exists and matches current campaign
+					const baseCampaign = localCampaign ?? campaign;
+					if (!baseCampaign || baseCampaign.id !== campaignId) {
+						// Campaign doesn't match, skip update
+						return;
+					}
 					
-					if (updatedPipelineId !== currentPipelineId && updatedPipelineId) {
-						// Preserve existing localCampaign state, only update pipeline_id
+					// Update localCampaign with the latest pipeline_id from Firestore
+					// Always update if pipeline_id differs to ensure reactivity
+					const currentPipelineId = baseCampaign.pipeline_id ?? null;
+					
+					if (updatedPipelineId !== currentPipelineId) {
+						// Update localCampaign with new pipeline_id
 						localCampaign = {
-							...(localCampaign ?? campaign),
+							...baseCampaign,
 							pipeline_id: updatedPipelineId
 						};
 						
-						console.log('[campaign] Pipeline ID synced from Firestore:', updatedPipelineId);
+						console.log('[campaign] Pipeline ID synced from Firestore:', updatedPipelineId, {
+							previous: currentPipelineId,
+							new: updatedPipelineId,
+							campaignId: campaignId
+						});
 						
 						// If we're on the outreach tab and pipeline_id was just set, load status and start polling
 						if (activeTab === 'outreach' && updatedPipelineId) {
 							void loadPipelineStatus(updatedPipelineId);
 							startPipelinePolling(updatedPipelineId);
 						}
+					} else if (updatedPipelineId === null && currentPipelineId !== null) {
+						// Handle case where pipeline_id is cleared (shouldn't happen normally, but handle it)
+						localCampaign = {
+							...baseCampaign,
+							pipeline_id: null
+						};
 					}
 				},
 				(error) => {
@@ -288,181 +341,141 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 		}
 	}
 	
-	// Update search form when campaign data loads
-	$effect(() => {
-		if (campaign?.influencerSearchQuery) {
-			searchQuery = campaign.influencerSearchQuery;
-		}
-		if (campaign?.followersMin !== null && campaign.followersMin !== undefined) {
-			searchMinFollowers = campaign.followersMin;
-		}
-		if (campaign?.followersMax !== null && campaign.followersMax !== undefined) {
-			searchMaxFollowers = campaign.followersMax;
-		}
-	});
-	
 	// Update max influencers based on remaining searches
 	const maxInfluencers = $derived(() => {
 		if (!searchUsage) return 100; // Default max if usage not loaded
 		return Math.min(searchUsage.remaining, 100); // Cap at 100 or remaining, whichever is lower
 	});
 	
-	async function handleSearchSubmit(event: Event) {
-		event.preventDefault();
-		if (isSearching || !searchQuery.trim()) return;
-		
-		isSearching = true;
-		searchError = null;
-		searchResult = null;
-		
-		try {
-			const response = await fetch('/api/search/influencers', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					business_description: searchQuery.trim(),
-					top_n: searchTopN,
-					min_followers: searchMinFollowers,
-					max_followers: searchMaxFollowers,
-					campaign_id: campaign?.id ?? routeCampaignId ?? null
-				})
-			});
-			
-			if (!response.ok) {
-				const errorData = await response.json().catch(() => ({ message: 'Search failed' }));
-				throw new Error(errorData.message || `Search failed: ${response.status}`);
-			}
-			
-			const responseData = await response.json();
-			// Handle potential wrapper - check if response is wrapped in 'data' property
-			const data = responseData.data ?? responseData;
-			
-			console.log('[campaign] Search response received:', { 
-				job_id: data.job_id, 
-				hasCampaign: !!campaign,
-				campaignId: campaign?.id 
-			});
-			
-			searchResult = {
-				job_id: data.job_id,
-				profiles_count: data.profiles_count ?? 0,
-				profiles_storage_url: data.profiles_storage_url ?? null
-			};
-			
-			// Update search usage
-			if (data.usage) {
-				searchUsage = data.usage;
-			}
-			
-			// Update local campaign with pipeline_id immediately
-			if (data.job_id) {
-			const baseCampaign = localCampaign ?? campaign;
-			if (baseCampaign) {
-				localCampaign = {
-					...baseCampaign,
-					pipeline_id: data.job_id,
-					updatedAt: Date.now()
-				};
-				console.log('[campaign] Updated localCampaign with pipeline_id:', data.job_id);
-			} else {
-				console.warn('[campaign] Unable to update pipeline binding locally (campaign missing)');
-			}
-				
-				// Load pipeline status and start polling immediately
-				await loadPipelineStatus(data.job_id);
-				startPipelinePolling(data.job_id);
-			} else {
-				console.error('[campaign] No job_id in search response:', data);
-			}
-		} catch (error) {
-			searchError = error instanceof Error ? error.message : 'An unexpected error occurred';
-		} finally {
-			isSearching = false;
-		}
-	}
-	
-	// Simple hash function for creating unique keys
-	function simpleHash(str: string): string {
-		let hash = 0;
-		for (let i = 0; i < str.length; i++) {
-			const char = str.charCodeAt(i);
-			hash = ((hash << 5) - hash) + char;
-			hash = hash & hash; // Convert to 32-bit integer
-		}
-		return Math.abs(hash).toString(36);
-	}
-
-	// Generate a unique ID for a profile based on its properties
-	function getProfileId(profile: { profile_url?: string; display_name?: string; platform?: string; followers?: number; _id?: string; email_address?: string; business_email?: string; [key: string]: any }): string {
-		// Use existing _id if available
-		if (profile._id) {
-			return profile._id;
-		}
-		// Use profile_url if available, otherwise create a composite key
-		if (profile.profile_url) {
-			return profile.profile_url;
-		}
-		// Include email in key to ensure uniqueness
-		const email = profile.email_address || profile.business_email || '';
-		const baseKey = `${profile.platform ?? 'unknown'}_${profile.display_name ?? 'unknown'}_${profile.followers ?? 0}_${email}`;
-		
-		// If we still might have duplicates (no email), create a hash of the entire profile
-		// to ensure uniqueness
-		if (!email) {
-			const profileStr = JSON.stringify(profile);
-			return `${baseKey}_${simpleHash(profileStr)}`;
-		}
-		
-		return baseKey;
-	}
-
-	// Get platform logo SVG
-	function getPlatformLogo(platform: string | null | undefined): string {
-		if (!platform) return '';
-		const platformLower = platform.toLowerCase();
-		if (platformLower === 'instagram') {
-			return `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>`;
-		}
-		if (platformLower === 'tiktok') {
-			return `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/></svg>`;
-		}
-		return '';
-	}
-
-	// Get platform color
-	function getPlatformColor(platform: string | null | undefined): string {
-		if (!platform) return 'text-gray-400';
-		const platformLower = platform.toLowerCase();
-		if (platformLower === 'instagram') {
-			return 'text-[#E4405F]';
-		}
-		if (platformLower === 'tiktok') {
-			return 'text-black';
-		}
-		return 'text-gray-500';
-	}
 
 	// Toggle influencer selection
 	function toggleInfluencerSelection(profileId: string) {
+		// Prevent selecting contacted influencers
+		if (contactedInfluencerIds.has(profileId)) {
+			return;
+		}
+		
 		if (selectedInfluencerIds.has(profileId)) {
 			selectedInfluencerIds.delete(profileId);
 		} else {
 			selectedInfluencerIds.add(profileId);
 		}
 		selectedInfluencerIds = new Set(selectedInfluencerIds); // Trigger reactivity
+		// Save selection to outreach state
+		saveOutreachSelection();
 	}
-
-	// Check if influencer is selected
-	function isInfluencerSelected(profileId: string): boolean {
-		return selectedInfluencerIds.has(profileId);
+	
+	// Save selected influencer IDs to outreach state
+	async function saveOutreachSelection() {
+		if (!routeCampaignId) return;
+		
+		try {
+			const response = await fetch(`/api/outreach/state/${routeCampaignId}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					selectedInfluencerIds: Array.from(selectedInfluencerIds)
+				})
+			});
+			// Don't show errors - this is background save
+			if (!response.ok) {
+				console.error('Failed to save influencer selection');
+			}
+		} catch (error) {
+			console.error('Failed to save influencer selection:', error);
+		}
+	}
+	
+	// Load selected influencer IDs from outreach state
+	async function loadOutreachSelection() {
+		if (!routeCampaignId) return;
+		
+		try {
+			const response = await fetch(`/api/outreach/state/${routeCampaignId}`);
+			if (response.ok) {
+				const data = await response.json();
+				if (data.state?.selectedInfluencerIds && Array.isArray(data.state.selectedInfluencerIds)) {
+					// Validate that the saved IDs still exist in current profiles
+					const validIds = new Set<string>();
+					const profileIds = new Set(
+						(pipelineStatus?.profiles || []).map(p => p._id || getProfileId(p))
+					);
+					
+					data.state.selectedInfluencerIds.forEach((id: string) => {
+						if (profileIds.has(id)) {
+							validIds.add(id);
+						}
+					});
+					
+					// Filter out contacted influencers
+					// Remove any IDs that are in the contactedInfluencerIds set
+					const uncontactedIds = new Set<string>();
+					validIds.forEach((id: string) => {
+						if (!contactedInfluencerIds.has(id)) {
+							uncontactedIds.add(id);
+						}
+					});
+					
+					selectedInfluencerIds = uncontactedIds;
+					
+					// Save the filtered selection back to state
+					if (uncontactedIds.size !== validIds.size) {
+						await saveOutreachSelection();
+					}
+				}
+			}
+		} catch (error) {
+			console.error('Failed to load influencer selection:', error);
+		}
+	}
+	
+	// Load contacted influencer IDs
+	async function loadContactedInfluencers() {
+		if (!routeCampaignId) {
+			// Reset to empty set if no campaign ID
+			contactedInfluencerIds = new Set();
+			return;
+		}
+		
+		try {
+			const response = await fetch(`/api/outreach/contacts/${routeCampaignId}`);
+			if (response.ok) {
+				const data = await response.json();
+				if (data.contactedInfluencerIds && Array.isArray(data.contactedInfluencerIds)) {
+					// Use the IDs as-is - they should match what getProfileId generates
+					// The API should return IDs that match profile._id or getProfileId(profile)
+					contactedInfluencerIds = new Set(data.contactedInfluencerIds);
+				} else {
+					// If API returns unexpected format, default to empty set (all uncontacted)
+					contactedInfluencerIds = new Set();
+				}
+			} else {
+				// If API call fails, default to empty set (all uncontacted)
+				contactedInfluencerIds = new Set();
+			}
+		} catch (error) {
+			console.error('Failed to load contacted influencers:', error);
+			// On error, default to empty set (all uncontacted)
+			contactedInfluencerIds = new Set();
+		}
 	}
 
 	// Get count of selected influencers
 	const selectedCount = $derived(selectedInfluencerIds.size);
 
-	// Handle send outreach - opens the panel
+	// Handle send outreach - opens the panel or upgrade panel for free users
 	function handleSendOutreach() {
 		if (selectedCount === 0) return;
+		
+		// If user is on free plan, show upgrade panel instead
+		if (isFreePlan) {
+			openUpgradePanel(
+				"You've hit your outreach limit",
+				"Outreach capabilities are not available on the free plan. Choose a plan below to start sending outreach messages."
+			);
+			return;
+		}
+		
 		outreachPanelOpen = true;
 	}
 	
@@ -476,8 +489,28 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	});
 	
 	// Close outreach panel
-	function closeOutreachPanel() {
+	async function closeOutreachPanel() {
 		outreachPanelOpen = false;
+		// Refresh contacted influencers list in case drafts were created
+		await loadContactedInfluencers();
+		// Filter out contacted influencers from selections
+		const uncontactedIds = new Set<string>();
+		selectedInfluencerIds.forEach((id: string) => {
+			if (!contactedInfluencerIds.has(id)) {
+				uncontactedIds.add(id);
+			}
+		});
+		if (uncontactedIds.size !== selectedInfluencerIds.size) {
+			selectedInfluencerIds = uncontactedIds;
+			await saveOutreachSelection();
+		}
+	}
+	
+	// Close upgrade panel
+	function closeUpgradePanel() {
+		upgradePanelOpen = false;
+		upgradePanelTitle = undefined;
+		upgradePanelDescription = undefined;
 	}
 	
 	async function loadPipelineStatus(pipelineId: string) {
@@ -513,6 +546,18 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 				}
 				
 				pipelineStatus = data;
+				
+				// Load saved influencer selection and contacted influencers after profiles are loaded
+				// Always load contacted influencers if we have profiles, regardless of status
+				if (data.profiles && data.profiles.length > 0) {
+					await Promise.all([
+						data.status === 'completed' ? loadOutreachSelection() : Promise.resolve(),
+						loadContactedInfluencers()
+					]);
+				} else {
+					// Even if no profiles, ensure contacted influencers is initialized
+					await loadContactedInfluencers();
+				}
 			} else {
 				const errorData = await response.json().catch(() => ({ message: 'Failed to load pipeline status' }));
 				console.error('Failed to load pipeline status:', errorData);
@@ -528,13 +573,13 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 			clearInterval(pipelinePollInterval);
 		}
 		
-		// Poll every 3 seconds - continue polling even if completed to catch any late updates
+		// Poll every 3 seconds
 		pipelinePollInterval = setInterval(async () => {
 			// Only poll if we're still on the outreach tab
 			if (activeTab === 'outreach') {
 				await loadPipelineStatus(pipelineId);
 				
-				// Stop polling if pipeline is completed, error, or cancelled (but allow a few polls after completion to catch final updates)
+				// Stop polling if pipeline is completed, error, or cancelled
 				if (pipelineStatus?.status === 'completed' || pipelineStatus?.status === 'error' || pipelineStatus?.status === 'cancelled') {
 					// Give it one more poll cycle to ensure we have the final data, then stop
 					setTimeout(() => {
@@ -557,6 +602,7 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	// Watch for campaign pipeline_id changes and activeTab changes
 	$effect(() => {
 		const pipelineId = effectiveCampaign?.pipeline_id;
+		const currentTab = activeTab;
 		
 		// Clear existing polling when effect runs
 		if (pipelinePollInterval) {
@@ -565,8 +611,9 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 		}
 		
 		// Start loading and polling if on outreach tab and pipeline exists
-		if (pipelineId && activeTab === 'outreach') {
-			// Load immediately when switching to outreach tab
+		if (pipelineId && currentTab === 'outreach') {
+			// Always load pipeline status when switching to outreach tab
+			// This ensures data is fresh even if it was previously loaded
 			void loadPipelineStatus(pipelineId);
 			// Start polling
 			startPipelinePolling(pipelineId);
@@ -582,12 +629,32 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	});
 	
 	// Sync localCampaign with campaign when it changes
+	// Reset localCampaign when campaign ID changes to ensure proper reactivity
 	$effect(() => {
-		if (campaign && !localCampaign) {
-			localCampaign = campaign;
+		const currentCampaignId = routeCampaignId;
+		if (campaign) {
+			// If campaign ID changed, reset localCampaign to ensure fresh state
+			if (localCampaign?.id !== campaign.id) {
+				localCampaign = campaign;
+			} else if (!localCampaign) {
+				// Initialize localCampaign if it doesn't exist
+				localCampaign = campaign;
+			} else {
+				// Sync pipeline_id and other fields from campaign if they differ
+				// This ensures we pick up updates from server-side data
+				if (campaign.pipeline_id !== localCampaign.pipeline_id) {
+					localCampaign = {
+						...localCampaign,
+						pipeline_id: campaign.pipeline_id
+					};
+				}
+			}
+		} else {
+			// Reset localCampaign if campaign is null
+			localCampaign = null;
 		}
 	});
-
+	
 	async function loadConversation(campId: string) {
 		isInitializing = true;
 		initError = null;
@@ -610,69 +677,34 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 		campaignId = data.conversation.id;
 		messages = data.conversation.messages;
 		collected = data.conversation.collected ?? {};
-		search = data.conversation.search ?? { status: 'idle' };
-		keywords = data.conversation.keywords ?? [];
 		followerRange = data.conversation.followerRange ?? { min: null, max: null };
-		openSourcesMessageId = null;
-	}
-
-	async function handleSubmit(event: SubmitEvent) {
-		event.preventDefault();
-		if (!campaignId || isSending) return;
-		const value = draft.trim();
-		if (!value) return;
-
-		isSending = true;
-		const optimisticId = crypto.randomUUID();
-		messages = [
-			...messages,
-			{
-				id: optimisticId,
-				role: 'user',
-				content: value,
-				type: 'text',
-				createdAt: new Date().toISOString()
-			}
-		];
-		draft = '';
-
-		try {
-			await sendStreamingMessage(value);
-		} catch (error) {
-			console.error('[campaign] message submit failed', error);
-			messages = messages.filter((message) => message.id !== optimisticId);
-			messages = [
-				...messages,
-				{
-					id: crypto.randomUUID(),
-					role: 'assistant',
-					content: 'I hit a snag sending that. Please try again.',
-					type: 'text',
-					createdAt: new Date().toISOString()
+		
+		// Extract influencer summary from last assistant message when status is ready
+		if (data.conversation.status === 'ready' && messages.length > 0) {
+			const lastMessage = messages[messages.length - 1];
+			if (lastMessage.role === 'assistant' && lastMessage.content) {
+				// Extract summary from message content (it's after "All required slots filled...")
+				const content = lastMessage.content;
+				const summaryMatch = content.match(/All required slots filled[^\n]*\n\n([\s\S]*)/);
+				if (summaryMatch && summaryMatch[1]) {
+					influencerSummary = summaryMatch[1].trim();
+					// Initialize form fields from collected data
+					if (followerRange.min !== null) searchFormMinFollowers = followerRange.min;
+					if (followerRange.max !== null) searchFormMaxFollowers = followerRange.max;
 				}
-			];
-		} finally {
-			isSending = false;
+			}
 		}
 	}
 
 	async function sendStreamingMessage(value: string) {
 		if (!campaignId) throw new Error('Campaign not initialized');
-		const response = await fetch(`/api/chat/${campaignId}/stream`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ message: value })
-		});
+		const userMessageId = crypto.randomUUID();
+		addUserMessage(userMessageId, value);
+		isSending = true;
 
-		if (!response.ok || !response.body) {
-			const errorText = await response.text();
-			throw new Error(errorText || `Assistant error (${response.status})`);
-		}
-
-		const reader = response.body.getReader();
 		const placeholderId = crypto.randomUUID();
-		let buffer = '';
 		let assistantBuffer = '';
+		let buffer = '';
 		let hasPlaceholder = false;
 
 		const processEvent = (eventType: string, data: string) => {
@@ -686,13 +718,11 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 				updateAssistantPlaceholder(placeholderId, assistantBuffer);
 			} else if (eventType === 'final') {
 				const payload = JSON.parse(data) as { conversation: ConversationResponse['conversation'] };
-				// Remove placeholder before applying snapshot to avoid duplicates
 				if (hasPlaceholder) {
 					removeMessageById(placeholderId);
 					hasPlaceholder = false;
 				}
 				applyConversationSnapshot({ conversation: payload.conversation } as ConversationResponse);
-				// Scroll after applying snapshot
 				setTimeout(() => scrollToBottom(), 0);
 			} else if (eventType === 'error') {
 				const payload = JSON.parse(data) as { message?: string };
@@ -722,7 +752,20 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 			}
 		};
 
+		let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 		try {
+			const response = await fetch(`/api/chat/${campaignId}/stream`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ message: value })
+			});
+
+			if (!response.ok || !response.body) {
+				const errorText = await response.text();
+				throw new Error(errorText || `Assistant error (${response.status})`);
+			}
+
+			reader = response.body.getReader();
 			while (true) {
 				const { value: chunk, done } = await reader.read();
 				if (done) break;
@@ -731,69 +774,151 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 			}
 			buffer += textDecoder.decode();
 			parseBuffer();
-	} finally {
-		reader.releaseLock();
-	}
 
-	// Clean up placeholder if it still exists (shouldn't happen if final event was processed)
-	if (hasPlaceholder) {
-		removeMessageById(placeholderId);
-	}
-}
-
-	const numberFormatter = new Intl.NumberFormat('en-US');
-
-	function formatFollowerRange(range: { min: number | null; max: number | null }) {
-		if (!range) return '—';
-		const { min, max } = range;
-		const formatValue = (value: number) => numberFormatter.format(Math.round(value));
-		if (typeof min === 'number' && typeof max === 'number') {
-			return `${formatValue(min)} – ${formatValue(max)}`;
+			if (hasPlaceholder) {
+				removeMessageById(placeholderId);
+			}
+		} catch (error) {
+			if (hasPlaceholder) {
+				removeMessageById(placeholderId);
+			}
+			removeMessageById(userMessageId);
+			throw error;
+		} finally {
+			if (reader) {
+				try {
+					reader.releaseLock();
+				} catch (e) {
+					console.warn('Failed to release reader lock', e);
+				}
+			}
+			isSending = false;
 		}
-		if (typeof min === 'number') {
-			return `${formatValue(min)}+`;
-		}
-		if (typeof max === 'number') {
-			return `Up to ${formatValue(max)}`;
-		}
-		return '—';
 	}
 
 	// Calculate progress based on collected campaign data
-	// Matches the logic in chat-assistant.ts getConversation() missing field determination:
-	// - A field is collected if it's not null (including "N/A" which counts as collected)
-	// - locations is missing if: influencer_location === null && influencerTypes === null
-	// - influencerTypes is missing if: influencerTypes === null && influencer_location === null
-	const progress = $derived(() => {
-		const requiredFields = ['website', 'business_location', 'business_about', 'locations', 'influencerTypes', 'followers'];
-		let collectedCount = 0;
+	const progress = $derived(() => calculateProgress(collected, followerRange));
+	
+	// Check if progress is 100%
+	const isProgressComplete = $derived(progress() === 100);
+	
+	// Handle search form submission
+	async function handleSearchFormSubmit(event?: SubmitEvent) {
+		if (event) {
+			event.preventDefault();
+		}
+		if (isSearchFormSubmitting || !influencerSummary.trim()) return;
 		
-		// Check website - collected if not null (including "N/A")
-		if (collected.website !== null && collected.website !== undefined) collectedCount++;
+		isSearchFormSubmitting = true;
+		try {
+			const response = await fetch('/api/search/influencers', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					business_description: influencerSummary.trim(),
+					top_n: searchFormTopN,
+					min_followers: searchFormMinFollowers,
+					max_followers: searchFormMaxFollowers,
+					campaign_id: campaign?.id ?? routeCampaignId ?? null
+				})
+			});
+			
+			// Parse response body first
+			let responseData;
+			try {
+				responseData = await response.json();
+			} catch (parseError) {
+				// If JSON parsing fails, treat as generic error
+				throw new Error(`Search failed: ${response.status} ${response.statusText}`);
+			}
+			
+			if (!response.ok) {
+				// Check if it's a search limit exceeded error
+				// API returns errors in format: { error: { code, message, details } }
+				const errorInfo = responseData.error || responseData;
+				if (errorInfo.code === 'SEARCH_LIMIT_EXCEEDED' && errorInfo.details) {
+					searchLimitError = {
+						remaining: errorInfo.details.remaining ?? 0,
+						requested: errorInfo.details.requested ?? searchFormTopN,
+						limit: errorInfo.details.limit ?? 0
+					};
+					searchLimitExceededOpen = true;
+					isSearchFormSubmitting = false;
+					return;
+				}
+				
+				throw new Error(errorInfo.message || `Search failed: ${response.status}`);
+			}
+			
+			const data = responseData.data ?? responseData;
+			
+			// Update local campaign with pipeline_id
+			if (data.job_id) {
+				const baseCampaign = localCampaign ?? campaign;
+				if (baseCampaign) {
+					localCampaign = {
+						...baseCampaign,
+						pipeline_id: data.job_id,
+						updatedAt: Date.now()
+					};
+				}
+				// Switch to outreach tab
+				activeTab = 'outreach';
+				await loadPipelineStatus(data.job_id);
+				startPipelinePolling(data.job_id);
+				if (browser) {
+					setTimeout(() => window.location.reload(), 0);
+				}
+			}
+		} catch (error) {
+			console.error('Failed to start influencer search:', error);
+			// Only show alert if we haven't already shown the limit exceeded panel
+			if (!searchLimitExceededOpen) {
+				alert(error instanceof Error ? error.message : 'An unexpected error occurred');
+			}
+		} finally {
+			isSearchFormSubmitting = false;
+		}
+	}
+	
+	function closeSearchLimitPanel() {
+		searchLimitExceededOpen = false;
+		searchLimitError = null;
+	}
+	
+	let upgradePanelTitle = $state<string | undefined>(undefined);
+	let upgradePanelDescription = $state<string | undefined>(undefined);
+	
+	function openUpgradePanel(title?: string, description?: string) {
+		upgradePanelTitle = title;
+		upgradePanelDescription = description;
+		upgradePanelOpen = true;
+	}
+	
+	// Track if page is fully loaded
+	const isPageLoaded = $derived(() => {
+		// During SSR, always return true to prevent hydration mismatches
+		if (!browser) return true;
 		
-		// Check business_location - collected if not null (including "N/A")
-		if (collected.business_location !== null && collected.business_location !== undefined) collectedCount++;
+		// Page is loaded when:
+		// 1. Campaign data exists
+		// 2. If on chat tab: conversation is loaded (not initializing and no error)
+		// 3. If on outreach tab: either no pipeline_id (show search form) or pipeline status is loaded
+		if (!campaign) return false;
 		
-		// Check business_about - collected if not null (including "N/A")
-		if (collected.business_about !== null && collected.business_about !== undefined) collectedCount++;
-		
-		// Check locations - satisfied if influencer_location OR influencerTypes is not null
-		// (collected.locations maps to influencer_location from Firestore)
-		if ((collected.locations !== null && collected.locations !== undefined) || 
-		    (collected.influencerTypes !== null && collected.influencerTypes !== undefined)) {
-			collectedCount++;
+		if (activeTab === 'chat') {
+			// For chat tab, we're loaded if not initializing and no error
+			// Allow showing content even if there's an error (user can retry)
+			return !isInitializing;
+		} else if (activeTab === 'outreach') {
+			// If no pipeline_id, we show search form (loaded)
+			if (!effectiveCampaign?.pipeline_id) return true;
+			// If pipeline_id exists, wait for pipeline status to load
+			// But don't wait forever - if it's been a while, show content anyway
+			return pipelineStatus !== null;
 		}
 		
-		// Check influencerTypes - satisfied if influencerTypes OR influencer_location is not null
-		if ((collected.influencerTypes !== null && collected.influencerTypes !== undefined) || 
-		    (collected.locations !== null && collected.locations !== undefined)) {
-			collectedCount++;
-		}
-		
-		// Check followers - from ChatCollectedData.min_followers/max_followers
-		if (followerRange.min !== null || followerRange.max !== null) collectedCount++;
-		
-		return Math.round((collectedCount / requiredFields.length) * 100);
+		return true;
 	});
 </script>
 
@@ -801,577 +926,121 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	<title>{campaign?.title ?? 'Campaign'} – Penni AI</title>
 </svelte:head>
 
-<div class="flex h-full flex-col">
+<div class="flex h-full flex-col relative">
+	<!-- Blur Loading Cover -->
+	<CampaignLoadingCover isLoading={browser && !isPageLoaded()} />
+	
+	<!-- Main Content -->
+	<div 
+		class="flex h-full flex-col {browser ? 'transition-opacity duration-200' : ''} {browser && !isPageLoaded() ? 'opacity-0 pointer-events-none' : ''}"
+	>
 	<!-- Tab Navigation -->
-	<div class="border-b border-gray-200 bg-white px-8 pt-6">
-		<div class="flex gap-1">
-			<button
-				type="button"
-				onclick={() => {
-					activeTab = 'chat';
-					// Always load conversation when clicking chat tab
-					if (campaign?.id) {
+	<CampaignTabs
+		activeTab={activeTab}
+		hasUserMessages={hasUserMessages()}
+		onTabChange={(tab) => {
+			activeTab = tab;
+			if (tab === 'chat' && campaign?.id) {
 						if (!campaignId || isInitializing) {
 							void loadConversation(campaign.id);
 						}
-					}
-				}}
-				class={`px-4 py-2 text-sm font-medium transition ${
-					activeTab === 'chat'
-						? 'border-b-2 border-[#FF6F61] text-gray-900'
-						: 'text-gray-500 hover:text-gray-700'
-				}`}
-			>
-				Chat
-			</button>
-			{#if hasUserMessages()}
-				<button
-					type="button"
-					onclick={() => {
-						activeTab = 'outreach';
-						// Ensure pipeline status loads when clicking outreach tab
-						if (effectiveCampaign?.pipeline_id) {
+			} else if (tab === 'outreach' && effectiveCampaign?.pipeline_id) {
 							void loadPipelineStatus(effectiveCampaign.pipeline_id);
 							startPipelinePolling(effectiveCampaign.pipeline_id);
 						}
 					}}
-					class={`px-4 py-2 text-sm font-medium transition ${
-						activeTab === 'outreach'
-							? 'border-b-2 border-[#FF6F61] text-gray-900'
-							: 'text-gray-500 hover:text-gray-700'
-					}`}
-				>
-					Outreach
-				</button>
-			{/if}
-		</div>
-	</div>
+	/>
 
 	<!-- Tab Content -->
-	<div class="flex-1 overflow-hidden">
-			{#if activeTab === 'chat'}
-			<!-- Chat Tab -->
-			<div class="flex h-full flex-col">
-				<div class="flex-1 overflow-y-auto px-8 py-10" bind:this={messagesContainer}>
-					<div class="mx-auto flex w-full max-w-3xl flex-col gap-6">
-						{#if isInitializing}
-							<div class="flex justify-center py-12 text-gray-500">Loading conversation…</div>
-						{:else if initError}
-							<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">
-								<p class="font-semibold">We couldn't load the conversation.</p>
-								<p class="text-sm">{initError}</p>
-								<button
-									class="mt-4 text-sm font-medium text-red-700 underline"
-									onclick={() => campaign?.id && void loadConversation(campaign.id)}
-								>
-									Try again
-								</button>
-							</div>
-						{:else}
-							{#each messages as message}
-								{#if message.type === 'intro'}
-									<div class="mx-auto mt-12 flex flex-col items-center text-center gap-4">
-										<span class="flex h-12 w-12 items-center justify-center rounded-full bg-[#FFF1ED] text-2xl">👋</span>
-										<p class="max-w-xl text-lg leading-relaxed text-gray-800">{message.content}</p>
-									</div>
-								{:else if message.role === 'assistant'}
-									<div class="flex flex-col gap-1">
-										<p class="text-xs font-medium text-gray-500 ml-14">Penni AI</p>
-										<div class="flex items-start gap-3">
-											<div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full overflow-hidden">
-												<img
-													src="/images/branding/white%20icon%20with%20pink%20SVG.svg"
-													alt="Penny assistant"
-													class="h-full w-full object-contain"
-												/>
-											</div>
-											<div class="max-w-xl rounded-3xl bg-white px-5 py-4 text-sm text-gray-800 shadow-sm">
-												<p class="whitespace-pre-line leading-relaxed">{message.content}</p>
-												{#if message.sources && message.sources.length}
-													<div class="mt-3 space-y-2">
-														<button
-															type="button"
-															class="flex items-center gap-2 text-xs font-medium text-gray-400 hover:text-gray-600"
-															onclick={() => toggleSources(message.id)}
-															aria-expanded={openSourcesMessageId === message.id}
-															aria-controls={`sources-${message.id}`}
-														>
-															<span aria-hidden="true">❝</span>
-															<span>View sources</span>
-														</button>
-														{#if openSourcesMessageId === message.id}
-															<div id={`sources-${message.id}`} class="rounded-2xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 shadow-sm">
-																<p class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Referenced pages</p>
-																<ul class="mt-2 space-y-1">
-																	{#each message.sources.slice(0, 3) as source}
-																		<li>
-																			<a href={source.url} target="_blank" rel="noreferrer" class="text-gray-900 hover:text-[#FF6F61]">
-																				{source.title ?? source.url}
-																			</a>
-																			{#if source.query}
-																				<span class="ml-1 text-gray-400">({source.query})</span>
-																			{/if}
-																		</li>
-																	{/each}
-																</ul>
-															</div>
-														{/if}
-													</div>
-												{/if}
-											</div>
-										</div>
-									</div>
-								{:else}
-									<div class="flex flex-col items-end gap-1">
-										<p class="text-xs font-medium text-gray-500 mr-4">You</p>
-										<div class="flex justify-end">
-											<div class="max-w-xl rounded-3xl bg-gray-900 px-5 py-4 text-sm text-white">
-												<p class="leading-relaxed">{message.content}</p>
-											</div>
-										</div>
-									</div>
-								{/if}
-							{/each}
-
-							{#if isSending}
-								<div class="flex flex-col gap-1">
-									<p class="text-xs font-medium text-gray-500 ml-14">Penni AI</p>
-									<div class="flex items-start gap-3">
-										<div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full overflow-hidden">
-											<img
-												src="/images/branding/white%20icon%20with%20pink%20SVG.svg"
-												alt="Penny assistant"
-												class="h-full w-full object-contain"
-											/>
-										</div>
-										<div class="rounded-3xl bg-white px-4 py-2 shadow-sm">
-											<span class="flex items-center gap-1">
-												<span class="h-2 w-2 animate-pulse rounded-full bg-gray-400"></span>
-												<span class="h-2 w-2 animate-pulse rounded-full bg-gray-300" style="animation-delay: 120ms;"></span>
-												<span class="h-2 w-2 animate-pulse rounded-full bg-gray-200" style="animation-delay: 240ms;"></span>
-											</span>
-										</div>
-									</div>
-								</div>
-							{/if}
-						{/if}
-					</div>
-				</div>
-
-				<!-- Progress Bar -->
-				{#if activeTab === 'chat' && !isInitializing && campaignId}
-					<div class="border-t border-gray-200 bg-white px-6 py-3">
-						<div class="mx-auto w-full max-w-3xl">
-							<div class="mb-1 flex items-center justify-between text-xs">
-								<span class="font-medium text-gray-600">Campaign Setup Progress</span>
-								<span class="text-gray-500">{progress()}%</span>
-							</div>
-							<div class="h-2 w-full overflow-hidden rounded-full bg-gray-100">
-								<div
-									class="h-full bg-[#FF6F61] transition-all duration-300 ease-out"
-									style="width: {progress()}%"
-								></div>
-							</div>
+	<div class="flex-1 overflow-hidden relative">
+		<!-- Sliding Window Container -->
+		<div 
+			class="flex h-full transition-transform duration-300 ease-in-out"
+			style="width: 200%; transform: translateX({activeTab === 'chat' ? '0' : '-50'}%);"
+		>
+			<!-- Chat Tab Panel -->
+			<ChatTab
+				{campaignId}
+				{messages}
+				{isInitializing}
+				{initError}
+				draft={draft}
+				{isSending}
+				{collected}
+				{followerRange}
+				influencerSummary={influencerSummary}
+				searchFormTopN={searchFormTopN}
+				searchFormMinFollowers={searchFormMinFollowers}
+				searchFormMaxFollowers={searchFormMaxFollowers}
+				{isSearchFormSubmitting}
+				{effectiveCampaign}
+				maxInfluencers={maxInfluencers()}
+				{debugMode}
+				messagesContainer={messagesContainer}
+				onRetry={() => campaign?.id && void loadConversation(campaign.id)}
+				onSubmit={async (message) => {
+					draft = '';
+					await sendStreamingMessage(message);
+				}}
+				onDraftChange={(value) => { draft = value; }}
+				onSearchSubmit={(params) => {
+					// Update form values from params
+					influencerSummary = params.business_description;
+					searchFormTopN = params.top_n;
+					searchFormMinFollowers = params.min_followers;
+					searchFormMaxFollowers = params.max_followers;
+					// Call the actual submit handler
+																void handleSearchFormSubmit();
+														}}
+				onToggleDebug={() => debugMode = !debugMode}
+				onScrollToBottom={scrollToBottom}
+			/>
+			
+		<!-- Outreach Tab Panel -->
+		<OutreachTab
+			{effectiveCampaign}
+			{pipelineStatus}
+			{selectedInfluencerIds}
+			{contactedInfluencerIds}
+			{showContacted}
+			{previousProfileIds}
+			campaignId={routeCampaignId ?? null}
+			onToggleInfluencer={toggleInfluencerSelection}
+			onToggleContacted={() => showContacted = !showContacted}
+			onSendOutreach={handleSendOutreach}
+		/>
 						</div>
-					</div>
-				{/if}
-
-				<div class="border-t border-gray-200 bg-white px-6 py-5">
-					<form class="mx-auto flex w-full max-w-3xl items-center gap-3" onsubmit={handleSubmit}>
-						<input
-							type="text"
-							class="flex-1 rounded-full border border-gray-300 px-5 py-3 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10"
-							placeholder="Type your reply..."
-							bind:value={draft}
-							autocomplete="off"
-							disabled={isInitializing || !campaignId}
-						/>
-						<Button type="submit" variant="primary" size="md" disabled={draft.trim().length === 0 || isInitializing || !campaignId}>
-							Send
-						</Button>
-					</form>
-				</div>
-			</div>
-		{:else}
-			<!-- Outreach Tab -->
-			<div class="flex h-full flex-col overflow-hidden">
-				<div class="flex-1 overflow-y-auto px-8 py-6">
-				{#if effectiveCampaign?.pipeline_id && pipelineStatus}
-					<!-- Pipeline Status View -->
-					<div class="mx-auto w-full max-w-6xl space-y-6">
-						<div>
-							<h2 class="text-2xl font-semibold text-gray-900">Influencer Search</h2>
-							<p class="mt-1 text-sm text-gray-500">
-								Pipeline Status: <span class="font-medium capitalize text-gray-900">{pipelineStatus.status}</span>
-								{#if pipelineStatus.status === 'running'}
-									<span class="ml-2 inline-flex items-center gap-1">
-										<span class="h-2 w-2 animate-pulse rounded-full bg-green-500"></span>
-										<span class="text-xs text-gray-500">Processing...</span>
-									</span>
-								{/if}
-							</p>
+							</div>
+							</div>
 						</div>
 						
-						<!-- Pipeline Progress -->
-						{#if pipelineStatus.status !== 'completed'}
-							<div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-								<div class="mb-4">
-									<div class="mb-2 flex items-center justify-between text-sm">
-										<span class="font-medium text-gray-700">Overall Progress</span>
-										<span class="text-gray-500">{pipelineStatus.overall_progress}%</span>
-									</div>
-									<div class="h-3 w-full overflow-hidden rounded-full bg-gray-100">
-										<div
-											class="h-full bg-[#FF6F61] transition-all duration-300"
-											style="width: {pipelineStatus.overall_progress}%"
-										></div>
-									</div>
-								</div>
-								
-								<!-- Stage Status -->
-								<div class="grid grid-cols-2 gap-4 text-sm">
-									<div class="rounded-lg border border-gray-200 p-3">
-										<div class="flex items-center justify-between">
-											<span class="text-gray-600">Query Expansion</span>
-											<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.query_expansion?.status ?? 'pending'}</span>
-										</div>
-										{#if pipelineStatus.stages.query_expansion?.queries}
-											<p class="mt-1 text-xs text-gray-500">{pipelineStatus.stages.query_expansion.queries.length} queries generated</p>
-										{/if}
-									</div>
-									<div class="rounded-lg border border-gray-200 p-3">
-										<div class="flex items-center justify-between">
-											<span class="text-gray-600">Weaviate Search</span>
-											<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.weaviate_search?.status ?? 'pending'}</span>
-										</div>
-										{#if pipelineStatus.stages.weaviate_search?.deduplicated_results}
-											<p class="mt-1 text-xs text-gray-500">{pipelineStatus.stages.weaviate_search.deduplicated_results} unique profiles</p>
-										{/if}
-									</div>
-									<div class="rounded-lg border border-gray-200 p-3">
-										<div class="flex items-center justify-between">
-											<span class="text-gray-600">BrightData Collection</span>
-											<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.brightdata_collection?.status ?? 'pending'}</span>
-										</div>
-										{#if pipelineStatus.stages.brightdata_collection}
-											<p class="mt-1 text-xs text-gray-500">
-												{pipelineStatus.stages.brightdata_collection.profiles_collected ?? 0} collected
-												{#if pipelineStatus.stages.brightdata_collection.total_batches}
-													({pipelineStatus.stages.brightdata_collection.batches_completed ?? 0}/{pipelineStatus.stages.brightdata_collection.total_batches} batches)
-												{/if}
-											</p>
-										{/if}
-									</div>
-									<div class="rounded-lg border border-gray-200 p-3">
-										<div class="flex items-center justify-between">
-											<span class="text-gray-600">LLM Analysis</span>
-											<span class="font-medium capitalize text-gray-900">{pipelineStatus.stages.llm_analysis?.status ?? 'pending'}</span>
-										</div>
-										{#if pipelineStatus.stages.llm_analysis?.profiles_analyzed}
-											<p class="mt-1 text-xs text-gray-500">{pipelineStatus.stages.llm_analysis.profiles_analyzed} analyzed</p>
-										{/if}
-									</div>
-								</div>
-								
-								{#if pipelineStatus.error_message}
-									<div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-										<strong>Error:</strong> {pipelineStatus.error_message}
-									</div>
-								{/if}
-							</div>
-						{/if}
-						
-						<!-- Influencers Table -->
-						{#if pipelineStatus.status === 'running' || pipelineStatus.status === 'completed' || pipelineStatus.status === 'pending'}
-							<div class="rounded-2xl border border-gray-200 bg-white shadow-sm">
-								<div class="border-b border-gray-200 px-6 py-4">
-									<h3 class="text-lg font-semibold text-gray-900">
-										Influencers
-										{#if pipelineStatus.profiles && pipelineStatus.profiles.length > 0}
-											<span class="text-base font-normal text-gray-500">({pipelineStatus.profiles.length})</span>
-										{:else if pipelineStatus.profiles_count}
-											<span class="text-base font-normal text-gray-500">({pipelineStatus.profiles_count} expected)</span>
-										{/if}
-									</h3>
-								</div>
-								
-								{#if pipelineStatus.profiles && pipelineStatus.profiles.length > 0}
-									<div class="overflow-x-auto">
-										<table class="w-full">
-											<thead class="border-b border-gray-200 bg-gray-50">
-												<tr>
-													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Bio</th>
-													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Followers</th>
-													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fit Score</th>
-													<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Rationale</th>
-												</tr>
-											</thead>
-											<tbody class="divide-y divide-gray-200 bg-white">
-												{#each pipelineStatus.profiles as profile (profile._id || getProfileId(profile))}
-													{@const profileId = profile._id || getProfileId(profile)}
-													{@const isNewProfile = !previousProfileIds.has(profileId)}
-													{@const isSelected = isInfluencerSelected(profileId)}
-													{@const isSelectable = pipelineStatus.status === 'completed'}
-													<tr 
-														class="transition-colors {
-															isSelected ? 'bg-[#FFF1ED] hover:bg-[#FFE5DC]' : 
-															isSelectable ? 'hover:bg-gray-50 cursor-pointer' : 
-															'hover:bg-gray-50'
-														}"
-														onclick={() => isSelectable && toggleInfluencerSelection(profileId)}
-														in:fly={{ y: -20, duration: 400, opacity: 0 }}
-													>
-														<td class="whitespace-nowrap px-6 py-4">
-															<div class="flex items-center gap-3">
-																<div class="flex-shrink-0 flex flex-col items-center gap-1">
-																	{#if profile.platform}
-																		<div class="flex items-center {getPlatformColor(profile.platform)}" title={profile.platform}>
-																			{@html getPlatformLogo(profile.platform)}
-																		</div>
-																	{/if}
-																	{#if profile.email_address || profile.business_email}
-																		<a 
-																			href={`mailto:${profile.email_address || profile.business_email}`}
-																			class="text-gray-400 hover:text-[#FF6F61] transition-colors"
-																			title={profile.email_address || profile.business_email}
-																			onclick={(e) => e.stopPropagation()}
-																		>
-																			<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-																				<path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-																			</svg>
-																		</a>
-																	{/if}
-																</div>
-																<div>
-																	{#if profile.profile_url}
-																		<a 
-																			href={profile.profile_url} 
-																			target="_blank" 
-																			rel="noopener noreferrer" 
-																			class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
-																			onclick={(e) => e.stopPropagation()}
-																		>
-																			{profile.display_name ?? 'N/A'}
-																		</a>
-																	{:else}
-																		<div class="text-sm font-medium text-gray-900">
-																			{profile.display_name ?? 'N/A'}
-																		</div>
-																	{/if}
-																</div>
-															</div>
-														</td>
-														<td class="px-6 py-4 text-sm text-gray-500 max-w-md">
-															<div class="line-clamp-3">{profile.biography ?? profile.bio ?? '—'}</div>
-														</td>
-														<td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-															{profile.followers ? profile.followers.toLocaleString() : 'N/A'}
-														</td>
-														<td class="whitespace-nowrap px-6 py-4">
-															{#if profile.fit_score !== undefined && profile.fit_score !== null}
-																<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {
-																	profile.fit_score >= 8 ? 'bg-green-100 text-green-800' :
-																	profile.fit_score >= 6 ? 'bg-yellow-100 text-yellow-800' :
-																	'bg-red-100 text-red-800'
-																}">
-																	{profile.fit_score}/10
-																</span>
-															{:else}
-																<span class="text-sm text-gray-400">—</span>
-															{/if}
-														</td>
-														<td class="px-6 py-4 text-sm text-gray-500 max-w-md">
-															<div class="line-clamp-2">{profile.fit_rationale ?? '—'}</div>
-														</td>
-													</tr>
-												{/each}
-											</tbody>
-										</table>
-									</div>
-								{:else}
-									<div class="px-6 py-12 text-center">
-										{#if pipelineStatus.status === 'running' || pipelineStatus.status === 'pending'}
-											<div class="flex flex-col items-center gap-3">
-												<div class="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-[#FF6F61]"></div>
-												<p class="text-sm font-medium text-gray-900">Processing influencers...</p>
-												<p class="text-xs text-gray-500">
-													{#if pipelineStatus.stages.brightdata_collection?.profiles_collected}
-														{pipelineStatus.stages.brightdata_collection.profiles_collected} profiles collected so far
-													{:else}
-														Influencers will appear here as they are processed
-													{/if}
-												</p>
-											</div>
-										{:else if pipelineStatus.status === 'completed'}
-											<p class="text-sm text-gray-500">No influencers found. Try adjusting your search criteria.</p>
-										{:else}
-											<p class="text-sm text-gray-500">No influencers available yet.</p>
-										{/if}
-									</div>
-								{/if}
-							</div>
-						{/if}
-					</div>
-				{:else}
-					<!-- Search Form View (No Pipeline Started) -->
-					<div class="mx-auto w-full max-w-3xl space-y-6">
-						<div>
-							<h2 class="text-2xl font-semibold text-gray-900">Find Influencers</h2>
-							<p class="mt-1 text-sm text-gray-500">
-								Search for influencers matching your campaign criteria.
-								{#if searchUsage}
-									You have <span class="font-medium text-gray-900">{searchUsage.remaining}</span> searches remaining this month (out of {searchUsage.limit}).
-								{/if}
-							</p>
-						</div>
-						
-						<form onsubmit={handleSearchSubmit} class="space-y-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-							<!-- Search Query -->
-							<div>
-								<label for="search-query" class="block text-sm font-medium text-gray-700 mb-2">
-									Business & Influencer Description
-								</label>
-								<textarea
-									id="search-query"
-									bind:value={searchQuery}
-									rows="4"
-									class="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10"
-									placeholder="Describe your business and what types of influencers you're looking for..."
-									required
-									disabled={isSearching}
-								></textarea>
-								<p class="mt-1 text-xs text-gray-500">This will be used to search for matching influencers.</p>
-							</div>
-							
-							<!-- Number of Influencers -->
-							<div>
-								<label for="search-top-n" class="block text-sm font-medium text-gray-700 mb-2">
-									Number of Influencers
-								</label>
-								<input
-									type="number"
-									id="search-top-n"
-									bind:value={searchTopN}
-									min="30"
-									max={maxInfluencers()}
-									class="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10"
-									required
-									disabled={isSearching}
-								/>
-								<p class="mt-1 text-xs text-gray-500">
-									Minimum: 30, Maximum: {maxInfluencers()} (based on your remaining searches)
-								</p>
-							</div>
-							
-							<!-- Follower Range -->
-							<div class="grid grid-cols-2 gap-4">
-								<div>
-									<label for="search-min-followers" class="block text-sm font-medium text-gray-700 mb-2">
-										Min Followers
-									</label>
-									<input
-										type="number"
-										id="search-min-followers"
-										bind:value={searchMinFollowers}
-										min="0"
-										step="1000"
-										class="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10"
-										placeholder="e.g., 10000"
-										disabled={isSearching}
-									/>
-								</div>
-								<div>
-									<label for="search-max-followers" class="block text-sm font-medium text-gray-700 mb-2">
-										Max Followers
-									</label>
-									<input
-										type="number"
-										id="search-max-followers"
-										bind:value={searchMaxFollowers}
-										min="0"
-										step="1000"
-										class="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10"
-										placeholder="e.g., 1000000"
-										disabled={isSearching}
-									/>
-								</div>
-							</div>
-							
-							<!-- Error Message -->
-							{#if searchError}
-								<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-									{searchError}
-								</div>
-							{/if}
-							
-							<!-- Success Message -->
-							{#if searchResult}
-								<div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-									<p class="font-medium">Search completed successfully!</p>
-									<p class="mt-1">Found {searchResult.profiles_count} influencers. Job ID: {searchResult.job_id}</p>
-									{#if searchResult.profiles_storage_url}
-										<a href={searchResult.profiles_storage_url} target="_blank" rel="noopener noreferrer" class="mt-2 inline-block text-sm underline">
-											View results
-										</a>
-									{/if}
-								</div>
-							{/if}
-							
-							<!-- Submit Button -->
-							<Button
-								type="submit"
-								variant="primary"
-								size="md"
-								disabled={isSearching || !searchQuery.trim() || searchTopN < 30 || searchTopN > maxInfluencers()}
-								class="w-full justify-center"
-							>
-								{#if isSearching}
-									Searching...
-								{:else}
-									Search for Influencers
-								{/if}
-							</Button>
-						</form>
-					</div>
-				{/if}
-				</div>
-				
-				<!-- Bottom Bar for Outreach Selection -->
-				{#if pipelineStatus?.status === 'completed' && pipelineStatus.profiles && pipelineStatus.profiles.length > 0}
-					<div 
-						class="border-t border-gray-200 bg-white px-8 py-4 shadow-lg"
-						in:fly={{ y: 100, duration: 300 }}
-					>
-						<div class="mx-auto flex max-w-6xl items-center justify-between">
-							<div class="flex items-center gap-4">
-								<p class="text-sm font-medium text-gray-900">Select Influencers for Outreach</p>
-								{#if selectedCount > 0}
-									<span class="inline-flex items-center rounded-full bg-[#FF6F61] px-3 py-1 text-sm font-semibold text-white">
-										{selectedCount} {selectedCount === 1 ? 'influencer' : 'influencers'} selected
-									</span>
-								{/if}
-							</div>
-							<Button
-								type="button"
-								variant="primary"
-								size="lg"
-								disabled={selectedCount === 0}
-								onclick={handleSendOutreach}
-							>
-								Send Outreach
-							</Button>
-						</div>
-					</div>
-				{/if}
-			</div>
-		{/if}
-	</div>
-</div>
-
+<!-- Modals and Panels -->
 <!-- Outreach Panel -->
-<OutreachPanel 
+<CampaignOutreachPanel 
 	open={outreachPanelOpen} 
 	influencers={selectedInfluencers()} 
+	campaignId={routeCampaignId}
 	onClose={closeOutreachPanel}
+/>
+
+<!-- Upgrade Panel (shown for free plan users) -->
+<OutreachUpgradePanel 
+	open={upgradePanelOpen} 
+	onClose={closeUpgradePanel}
+	returnUrl={`/campaign/${routeCampaignId}?tab=${activeTab}`}
+	title={upgradePanelTitle}
+	description={upgradePanelDescription}
+/>
+
+<!-- Search Limit Exceeded Panel -->
+<SearchLimitExceededPanel 
+	open={searchLimitExceededOpen} 
+	onClose={closeSearchLimitPanel}
+	onUpgrade={() => openUpgradePanel(
+		"You're out of influencer search usage",
+		"You've reached your monthly search limit. Upgrade your plan to get more searches and continue finding influencers."
+	)}
+	remaining={searchLimitError?.remaining}
+	requested={searchLimitError?.requested}
+	limit={searchLimitError?.limit}
 />

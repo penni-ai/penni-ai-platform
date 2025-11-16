@@ -1,8 +1,8 @@
 import { createHash } from 'crypto';
 import { env as publicEnv } from '$env/dynamic/public';
 import { adminAuth } from '$lib/firebase/admin';
-import { firestore } from '$lib/server/firestore';
-import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute } from '$lib/server/api';
+import { firestore } from '$lib/server/core';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute } from '$lib/server/core';
 
 type Payload = {
 	email?: string;

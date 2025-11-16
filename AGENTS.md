@@ -1,1 +1,0 @@
-When writing code with libraries or interacting with external api libraries. ALWAYS use context7 to see the best practices and proper usage. 

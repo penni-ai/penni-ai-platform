@@ -1,6 +1,6 @@
-import { apiOk, handleApiRoute, requireUser } from '$lib/server/api';
-import { getSearchUsage } from '$lib/server/search-usage';
-import { getOutreachUsage } from '$lib/server/outreach-usage';
+import { apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { getSearchUsage } from '$lib/server/usage';
+import { getOutreachUsage } from '$lib/server/usage';
 
 export const GET = handleApiRoute(async (event) => {
 	const user = requireUser(event);
@@ -9,8 +9,8 @@ export const GET = handleApiRoute(async (event) => {
 		getOutreachUsage(user.uid)
 	]);
 	return apiOk({
-		search: searchUsage,
-		outreach: outreachUsage
+		influencersFound: searchUsage,
+		outreachSent: outreachUsage
 	});
 }, { component: 'usage' });
 

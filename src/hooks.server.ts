@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto';
 import type { Handle } from '@sveltejs/kit';
 import { adminAuth } from '$lib/firebase/admin';
-import { apiError } from '$lib/server/api';
-import { createLogger } from '$lib/server/logger';
+import { apiError } from '$lib/server/core';
+import { createLogger } from '$lib/server/core';
 
 const SESSION_COOKIE_NAME = '__session';
 

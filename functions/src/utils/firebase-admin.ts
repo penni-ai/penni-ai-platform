@@ -3,6 +3,26 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { getStorage } from 'firebase-admin/storage';
 
+const isFunctionsEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+
+if (!isFunctionsEmulator) {
+  const storageEmulatorKeys = [
+    'FIREBASE_STORAGE_EMULATOR_HOST',
+    'STORAGE_EMULATOR_HOST',
+    'GCLOUD_STORAGE_EMULATOR_HOST',
+  ] as const;
+
+  for (const key of storageEmulatorKeys) {
+    if (process.env[key]) {
+      console.warn('[FirebaseAdmin] Ignoring storage emulator host in production', {
+        key,
+        value: process.env[key],
+      });
+      delete process.env[key];
+    }
+  }
+}
+
 interface FirebaseEnvConfig {
   projectId?: string;
   storageBucket?: string;

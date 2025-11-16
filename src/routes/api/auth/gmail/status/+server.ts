@@ -1,7 +1,7 @@
-import { handleApiRoute } from '$lib/server/api';
-import { requireUser } from '$lib/server/api';
-import { apiOk } from '$lib/server/api';
-import { getGmailConnection, listGmailConnections } from '$lib/server/gmail-auth';
+import { handleApiRoute } from '$lib/server/core';
+import { requireUser } from '$lib/server/core';
+import { apiOk } from '$lib/server/core';
+import { getGmailConnection, listGmailConnections } from '$lib/server/gmail';
 
 export const GET = handleApiRoute(async (event) => {
 	const user = requireUser(event);

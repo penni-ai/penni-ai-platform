@@ -1,0 +1,47 @@
+# Firebase ignore patterns
+# This file tells Firebase which files/directories to exclude from deployment
+
+# Dependencies
+node_modules/
+
+# Build outputs
+.svelte-kit/
+build/
+.output/
+
+# Python virtual environments and cache
+**/venv/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Chatbot function (deployed separately)
+chatbot-function/
+
+# Legacy chatbot
+penni-chatbot/
+
+# Functions (deployed separately)
+functions/
+
+# Logs
+*.log
+firebase-debug.log
+firebase-debug.*.log
+
+# Environment files
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test results
+test-results/
+
+# IDE
+.vscode/
+.idea/
+

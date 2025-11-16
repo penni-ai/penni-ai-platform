@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { Editor } from '@tiptap/core';
 	import StarterKit from '@tiptap/starter-kit';
+	import Paragraph from '@tiptap/extension-paragraph';
 	
 	interface Props {
 		content?: string;
@@ -32,14 +33,26 @@
 				StarterKit.configure({
 					heading: {
 						levels: [1, 2, 3]
+					},
+					// Configure paragraph with proper spacing for email
+					paragraph: false // Disable default paragraph to configure our own
+				}),
+				// Configure paragraph with proper HTML attributes for email spacing
+				Paragraph.extend({
+					parseHTML() {
+						return [{ tag: 'p' }];
+					},
+					renderHTML({ HTMLAttributes }) {
+						return ['p', { style: 'margin: 0 0 1em 0;', ...HTMLAttributes }, 0];
 					}
 				})
+				// Note: HardBreak is already included in StarterKit, so we don't need to add it separately
 			],
 			content: content || '<p></p>',
 			editorProps: {
 				attributes: {
 					class: 'prose prose-sm max-w-none focus:outline-none min-h-full',
-					'data-placeholder': 'Write your email template here... Use {{variable}} for personalization'
+					'data-placeholder': 'Write your message here... Use {{influencer_name}} for personalization'
 				}
 			},
 			onUpdate: ({ editor }) => {
@@ -143,24 +156,10 @@
 				<span class="text-xs text-gray-500 px-2">Variables:</span>
 				<button
 					type="button"
-					onclick={() => insertVariable('name')}
+					onclick={() => insertVariable('influencer_name')}
 					class="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-100 text-gray-700"
 				>
-					{'{{name}}'}
-				</button>
-				<button
-					type="button"
-					onclick={() => insertVariable('platform')}
-					class="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-100 text-gray-700"
-				>
-					{'{{platform}}'}
-				</button>
-				<button
-					type="button"
-					onclick={() => insertVariable('email')}
-					class="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-100 text-gray-700"
-				>
-					{'{{email}}'}
+					{'{{influencer_name}}'}
 				</button>
 			</div>
 		</div>
@@ -226,6 +225,29 @@
 	
 	:global(.ProseMirror em) {
 		font-style: italic;
+	}
+	
+	/* Ensure paragraphs have proper spacing for email */
+	:global(.ProseMirror p) {
+		margin: 0 0 1em 0;
+		line-height: 1.6;
+	}
+	
+	/* Ensure last paragraph doesn't have bottom margin */
+	:global(.ProseMirror p:last-child) {
+		margin-bottom: 0;
+	}
+	
+	/* Style hard breaks for email */
+	:global(.ProseMirror br.email-hard-break) {
+		display: block;
+		margin: 0.5em 0;
+		content: '';
+	}
+	
+	/* Ensure proper line height for readability */
+	:global(.ProseMirror) {
+		line-height: 1.6;
 	}
 </style>
 

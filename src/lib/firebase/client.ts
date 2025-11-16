@@ -1,3 +1,15 @@
+/**
+ * Firebase Client SDK initialization
+ * 
+ * This module initializes Firebase client SDK for browser use.
+ * It automatically connects to emulators in development mode when configured.
+ * 
+ * Exports:
+ * - firebaseApp: The Firebase app instance
+ * - firebaseAuth: The Firebase Auth instance
+ * - firebaseFirestore: The Firestore instance
+ */
+
 import { browser } from '$app/environment';
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, type Auth } from 'firebase/auth';
@@ -44,13 +56,30 @@ function configureAuth(app: FirebaseApp): Auth {
 }
 
 function configureFirestore(app: FirebaseApp): Firestore {
+	// Get auth first to ensure it's initialized
+	const auth = getAuth(app);
 	const firestore = getFirestore(app);
+	
+	// Connect to emulator if in development mode
+	// IMPORTANT: This must be called BEFORE any Firestore operations
 	if (browser && import.meta.env.DEV) {
 		const emulatorHost = publicEnv.PUBLIC_FIREBASE_FIRESTORE_EMULATOR_HOST;
 		if (emulatorHost) {
+			try {
 			const [host, portRaw] = emulatorHost.split(':');
 			const port = Number.parseInt(portRaw ?? '', 10) || 8080;
 			connectFirestoreEmulator(firestore, host || 'localhost', port);
+				console.log('[FirebaseClient] Connected to Firestore emulator', { host, port });
+			} catch (error) {
+				// If already connected, that's okay
+				if (error instanceof Error && error.message.includes('already been called')) {
+					console.warn('[FirebaseClient] Firestore emulator already connected');
+				} else {
+					console.error('[FirebaseClient] Failed to connect Firestore emulator', error);
+				}
+			}
+		} else {
+			console.warn('[FirebaseClient] PUBLIC_FIREBASE_FIRESTORE_EMULATOR_HOST not set - using production Firestore');
 		}
 	}
 	return firestore;

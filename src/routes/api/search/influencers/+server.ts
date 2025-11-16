@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto';
-import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/api';
-import { getSearchUsage, incrementSearchUsage } from '$lib/server/search-usage';
-import { functionsConfig, getServiceAccountAccessToken } from '$lib/server/functions-client';
-import { campaignDocRef, serverTimestamp, firestore } from '$lib/server/firestore';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
+import { getSearchUsage, incrementSearchUsage } from '$lib/server/usage';
+import { getFunctionsConfig, getServiceAccountAccessToken } from '$lib/server/firebase';
+import { campaignDocRef, serverTimestamp, firestore } from '$lib/server/core';
 
 const PIPELINE_BIND_RETRY_DELAYS_MS = [0, 100, 500, 1000];
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -223,7 +223,8 @@ export const POST = handleApiRoute(async (event) => {
 		// Call the cloud function
 		// Note: Using service account authentication (no user ID token needed)
 		// User is already verified in hooks.server.ts via session cookie
-		const functionUrl = `${functionsConfig.FUNCTION_BASE}/${INFLUENCER_ANALYSIS_FUNCTION_NAME}`;
+		const config = getFunctionsConfig();
+		const functionUrl = `${config.FUNCTION_BASE}/${INFLUENCER_ANALYSIS_FUNCTION_NAME}`;
 		
 		const requestBody: Record<string, unknown> = {
 			business_description: business_description.trim(),

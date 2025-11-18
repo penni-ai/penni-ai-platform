@@ -27,16 +27,26 @@ vite.config.ts.timestamp-*
 penni-chatbot/venv/
 penni-chatbot/__pycache__/
 penni-chatbot/**/__pycache__/
+chatbot-function/venv/
+chatbot-function/__pycache__/
+chatbot-function/**/__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
 
 # Cache directories
-.npm-cache/
-.gcloud-tmp/
-.cache/
+**/.npm-cache/
+**/.cache/
+**/.gcloud-tmp/
+**/.turbo/
+**/.vite/
+**/.next/
+**/.svelte-kit/
 *.cache
+.cache/
+.npm-cache/
 
 # Firebase exports and debug logs
 firebase-debug.log

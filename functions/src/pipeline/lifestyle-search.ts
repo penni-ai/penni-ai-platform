@@ -9,6 +9,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import type { BrightDataUnifiedProfile, BrightDataProfile } from '../types/brightdata.js';
 import { normalizeProfiles } from '../utils/profile-normalizer.js';
+import { fetchWithServiceIdentity } from '../utils/service-identity.js';
 
 // Import BrightData collection functions directly to avoid HTTP timeout
 import {
@@ -21,15 +22,16 @@ import {
 
 /**
  * Get Weaviate hybrid search base URL
+ * Note: Firebase Functions v2 deploy as Cloud Run services
+ * The function name is lowercased when deployed
  */
 function getWeaviateHybridSearchUrl(): string {
-  // In production, this would be the deployed function URL
-  // For local testing, use the emulator URL
-  const baseUrl = process.env.FUNCTIONS_EMULATOR
-    ? 'http://127.0.0.1:6200/penni-ai-platform/us-central1'
-    : process.env.FUNCTIONS_URL || 'https://us-central1-penni-ai-platform.cloudfunctions.net';
-  
-  return `${baseUrl}/weaviateHybridSearch`;
+  if (process.env.FUNCTIONS_EMULATOR) {
+    return 'http://127.0.0.1:6200/penni-ai-platform/us-central1/weaviateHybridSearch';
+  }
+  // For production, use the Cloud Run URL directly
+  // This ensures proper authentication with the correct audience
+  return process.env.WEAVIATE_HYBRID_SEARCH_URL || 'https://weaviatehybridsearch-szs2cmou6q-uc.a.run.app';
 }
 
 
@@ -37,17 +39,21 @@ function getWeaviateHybridSearchUrl(): string {
  * Perform hybrid search on Weaviate
  */
 async function performHybridSearch(query: string, limit: number): Promise<any> {
-  const url = getWeaviateHybridSearchUrl();
-  const searchUrl = `${url}?query=${encodeURIComponent(query)}&limit=${limit}`;
+  const baseUrl = getWeaviateHybridSearchUrl();
+  const searchUrl = `${baseUrl}?query=${encodeURIComponent(query)}&limit=${limit}`;
   
   console.log(`Performing hybrid search: ${searchUrl}`);
   
-  const response = await fetch(searchUrl, {
+  const response = await fetchWithServiceIdentity(
+    searchUrl,
+    {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
     },
-  });
+    },
+    baseUrl // Use baseUrl as audience for authentication
+  );
   
   if (!response.ok) {
     const errorText = await response.text();

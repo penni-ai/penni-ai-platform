@@ -55,12 +55,11 @@ class ChatbotRuntime:
         state_values: Dict[str, Any],
     ) -> ConversationSnapshot:
         slots = state_values.get("slots") or {}
-        field_status = state_values.get("field_status") or {}
         missing = state_values.get("missing") or []
         status = state_values.get("status") or "collecting"
         messages = self.message_store.list_messages(uid, campaign_id)
         user_texts = [msg.content for msg in messages if msg.role == "user"]
-        collected = map_slots_to_collected(slots, field_status, user_texts)
+        collected = map_slots_to_collected(slots, user_texts)
         collected.updatedAt = int(datetime.utcnow().timestamp() * 1000)
         snapshot = ConversationSnapshot(
             id=campaign_id,

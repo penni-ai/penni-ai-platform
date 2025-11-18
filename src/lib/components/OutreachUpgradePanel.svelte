@@ -62,7 +62,7 @@
 		},
 		{
 			key: 'event',
-			name: 'Event / Pop-Up Special',
+			name: 'Event Special',
 			price: '$999',
 			cadence: 'one-time activation',
 			description: 'Averages 500 influencer deals for your event. Festivals, launches, or venue takeovers that need instant reach and concierge help.',
@@ -70,8 +70,7 @@
 				'Access to 5,000 influencer profiles (one-time)',
 				'5 connected outreach inboxes',
 				'Send up to 5,000 outreach messages',
-				'Full CSV export + CRM sync included',
-				'Concierge onboarding and campaign setup support'
+				'Full CSV export + CRM sync included'
 			]
 		}
 	];

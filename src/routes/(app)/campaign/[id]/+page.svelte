@@ -39,6 +39,7 @@
 	import CampaignTabs from '$lib/components/campaign/CampaignTabs.svelte';
 	import ChatTab from '$lib/components/campaign/ChatTab.svelte';
 	import OutreachTab from '$lib/components/campaign/OutreachTab.svelte';
+	import RerunPipelineWarning from '$lib/components/campaign/RerunPipelineWarning.svelte';
 	import type { PageData } from './$types';
 	import { firebaseFirestore, firebaseAuth } from '$lib/firebase/client';
 	import { doc, onSnapshot } from 'firebase/firestore';
@@ -343,8 +344,8 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	
 	// Update max influencers based on remaining searches
 	const maxInfluencers = $derived(() => {
-		if (!searchUsage) return 100; // Default max if usage not loaded
-		return Math.min(searchUsage.remaining, 100); // Cap at 100 or remaining, whichever is lower
+		if (!searchUsage) return 1000; // Default max if usage not loaded
+		return Math.min(searchUsage.remaining, 1000); // Cap at 1000 or remaining, whichever is lower
 	});
 	
 
@@ -895,6 +896,23 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		upgradePanelOpen = true;
 	}
 	
+	// Rerun pipeline warning modal state
+	let rerunPipelineWarningOpen = $state(false);
+	
+	function openRerunPipelineWarning() {
+		rerunPipelineWarningOpen = true;
+	}
+	
+	function closeRerunPipelineWarning() {
+		rerunPipelineWarningOpen = false;
+	}
+	
+	async function handleRerunPipeline() {
+		closeRerunPipelineWarning();
+		// Call the same search submit handler - it will create a new pipeline
+		await handleSearchFormSubmit();
+	}
+	
 	// Track if page is fully loaded
 	const isPageLoaded = $derived(() => {
 		// During SSR, always return true to prevent hydration mismatches
@@ -994,6 +1012,7 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 														}}
 				onToggleDebug={() => debugMode = !debugMode}
 				onScrollToBottom={scrollToBottom}
+				onRerunPipeline={openRerunPipelineWarning}
 			/>
 			
 		<!-- Outreach Tab Panel -->
@@ -1043,4 +1062,12 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	remaining={searchLimitError?.remaining}
 	requested={searchLimitError?.requested}
 	limit={searchLimitError?.limit}
+/>
+
+<!-- Rerun Pipeline Warning -->
+<RerunPipelineWarning
+	open={rerunPipelineWarningOpen}
+	onClose={closeRerunPipelineWarning}
+	onConfirm={handleRerunPipeline}
+	topN={searchFormTopN}
 />

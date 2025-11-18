@@ -64,6 +64,7 @@ export interface SearchResultMetadata {
 
 /**
  * Individual search result item
+ * data can be partial (minimal fields) or full profile data depending on query return fields
  */
 export interface WeaviateSearchResult {
   /** Weaviate object UUID */
@@ -73,8 +74,11 @@ export interface WeaviateSearchResult {
   score?: number;
   distance?: number;
   
-  /** Influencer profile data */
-  data: InfluencerProfile;
+  /** Influencer profile data (can be partial for optimized queries) */
+  data: Partial<InfluencerProfile> & {
+    /** Profile URL is always required */
+    profile_url: string;
+  };
 }
 
 /**

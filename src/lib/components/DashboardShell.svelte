@@ -14,8 +14,8 @@ export let onUpgrade: (() => void) | undefined = undefined;
 
 <div class="flex h-screen bg-white overflow-hidden">
 	{#if $sidebarState}
-		<aside class={`${sidebarWidthClass} bg-white border-r border-gray-200 flex flex-col`}>
-			<div class="px-2 py-2 border-b border-gray-200 flex items-center justify-between">
+		<aside class={`${sidebarWidthClass} bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden`}>
+			<div class="px-2 py-2 border-b border-gray-200 flex items-center justify-between shrink-0">
 				<slot name="sidebar-header">
 					<a href="/" aria-label="Penny home">
 						<Logo size="md" />

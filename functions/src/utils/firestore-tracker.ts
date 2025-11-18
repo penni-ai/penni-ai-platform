@@ -442,7 +442,7 @@ export async function updateLLMAnalysisStage(
  */
 export async function storePipelineResults(
   jobId: string,
-  profiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string }>,
+  profiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string; fit_summary?: string }>,
   pipelineStats?: {
     queries_generated: number;
     total_search_results: number;
@@ -564,7 +564,7 @@ async function saveProfilesToStorage(
  */
 export async function appendBatchResults(
   jobId: string,
-  newProfiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string }>
+  newProfiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string; fit_summary?: string }>
 ): Promise<void> {
   const jobRef = db.collection(PIPELINE_COLLECTION).doc(jobId);
   const jobDoc = await jobRef.get();

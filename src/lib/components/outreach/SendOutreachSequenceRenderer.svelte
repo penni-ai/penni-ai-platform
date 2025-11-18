@@ -27,6 +27,7 @@
 	footerModalOpen={props.footerModalOpen}
 	influencers={props.influencers}
 	campaignId={props.campaignId}
+	navigationDirection={props.navigationDirection}
 	onStageChange={props.onStageChange}
 	onEditingPlatformChange={props.onEditingPlatformChange}
 	onToggleMethod={props.onToggleMethod}

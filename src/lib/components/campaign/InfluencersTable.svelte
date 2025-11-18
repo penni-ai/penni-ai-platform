@@ -25,9 +25,15 @@
 		onToggleContacted
 	}: Props = $props();
 
-	// Filter profiles based on contacted status
+	// Filter profiles based on contacted status and exclude profiles with N/A display_name
 	const filteredProfiles = $derived(() => {
 		return profiles.filter(profile => {
+			// Exclude profiles with missing or empty display_name
+			const displayName = profile.display_name;
+			if (!displayName || typeof displayName !== 'string' || displayName.trim() === '' || displayName === 'N/A') {
+				return false;
+			}
+			
 			const profileId = profile._id || getProfileId(profile);
 			const isContacted = contactedIds.has(profileId);
 			return showContacted ? isContacted : !isContacted;
@@ -82,7 +88,7 @@
 						{@const isNewProfile = !previousProfileIds.has(profileId)}
 						{@const isSelected = isInfluencerSelected(profileId)}
 						{@const isContacted = contactedIds.has(profileId)}
-						{@const isSelectable = status === 'completed' && !isContacted}
+						{@const isSelectable = (status === 'completed' || status === 'running' || status === 'pending') && !isContacted}
 						<tr 
 							class="transition-colors {
 								isContacted ? 'bg-green-50 hover:bg-green-100 cursor-not-allowed opacity-75' :
@@ -90,7 +96,11 @@
 								isSelectable ? 'hover:bg-gray-50 cursor-pointer' : 
 								'hover:bg-gray-50'
 							}"
-							onclick={() => isSelectable && onToggleSelection(profileId)}
+							onclick={() => {
+								if (isSelectable) {
+									onToggleSelection(profileId);
+								}
+							}}
 							in:fly={{ y: -20, duration: 400, opacity: 0 }}
 						>
 							<td class="whitespace-nowrap px-6 py-4">

@@ -14,7 +14,6 @@ export const pipelineHealth = onRequest(
     region: 'us-central1',
     timeoutSeconds: 10,
     memory: '256MiB',
-    minInstances: 1, // Keep this endpoint warm too
     invoker: 'private',
   },
   async (request, response) => {
@@ -25,4 +24,3 @@ export const pipelineHealth = onRequest(
     });
   }
 );
-

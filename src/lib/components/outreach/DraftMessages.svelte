@@ -5,6 +5,7 @@
 	import type { ContactMethod } from './types';
 	
 	interface Props {
+		navigationDirection?: 'forward' | 'backward';
 		editingPlatform: ContactMethod | null;
 		messageContents: Record<ContactMethod, string>;
 		navigationValidationErrors: Record<ContactMethod, string[]>;
@@ -43,11 +44,12 @@
 		onQuickDraft,
 		onOpenDraftModal,
 		onOpenFooterModal,
-		onConnectGmail
+		onConnectGmail,
+		navigationDirection = 'forward'
 	}: Props = $props();
 </script>
 
-<div class="absolute inset-0 h-full flex" transition:slideFade={{ axis: 'x', duration: 300 }}>
+<div class="absolute inset-0 h-full flex" transition:slideFade={{ axis: 'x', duration: 300, direction: navigationDirection }}>
 	<!-- Left Column: Platform Buttons -->
 	<div class="w-[20%] border-r border-gray-200 flex flex-col">
 		<div class="p-6">

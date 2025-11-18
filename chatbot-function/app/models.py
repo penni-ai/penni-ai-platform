@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
-FieldStatus = Literal["not_collected", "collected", "confirmed"]
+FieldStatus = Literal["not_collected", "collected"]
 ConversationStatus = Literal[
     "collecting",
     "ready",

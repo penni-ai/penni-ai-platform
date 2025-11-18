@@ -33,6 +33,7 @@
 		onToggleDebug: () => void;
 		onScrollToBottom: () => void;
 		onDraftChange?: (value: string) => void;
+		onRerunPipeline?: () => void;
 	}
 
 	let {
@@ -58,7 +59,8 @@
 		onSearchSubmit,
 		onToggleDebug,
 		onScrollToBottom,
-		onDraftChange
+		onDraftChange,
+		onRerunPipeline
 	}: Props = $props();
 
 	// Two-way bindings need to be handled via callbacks
@@ -116,6 +118,7 @@
 								hasPipeline={!!effectiveCampaign?.pipeline_id}
 								{debugMode}
 								onSubmit={handleSearchSubmit}
+								onRerun={onRerunPipeline}
 							/>
 						</div>
 					{/if}

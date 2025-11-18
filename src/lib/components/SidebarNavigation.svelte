@@ -289,8 +289,9 @@
 	}
 </script>
 
-<div class="flex h-full flex-1 flex-col">
-	<div class="px-6 pt-6 pb-5 border-b border-gray-100">
+<div class="flex flex-1 flex-col min-h-0">
+	<!-- Fixed Header -->
+	<div class="px-6 pt-6 pb-5 border-b border-gray-100 shrink-0">
 	<Button
 		onclick={async () => {
 				try {
@@ -313,6 +314,8 @@
 		</Button>
 	</div>
 
+	<!-- Scrollable Campaigns Section -->
+	<div class="flex-1 overflow-y-auto min-h-0">
 	<div class="px-6 py-5 space-y-3 border-t border-gray-100">
 		<p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Campaign</p>
 		{#if campaigns.length}
@@ -376,39 +379,14 @@
 				<p class="mt-1 text-[11px] text-gray-500">Start a chat to create your first campaign.</p>
 			</div>
 		{/if}
+		</div>
 	</div>
 
-	<nav class="px-6 py-5 mt-auto border-t border-gray-100 space-y-1">
-		{#each navItems as item}
-			<a
-				href={item.href}
-				class="relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-gray-600 transition hover:text-gray-900 hover:bg-gray-50"
-			>
-		{#if item.icon === 'settings'}
-			<svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-				/>
-				<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-			</svg>
-		{:else}
-			<svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.667 2.667 0 00-.1.661z" />
-			</svg>
-		{/if}
-				<span class="font-medium">{item.label}</span>
-				{#if item.badge}
-					<span class="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#FF6F61] text-[10px] font-semibold text-white">{item.badge}</span>
-				{/if}
-			</a>
-		{/each}
-	</nav>
-	
+	<!-- Fixed Bottom Section -->
+	<div class="shrink-0 border-t border-gray-100">
 	<!-- Current Plan Panel -->
 	{#if usage}
-		<div class="mx-6 mb-4 rounded-lg border-2 border-gray-200 bg-white p-3">
+			<div class="mx-6 mb-4 mt-4 rounded-lg border-2 border-gray-200 bg-white p-3">
 			<div class="space-y-3">
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-semibold text-gray-900">{getPlanName(currentPlanKey)}</p>
@@ -466,6 +444,36 @@
 			</div>
 		</div>
 	{/if}
+
+		<!-- Bottom Navigation -->
+		<nav class="px-6 py-5 space-y-1">
+			{#each navItems as item}
+				<a
+					href={item.href}
+					class="relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-gray-600 transition hover:text-gray-900 hover:bg-gray-50"
+				>
+					{#if item.icon === 'settings'}
+						<svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+							/>
+							<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+						</svg>
+					{:else}
+						<svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.667 2.667 0 00-.1.661z" />
+						</svg>
+					{/if}
+					<span class="font-medium">{item.label}</span>
+					{#if item.badge}
+						<span class="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#FF6F61] text-[10px] font-semibold text-white">{item.badge}</span>
+					{/if}
+				</a>
+			{/each}
+		</nav>
+	</div>
 </div>
 
 <!-- Campaign Info Modal -->

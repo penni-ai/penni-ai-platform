@@ -72,7 +72,7 @@
 			<div class="grid grid-cols-2 gap-4 text-sm">
 				<div class="rounded-lg border border-gray-200 p-3">
 					<div class="flex items-center justify-between">
-						<span class="text-gray-600">Query Expansion</span>
+						<span class="text-gray-600">Category Analysis</span>
 						<span class="font-medium capitalize text-gray-900">{status.stages.query_expansion?.status ?? 'pending'}</span>
 					</div>
 					{#if status.stages.query_expansion?.queries}
@@ -90,21 +90,21 @@
 				</div>
 				<div class="rounded-lg border border-gray-200 p-3">
 					<div class="flex items-center justify-between">
-						<span class="text-gray-600">BrightData Collection</span>
+						<span class="text-gray-600">Live Data Fetch</span>
 						<span class="font-medium capitalize text-gray-900">{status.stages.brightdata_collection?.status ?? 'pending'}</span>
 					</div>
 					{#if status.stages.brightdata_collection}
 						<p class="mt-1 text-xs text-gray-500">
 							{status.stages.brightdata_collection.profiles_collected ?? 0} collected
-							{#if status.stages.brightdata_collection.total_batches}
-								({status.stages.brightdata_collection.batches_completed ?? 0}/{status.stages.brightdata_collection.total_batches} batches)
+							{#if status.stages.brightdata_collection.batches_completed !== undefined && status.stages.brightdata_collection.batches_completed > 0}
+								(processed batch {status.stages.brightdata_collection.batches_completed})
 							{/if}
 						</p>
 					{/if}
 				</div>
 				<div class="rounded-lg border border-gray-200 p-3">
 					<div class="flex items-center justify-between">
-						<span class="text-gray-600">LLM Analysis</span>
+						<span class="text-gray-600">Business Fit Analysis</span>
 						<span class="font-medium capitalize text-gray-900">{status.stages.llm_analysis?.status ?? 'pending'}</span>
 					</div>
 					{#if status.stages.llm_analysis?.profiles_analyzed}

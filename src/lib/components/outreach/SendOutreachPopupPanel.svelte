@@ -4,6 +4,7 @@
 	export let open = false;
 	export let onClose: () => void;
 	export let title = 'Send Outreach';
+	export let subtitle = '';
 	export let stateRestored = false;
 	export let isSaving = false;
 	export let isSavingDebounced = false;
@@ -33,7 +34,8 @@
 			{#if showHeader}
 				<div class="border-b border-gray-200 px-8 py-6 shrink-0">
 					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-3">
+						<div class="flex-1">
+							<div class="flex items-center gap-3 mb-1">
 							<h2 class="text-2xl font-semibold text-gray-900">{title}</h2>
 							{#if stateRestored}
 								<span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Resumed</span>
@@ -42,6 +44,10 @@
 								<span class="text-xs text-gray-500">Saving...</span>
 							{:else if saveSuccess}
 								<span class="text-xs text-green-600">Saved</span>
+								{/if}
+							</div>
+							{#if subtitle}
+								<p class="text-sm text-gray-600">{subtitle}</p>
 							{/if}
 						</div>
 						<button

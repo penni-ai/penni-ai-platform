@@ -356,7 +356,7 @@ export function normalizeTikTokProfile(
     url: profile.url,
     
     // Basic info
-    display_name: profile.nickname,
+    display_name: profile.nickname || profile.account_id || 'Unknown',
     biography: profile.biography,
     profile_image_url: profile.profile_pic_url,
     
@@ -394,12 +394,17 @@ export function normalizeProfile(
 ): BrightDataUnifiedProfile {
   // Check if profile is already normalized (has 'platform' field and unified structure)
   // Note: We still normalize to ensure all fields are properly structured
-  if ('platform' in profile && 'account_id' in profile && 'display_name' in profile && 'profile_url' in profile) {
+  if ('platform' in profile && 'account_id' in profile && 'profile_url' in profile) {
     // Already in unified format - but verify it's complete
     const unifiedProfile = profile as unknown as BrightDataUnifiedProfile;
     console.log(`[Normalizer] Profile appears to be in unified format: ${unifiedProfile.platform}`);
-    // Still return it, but ensure it has all required fields
-    if (unifiedProfile.platform && unifiedProfile.account_id && unifiedProfile.display_name) {
+    // Ensure display_name is populated (use account_id as fallback if missing/empty)
+    if (!unifiedProfile.display_name || !unifiedProfile.display_name.trim()) {
+      console.log(`[Normalizer] Profile in unified format but display_name is empty, using account_id as fallback`);
+      unifiedProfile.display_name = unifiedProfile.account_id || 'Unknown';
+    }
+    // Return if all required fields are present
+    if (unifiedProfile.platform && unifiedProfile.account_id) {
       return unifiedProfile;
     }
   }

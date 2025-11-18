@@ -1,18 +1,19 @@
 <script lang="ts">
 	import { slideFade } from './transitions';
+	
+	interface Props {
+		navigationDirection?: 'forward' | 'backward';
+	}
+	
+	let { navigationDirection = 'forward' }: Props = $props();
 </script>
 
-<div class="absolute inset-0 h-full flex items-center justify-center px-8 py-12" transition:slideFade={{ axis: 'x', duration: 300 }}>
-	<div class="max-w-5xl w-full">
-		<div class="text-center mb-8">
-			<h3 class="text-2xl font-semibold text-gray-900 mb-2">Review & Send Messages</h3>
-			<p class="text-gray-600">Here's what happens when you review and send your outreach messages</p>
-		</div>
-		
-		<div class="grid grid-cols-2 gap-6">
+<div class="absolute inset-0 h-full flex" transition:slideFade={{ axis: 'x', duration: 300, direction: navigationDirection }}>
+	<div class="w-full h-full p-6">
+		<div class="grid grid-cols-2 grid-rows-2 gap-6 h-full">
 			<!-- Message Preview -->
-			<div class="bg-white border border-gray-200 rounded-lg p-6">
-				<div class="flex items-start gap-4">
+			<div class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
+				<div class="flex items-start gap-4 flex-1">
 					<div class="shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
 						<svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -27,8 +28,8 @@
 			</div>
 			
 			<!-- Gmail Drafts -->
-			<div class="bg-white border border-gray-200 rounded-lg p-6">
-				<div class="flex items-start gap-4">
+			<div class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
+				<div class="flex items-start gap-4 flex-1">
 					<div class="shrink-0 w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
 						<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -48,8 +49,8 @@
 			</div>
 			
 			<!-- Outreach Count -->
-			<div class="bg-white border border-gray-200 rounded-lg p-6">
-				<div class="flex items-start gap-4">
+			<div class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
+				<div class="flex items-start gap-4 flex-1">
 					<div class="shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
 						<svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -63,8 +64,8 @@
 			</div>
 			
 			<!-- Instagram/TikTok -->
-			<div class="bg-white border border-gray-200 rounded-lg p-6">
-				<div class="flex items-start gap-4">
+			<div class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
+				<div class="flex items-start gap-4 flex-1">
 					<div class="shrink-0 w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
 						<svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />

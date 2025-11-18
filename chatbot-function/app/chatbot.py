@@ -66,9 +66,6 @@ FIELD_SPECS: List[FieldSpec] = [
 FIELD_INDEX: Dict[str, FieldSpec] = {spec.name: spec for spec in FIELD_SPECS}
 REQUIRED_FIELDS = [spec.name for spec in FIELD_SPECS if spec.required]
 IMPLIED_FIELDS = {spec.name for spec in FIELD_SPECS if not spec.ask_allowed}
-FIELD_STATUS_OVERRIDES = {
-    "business_about": "confirmed",
-}
 
 
 def _coerce_slot_value(name: str, value: Any) -> Any:
@@ -77,6 +74,14 @@ def _coerce_slot_value(name: str, value: Any) -> Any:
         return value
     if value in (None, ""):
         return None
+    
+    # Special handling for website field - allow "N/A" as valid value
+    if name == "website":
+        value_str = str(value).strip()
+        # Normalize variations of N/A
+        if value_str.upper() in ("N/A", "NA", "NONE", "NOT APPLICABLE"):
+            return "N/A"
+        return value_str if value_str else None
     
     if spec.value_type == "list":
         # Special handling for platform field to validate and normalize values
@@ -138,8 +143,7 @@ class GraphState(TypedDict, total=False):
     missing: List[str]
     status: str
     guidance: Dict[str, str]
-    field_status: Dict[str, str]
-    web_search_done: bool  # Track if web search has been performed in this conversation
+    web_search_results: Optional[str]  # Web search content to provide to agent
     web_search_sources: List[Dict[str, str]]  # Store web search source URLs for footer
     influencer_summary: str  # AI-generated summary of what kind of influencer user is looking for
 
@@ -158,7 +162,7 @@ def system_prompt() -> str:
         "\n1. Extract slot updates from the conversation (what the user has provided)"
         "\n2. Identify which REQUIRED fields are still missing (not yet collected)"
         "\n3. Provide guidance for the speaker agent:"
-        "   - 'ack': Acknowledge what was captured in this turn"
+        "   - 'ack': Provide a friendly summary of what information has been collected so far"
         "   - 'ask': Ask for exactly ONE missing required field"
         "\n\n"
         "CRITICAL: The missing_fields list must include ALL required fields that have not been"
@@ -189,21 +193,25 @@ def default_slots() -> Dict[str, Optional[Any]]:
     return slots
 
 
-def default_status() -> Dict[str, str]:
-    status = {spec.name: "not_collected" for spec in FIELD_SPECS if spec.ask_allowed}
-    status.update(FIELD_STATUS_OVERRIDES)
-    return status
-
-
-def compute_missing(status_map: Dict[str, str], slots: Dict[str, Any]) -> List[str]:
+def compute_missing(slots: Dict[str, Any]) -> List[str]:
+    """Compute missing required fields based on slot values."""
     missing: List[str] = []
     for spec in FIELD_SPECS:
         if not spec.required:
             continue
-        status = status_map.get(spec.name)
-        if status == "confirmed":
+        slot_value = slots.get(spec.name)
+        # For website field, "N/A" is a valid value
+        if spec.name == "website" and slot_value == "N/A":
             continue
-        if slots.get(spec.name) not in (None, ""):
+        # For list fields (like platform), empty list means missing
+        if spec.value_type == "list":
+            if isinstance(slot_value, list) and len(slot_value) > 0:
+                continue
+            else:
+                missing.append(spec.name)
+                continue
+        # For other fields, check if value is None or empty string
+        if slot_value not in (None, ""):
             continue
         missing.append(spec.name)
     return missing
@@ -218,7 +226,7 @@ FIELD_ASK_PROMPTS: Dict[str, str] = {
     "min_followers": "Ask casually for the minimum and maximum follower count the user wants in one sentence. If the user says around a number, then assume it is plus or minus 10k.",
     "max_followers": "Ask casually for the minimum and maximum follower count the user wants in one sentence. If the user says around a number, then assume it is plus or minus 10k.",
     "platform": "Ask casually if they want to look for Instagram and Tiktok Influencers, or just one of them.",
-    "type_of_influencer": "Ask casually what type of influencer they're looking for (e.g., lifestyle, food, travel, fashion, tech, beauty, fitness, etc.) in one sentence.",
+    "type_of_influencer": "Ask casually what type of content the influencer you would want the influencer to create in one sentence. Suggest lifestyle or food.",
 }
 
 
@@ -283,71 +291,62 @@ def create_graph_with_checkpointer(
     speaker_kwargs["streaming"] = True
     speaker_llm = ChatVertexAI(**speaker_kwargs)
 
-    @traceable(name="analyzer_node", run_type="chain")
-    def analyzer_node(state: GraphState):
-        """Analyze conversation and extract structured slot updates."""
-        # Get current slots to check if we already have website/business info
-        current_slots = state.get("slots", {})
-        web_search_done = state.get("web_search_done", False)
+    @traceable(name="web_search_node", run_type="chain")
+    def web_search_node(state: GraphState):
+        """Detect websites in user messages and perform web search immediately."""
+        messages = state.get("messages", [])
         search_results = None
         search_sources = []
         
-        # Check if we need to search (only if not done yet)
-        if not web_search_done:
-            website = current_slots.get("website")
-            business_about = current_slots.get("business_about")
-            
-            # Also check latest user message for website URLs or business names
-            messages = state.get("messages", [])
-            if not website and not business_about and messages:
-                # Check last user message for website URLs
-                last_message = messages[-1]
-                if hasattr(last_message, 'content'):
-                    content = str(last_message.content)
-                    # Look for common URL patterns
-                    url_pattern = r'(?:https?://)?(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,})'
-                    url_match = re.search(url_pattern, content, re.IGNORECASE)
-                    if url_match:
-                        website = url_match.group(0)
-            
-            # Determine search query
-            search_query = None
-            if website:
-                # Clean website URL
-                website_clean = str(website).strip()
-                if not website_clean.startswith(("http://", "https://")):
-                    website_clean = f"https://{website_clean}"
-                search_query = f"information about {website_clean} business company"
-            elif business_about:
-                # Extract business name from description (first few words)
-                business_name = str(business_about).split()[:5]  # First 5 words
-                search_query = f"{' '.join(business_name)} company business"
-            
-            # Perform search if query determined
-            if search_query:
-                logger.info(f"Performing web search for: {search_query}")
-                # Pass the actual website URL to prioritize it in results
-                target_url = website_clean if website else None
-                search_results, search_sources = search_web(search_query, target_url=target_url)
+        # Check the latest user message for website URLs
+        if messages:
+            last_message = messages[-1]
+            if isinstance(last_message, HumanMessage):
+                content = extract_text(last_message)
+                # Look for common URL patterns
+                url_pattern = r'(?:https?://)?(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,})'
+                url_match = re.search(url_pattern, content, re.IGNORECASE)
                 
-                # If user provided a website URL, add it as the first source if not already present
-                if website and search_sources:
-                    website_clean_normalized = website_clean.lower().replace("www.", "")
-                    # Check if the website is already in sources
-                    website_in_sources = any(
-                        url.lower().replace("www.", "") == website_clean_normalized
-                        for url in [s.get('url', '') for s in search_sources]
-                    )
+                if url_match:
+                    website = url_match.group(0)
+                    # Clean website URL
+                    website_clean = str(website).strip()
+                    if not website_clean.startswith(("http://", "https://")):
+                        website_clean = f"https://{website_clean}"
                     
-                    if not website_in_sources:
-                        # Add the user's website as the first source
-                        search_sources.insert(0, {
-                            'url': website_clean,
-                            'title': website_clean,
-                        })
-                
-                if search_results:
-                    web_search_done = True
+                    # Perform web search immediately
+                    search_query = f"information about {website_clean} business company"
+                    logger.info(f"Website detected in message, performing web search for: {search_query}")
+                    
+                    search_results, search_sources = search_web(search_query, target_url=website_clean)
+                    
+                    # Add the user's website as the first source if not already present
+                    if search_sources:
+                        website_clean_normalized = website_clean.lower().replace("www.", "")
+                        website_in_sources = any(
+                            url.lower().replace("www.", "") == website_clean_normalized
+                            for url in [s.get('url', '') for s in search_sources]
+                        )
+                        
+                        if not website_in_sources:
+                            search_sources.insert(0, {
+                                'url': website_clean,
+                                'title': website_clean,
+                            })
+        
+        return {
+            "web_search_results": search_results,
+            "web_search_sources": search_sources,
+        }
+
+    @traceable(name="analyzer_node", run_type="chain")
+    def analyzer_node(state: GraphState):
+        """Analyze conversation and extract structured slot updates."""
+        current_slots = state.get("slots", {})
+        
+        # Get web search results from web_search_node if available
+        search_results = state.get("web_search_results")
+        search_sources = state.get("web_search_sources", [])
         
         # Build conversation with system prompt
         conversation = [SystemMessage(content=system_prompt())]
@@ -398,15 +397,10 @@ def create_graph_with_checkpointer(
             if spec and spec.value_type == "list":
                 merged_slots[key] = coerced or []
             elif coerced not in (None, ""):
+                # "N/A" is a valid value for website field and will pass this check
                 merged_slots[key] = coerced
 
-        status_map = default_status()
-        status_map.update(state.get("field_status", {}))
-        for name, value in merged_slots.items():
-            if value not in (None, ""):
-                status_map[name] = "confirmed"
-
-        computed_missing = compute_missing(status_map, merged_slots)
+        computed_missing = compute_missing(merged_slots)
         parsed_missing = parsed.missing_fields
         if isinstance(parsed_missing, list):
             filtered = [field for field in parsed_missing if field in computed_missing]
@@ -417,7 +411,7 @@ def create_graph_with_checkpointer(
         guidance_dict = parsed.guidance.model_dump()
         # Always use LLM's acknowledgment, but fallback if empty
         if not guidance_dict.get("ack"):
-            guidance_dict["ack"] = "Offer a concise friendly acknowledgment of the captured info."
+            guidance_dict["ack"] = "Provide a concise friendly summary of what information has been collected so far."
         
         # ALWAYS hardcode the "ask" based on computed missing fields, ignore LLM's ask
         # This ensures we only ask for fields that are actually missing
@@ -449,8 +443,6 @@ def create_graph_with_checkpointer(
             "missing": missing,
             "status": status,
             "guidance": guidance_dict,
-            "field_status": status_map,
-            "web_search_done": web_search_done,  # Track that search was performed
             "web_search_sources": search_sources,  # Store sources for footer
         }
 
@@ -458,8 +450,22 @@ def create_graph_with_checkpointer(
     def speaker_node(state: GraphState):
         """Generate conversational response based on guidance."""
         guidance = state.get("guidance") or {}
-        ack = guidance.get("ack", "Confirm the captured info.")
+        slots = state.get("slots", {})
+        ack = guidance.get("ack", "Provide a friendly summary of what information has been collected so far.")
         ask = guidance.get("ask", "Ask for any missing field.")
+        
+        # Build context about collected slots for better guidance
+        collected_info = []
+        for field_name, value in slots.items():
+            if value not in (None, ""):
+                field_label = field_name.replace("_", " ").title()
+                if isinstance(value, list):
+                    collected_info.append(f"{field_label}: {', '.join(str(v) for v in value)}")
+                else:
+                    collected_info.append(f"{field_label}: {value}")
+        
+        slots_context = "\n".join(collected_info) if collected_info else "No information collected yet."
+        
         guidance_prompt = (
             "You are the SPEAKER agent. Adopt a warm, conversational tone."
             " Keep replies to ~2 short paragraphs."
@@ -469,7 +475,9 @@ def create_graph_with_checkpointer(
             " two short sentences and avoid repeating the same praise."
             " IMPORTANT: Use plain text only. Do NOT use markdown formatting (no **bold**, *italic*, links, lists, etc.)."
             " Do NOT use emojis. Write in natural, conversational plain text."
-            "\nFriendly context summary: "
+            "\n\nCollected information so far:\n"
+            f"{slots_context}\n\n"
+            "Guidance: "
             f"{ack}\n"
             "Next helpful question or nudge: "
             f"{ask}\n"
@@ -512,13 +520,11 @@ def create_graph_with_checkpointer(
 
     def route_node(state: GraphState):
         slots = state.get("slots", {})
-        status_map = state.get("field_status", default_status())
-        current_missing = compute_missing(status_map, slots)
+        current_missing = compute_missing(slots)
         status = "ready" if not current_missing else "collecting"
         return {
             "missing": current_missing,
             "status": status,
-            "field_status": status_map,
         }
 
     def trigger_node(state: GraphState):
@@ -572,11 +578,13 @@ def create_graph_with_checkpointer(
         }
 
     workflow = StateGraph(GraphState)
+    workflow.add_node("web_search", web_search_node)
     workflow.add_node("analyzer", analyzer_node)
     workflow.add_node("speaker", speaker_node)
     workflow.add_node("route", route_node)
     workflow.add_node("trigger", trigger_node)
-    workflow.add_edge(START, "analyzer")
+    workflow.add_edge(START, "web_search")
+    workflow.add_edge("web_search", "analyzer")
     # Route from analyzer: skip speaker if all fields collected, otherwise go to speaker
     workflow.add_conditional_edges(
         "analyzer",

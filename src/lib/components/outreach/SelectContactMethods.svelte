@@ -3,6 +3,7 @@
 	import type { ContactMethod, Influencer, GmailConnection } from './types';
 	
 	interface Props {
+		navigationDirection?: 'forward' | 'backward';
 		influencers: Influencer[];
 		gmailConnections: GmailConnection[];
 		selectedMethods: Map<string, Set<ContactMethod>>;
@@ -41,14 +42,13 @@
 		onToggleMethod,
 		onSetEmailAccount,
 		onEvenlyAssignEmailAccounts,
-		onSelectAllForMethod
+		onSelectAllForMethod,
+		navigationDirection = 'forward'
 	}: Props = $props();
 </script>
 
-<div class="absolute inset-0 h-full flex flex-col" transition:slideFade={{ axis: 'x', duration: 300 }}>
+<div class="absolute inset-0 h-full flex flex-col" transition:slideFade={{ axis: 'x', duration: 300, direction: navigationDirection }}>
 	<div class="flex-1 overflow-y-auto px-8 py-6">
-		<h3 class="text-lg font-semibold text-gray-900 mb-4">Choose Contact Methods</h3>
-		
 		<!-- Quick Selection Buttons -->
 		<div class="flex flex-wrap gap-2 mb-4">
 			{#if availableMethodCounts.email > 0 && gmailConnections.length > 0}

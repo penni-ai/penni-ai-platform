@@ -8,7 +8,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from pythonjsonlogger import jsonlogger
 
-from app.models import CollectedData
+from app.models import CollectedData, FieldStatus
+from app.chatbot import FIELD_INDEX
 
 # ============================================================================
 # Logging Configuration
@@ -54,6 +55,13 @@ def _clean(value: Any) -> Any:
     if isinstance(value, str):
         stripped = value.strip()
         return stripped or None
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, str):
+                stripped = item.strip()
+                if stripped:
+                    return stripped
+        return None
     return value
 
 
@@ -130,11 +138,33 @@ def generate_influencer_search_query(slots: Dict[str, Any]) -> str | None:
     return f"{about or ''} creators {follower_text} {influencer_text}".strip()
 
 
+def _compute_field_status(slots: Dict[str, Any]) -> Dict[str, FieldStatus]:
+    """Compute field status from slot values."""
+    field_status: Dict[str, FieldStatus] = {}
+    for field_name, spec in FIELD_INDEX.items():
+        if not spec.ask_allowed:
+            continue
+        slot_value = slots.get(field_name)
+        # Check if field is collected based on slot value
+        if field_name == "website" and slot_value == "N/A":
+            field_status[field_name] = "collected"
+        elif spec.value_type == "list":
+            if isinstance(slot_value, list) and len(slot_value) > 0:
+                field_status[field_name] = "collected"
+            else:
+                field_status[field_name] = "not_collected"
+        elif slot_value not in (None, ""):
+            field_status[field_name] = "collected"
+        else:
+            field_status[field_name] = "not_collected"
+    return field_status
+
+
 def map_slots_to_collected(
     slots: Dict[str, Any],
-    field_status: Dict[str, str],
     message_texts: Sequence[str],
 ) -> CollectedData:
+    """Map slots to CollectedData, computing fieldStatus from slots."""
     return CollectedData(
         website=_clean(slots.get("website")),
         business_name=_clean(slots.get("business_name")),
@@ -146,6 +176,5 @@ def map_slots_to_collected(
         platform=_clean(slots.get("platform")),
         type_of_influencer=_clean(slots.get("type_of_influencer")),
         campaign_title=_clean(slots.get("campaign_title")) or generate_campaign_title(slots),
-        fieldStatus={k: v for k, v in field_status.items()},
+        fieldStatus=_compute_field_status(slots),
     )
-

@@ -124,6 +124,24 @@ export const weaviateParallelHybridSearch = onRequest(
       console.log(`[ParallelHybridSearch] Completed ${searchResults.queriesExecuted} successful searches, ${totalResults} total results, ${searchResults.deduplicatedResults.length} unique profiles, returning top ${topN}`);
       console.log(`[ParallelHybridSearch] Total runtime: ${searchResults.totalRuntimeMs}ms`);
       
+      // Only include search summaries, not full results, to keep response size manageable
+      const searchSummaries = searchResults.allSearchResults.map(search => ({
+        query: search.query,
+        alpha: search.alpha,
+        count: search.count,
+        limit: search.limit,
+        collection: search.collection,
+        timestamp: search.timestamp,
+      }));
+      
+      // Extract only profile URLs from top N results for BrightData collection
+      // The pipeline only needs profile_urls, not full result objects
+      const topNResultsMinimal = topNResults.map(result => ({
+        profile_url: result.data?.profile_url || result.profile_url || result.url,
+        score: result.score || result.metadata?.score,
+        platform: result.data?.platform || (result.data?.profile_url?.includes('instagram.com') ? 'instagram' : result.data?.profile_url?.includes('tiktok.com') ? 'tiktok' : null),
+      })).filter(r => r.profile_url); // Filter out any without profile_url
+      
       response.status(200).json({
         keywords,
         alphas,
@@ -135,8 +153,8 @@ export const weaviateParallelHybridSearch = onRequest(
         failed_searches: 0,
         total_results: totalResults,
         unique_profiles: searchResults.deduplicatedResults.length,
-        results: topNResults,
-        searches: searchResults.allSearchResults,
+        results: topNResultsMinimal, // Top N results with only profile_url, score, and platform
+        searches: searchSummaries, // Only metadata, not full results
         batch_timings: searchResults.batchTimings,
         total_runtime_ms: searchResults.totalRuntimeMs,
         timestamp: new Date().toISOString(),

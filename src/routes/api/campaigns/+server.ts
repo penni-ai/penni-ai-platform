@@ -4,7 +4,7 @@ import { serializeCampaignSnapshot } from '$lib/server/campaigns';
 import { userDocRef } from '$lib/server/core';
 
 const DEFAULT_LIMIT = 25;
-const MAX_LIMIT = 100;
+const MAX_LIMIT = 1000;
 
 export const GET = handleApiRoute(async (event) => {
 	const user = requireUser(event);

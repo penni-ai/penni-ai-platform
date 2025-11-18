@@ -196,16 +196,19 @@ export const POST = handleApiRoute(async (event) => {
 
 		// Include parameters that affect the checkout session in the idempotency key
 		// This ensures the key matches the actual session parameters
+		// Include returnUrl hash to ensure different return URLs generate different keys
+		const returnUrlHash = createHash('sha256').update(returnUrl).digest('hex').substring(0, 16);
 		const keyComponents = [
 			user.uid,
 			plan.plan,
 			plan.mode,
 			isPlanChange ? 'change' : 'new',
 			currentPlanKey || 'none',
+			returnUrlHash,
 			'checkout-session'
 		];
 		const sessionIdempotencyKey = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim()
-			? `${body.idempotencyKey.trim()}::checkout-session`
+			? `${body.idempotencyKey.trim()}::checkout-session::${returnUrlHash}`
 			: createHash('sha256').update(keyComponents.join(':')).digest('hex');
 		const session = await stripe.checkout.sessions.create(
 			{

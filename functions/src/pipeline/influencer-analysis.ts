@@ -9,13 +9,13 @@
 
 import { randomUUID } from 'crypto';
 import { onRequest } from 'firebase-functions/v2/https';
-import { GoogleAuth, type IdTokenClient } from 'google-auth-library';
 import OpenAI from 'openai';
 import weaviate, { type WeaviateClient } from 'weaviate-client';
 import type { MultiTargetVectorJoin } from 'weaviate-client';
 import type { BrightDataUnifiedProfile } from '../types/brightdata.js';
 import { normalizeProfiles } from '../utils/profile-normalizer.js';
-import { performParallelHybridSearches } from '../utils/weaviate-search.js';
+import { fetchWithServiceIdentity } from '../utils/service-identity.js';
+import { generateSearchQueriesFromDescription } from '../utils/search-query-generator.js';
 import {
   createPipelineJob,
   updatePipelineJobStatus,
@@ -42,36 +42,6 @@ const CAMPAIGN_BIND_RETRY_DELAYS_MS = [0, 100, 500, 1000];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const googleAuth = new GoogleAuth();
-const idTokenClients = new Map<string, IdTokenClient>();
-
-async function fetchWithServiceIdentity(
-  url: string,
-  init: RequestInit = {},
-  audienceOverride?: string
-): Promise<Response> {
-  if (process.env.FUNCTIONS_EMULATOR) {
-    return fetch(url, init);
-  }
-
-  const audience = audienceOverride ?? url.split('?')[0] ?? url;
-  let client = idTokenClients.get(audience);
-  if (!client) {
-    client = await googleAuth.getIdTokenClient(audience);
-    idTokenClients.set(audience, client);
-  }
-
-  const authHeaders = await client.getRequestHeaders(audience);
-  const authorization = authHeaders.get('Authorization') ?? authHeaders.get('authorization');
-  if (!authorization) {
-    throw new Error(`Failed to obtain Authorization header for ${audience}`);
-  }
-
-  const headers = new Headers(init.headers ?? {});
-  headers.set('Authorization', authorization);
-
-  return fetch(url, { ...init, headers });
-}
 
 type OptionalIntParseResult = {
   provided: boolean;
@@ -378,37 +348,37 @@ const HYBRID_TARGET_VECTOR: MultiTargetVectorJoin<any> = {
 };
 
 /**
- * Get query generation base URL
+ * Get Cloud Functions base URL from environment variables
  */
-function getQueryGenerationUrl(): string {
-  const baseUrl = process.env.FUNCTIONS_EMULATOR
-    ? 'http://127.0.0.1:6200/penni-ai-platform/us-central1'
-    : process.env.FUNCTIONS_URL || 'https://us-central1-penni-ai-platform.cloudfunctions.net';
-  return `${baseUrl}/generateSearchQueries`;
+function getFunctionsBaseUrl(): string {
+  if (process.env.FUNCTIONS_EMULATOR) {
+    return 'http://127.0.0.1:6200/penni-ai-platform/us-central1';
+  }
+  const baseUrl = process.env.FUNCTIONS_BASE_URL || process.env.FUNCTIONS_URL || 'https://us-central1-penni-ai-platform.cloudfunctions.net';
+  return baseUrl;
+}
+
+/**
+ * Get parallel hybrid search Cloud Function URL
+ * Note: Firebase Functions v2 deploy as Cloud Run services
+ * The function name is lowercased when deployed
+ */
+function getParallelHybridSearchUrl(): string {
+  if (process.env.FUNCTIONS_EMULATOR) {
+    return `${getFunctionsBaseUrl()}/weaviateParallelHybridSearch`;
+  }
+  // For production, use the Cloud Run URL directly
+  // This ensures proper authentication with the correct audience
+  return process.env.WEAVIATE_PARALLEL_HYBRID_SEARCH_URL || 'https://weaviateparallelhybridsearch-szs2cmou6q-uc.a.run.app';
 }
 
 /**
  * Generate search queries from business description
  */
 async function generateSearchQueries(businessDescription: string): Promise<string[]> {
-  const baseUrl = getQueryGenerationUrl();
-  const targetUrl = `${baseUrl}?description=${encodeURIComponent(businessDescription)}`;
-  const response = await fetchWithServiceIdentity(
-    targetUrl,
-    {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    },
-    baseUrl
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Query generation failed: ${response.status} ${response.statusText} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  return data.queries || [];
+  console.log('[Pipeline] Generating search queries with shared utility');
+  const { queries } = await generateSearchQueriesFromDescription(businessDescription);
+  return queries;
 }
 
 /**
@@ -584,22 +554,32 @@ async function analyzeProfileFit(
   businessDescription: string,
   profile: BrightDataUnifiedProfile,
   openaiClient: OpenAI
-): Promise<{ score: number; rationale: string }> {
+): Promise<{ score: number; rationale: string; summary: string }> {
   const profileText = formatProfileForLLM(profile);
   const model = getOpenAIModel();
 
   const prompt = `${businessDescription}
 
-Influencer profile:
+IMPORTANT CONTEXT: Everything above this line (before "Influencer profile:") describes what the BUSINESS is looking for, NOT the influencer's actual profile. Specifically:
+- "Influencer Location" indicates the location where the BUSINESS wants to find influencers (this is a requirement, not the influencer's location)
+- "Type of Influencer" indicates the type of influencer the BUSINESS is seeking (this is a requirement, not what the influencer actually is)
+- "Business Location" is where the business is located
+- "Business About" describes the business itself
+
+
+This is the influencer's profile that we want you to review:
 ${profileText}
 
-Evaluate this influencer's fit for the business need described above. Be critical, direct, and concise.
+First, provide a 2-sentence summary about who this influencer is and what content they specialize in. Be specific and descriptive based on their bio, posts, and profile information.
+
+Then, evaluate this influencer's fit for the business requirements described above. Compare the influencer's actual location (from their bio, posts, or profile) against the "Influencer Location" requirement. Compare the influencer's actual content type against the "Type of Influencer" requirement. Be critical, direct, and concise.
 
 CRITICAL SCORING GUIDELINES:
-- LOCATION MATCHING IS HEAVILY WEIGHTED: If the influencer's location (from bio, posts, or profile) matches or is in the same area/region as the business's target location, add +2 to +3 points to the base score. Location matching is a top priority.
+- LOCATION MATCHING IS HEAVILY WEIGHTED: Compare the influencer's ACTUAL location (from their bio, posts, or profile) against the "Influencer Location" requirement (what the business wants). If they match or are in the same area/region, add +2 to +3 points to the base score. Location matching is a top priority.
 - If location matches: Base score should be at least 7-8, even if other factors are moderate.
 - If location does NOT match: Reduce score by 2-3 points, as location mismatch significantly reduces fit.
 - Check the influencer's bio and post captions for location indicators (city names, regions, landmarks, local references).
+- Remember: "Influencer Location" in the business requirements is what the BUSINESS wants, not what the influencer actually is. You must determine the influencer's actual location from their profile data.
 
 Give your honest business assessment:
 - Score >7 (very strong): List 1-2 pros only. Short sentences.
@@ -609,7 +589,7 @@ Give your honest business assessment:
 
 Return ONLY a strict JSON object with the following schema, no extra text:
 
-{"score": <integer 1-10>, "rationale": <string>}`;
+{"score": <integer 1-10>, "rationale": <string>, "summary": <2-sentence string describing who the influencer is and what content they specialize in>}`;
 
   try {
     const response = await openaiClient.responses.create({
@@ -682,6 +662,7 @@ Return ONLY a strict JSON object with the following schema, no extra text:
     return {
       score,
       rationale: parsed.rationale || 'No rationale provided',
+      summary: parsed.summary || 'No summary provided',
     };
   } catch (error) {
     console.error(`[LLM Analysis] Error analyzing profile ${profile.account_id}:`, error);
@@ -689,8 +670,17 @@ Return ONLY a strict JSON object with the following schema, no extra text:
     return {
       score: 5,
       rationale: `Analysis error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      summary: `Unable to generate summary: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
+}
+
+/**
+ * Get max concurrent LLM profile analyses (configurable via env var)
+ */
+function getMaxConcurrentLLMAnalyses(): number {
+  const maxConcurrent = Number(process.env.MAX_CONCURRENT_LLM_ANALYSES || '10');
+  return Math.max(1, maxConcurrent); // Ensure at least 1
 }
 
 /**
@@ -699,18 +689,22 @@ Return ONLY a strict JSON object with the following schema, no extra text:
 async function analyzeProfilesFit(
   businessDescription: string,
   profiles: BrightDataUnifiedProfile[],
-  maxConcurrent: number = 5
-): Promise<Array<BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string }>> {
+  maxConcurrent?: number
+): Promise<Array<BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string; fit_summary: string }>> {
   const apiKey = getOpenAIApiKey();
   const openaiClient = new OpenAI({ apiKey });
 
-  const analyzedProfiles: Array<BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string }> = [];
+  // Use provided maxConcurrent or get from env/config
+  const concurrentLimit = maxConcurrent ?? getMaxConcurrentLLMAnalyses();
+  const analyzedProfiles: Array<BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string; fit_summary: string }> = [];
+
+  console.log(`[LLM Analysis] Processing ${profiles.length} profiles with concurrency limit: ${concurrentLimit}`);
 
   // Process profiles in batches with concurrency control
-  for (let i = 0; i < profiles.length; i += maxConcurrent) {
-    const batch = profiles.slice(i, i + maxConcurrent);
+  for (let i = 0; i < profiles.length; i += concurrentLimit) {
+    const batch = profiles.slice(i, i + concurrentLimit);
     
-    console.log(`[LLM Analysis] Analyzing profiles ${i + 1}-${Math.min(i + maxConcurrent, profiles.length)} of ${profiles.length}`);
+    console.log(`[LLM Analysis] Analyzing profiles ${i + 1}-${Math.min(i + concurrentLimit, profiles.length)} of ${profiles.length}`);
 
     const batchResults = await Promise.allSettled(
       batch.map(async (profile) => {
@@ -719,6 +713,7 @@ async function analyzeProfilesFit(
           ...profile,
           fit_score: analysis.score,
           fit_rationale: analysis.rationale,
+          fit_summary: analysis.summary,
         };
       })
     );
@@ -736,14 +731,15 @@ async function analyzeProfilesFit(
             ...failedProfile,
             fit_score: 5,
             fit_rationale: `Analysis failed: ${result.reason}`,
+            fit_summary: `Unable to generate summary: ${result.reason}`,
           });
         }
       }
     }
 
-    // Small delay between batches to avoid rate limiting
-    if (i + maxConcurrent < profiles.length) {
-      await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+    // Small delay between batches to avoid rate limiting (reduced from 1s to 200ms)
+    if (i + concurrentLimit < profiles.length) {
+      await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
     }
   }
 
@@ -770,7 +766,7 @@ async function analyzeProfilesFit(
  * - platform: Same as body
  * 
  * Returns:
- * - 200: Analyzed profiles with fit_score and fit_rationale
+ * - 200: Analyzed profiles with fit_score, fit_rationale, and fit_summary
  * - 500: Pipeline failed
  */
 export const pipelineInfluencerAnalysis = onRequest(
@@ -779,7 +775,6 @@ export const pipelineInfluencerAnalysis = onRequest(
     timeoutSeconds: 3600, // 1 hour max
     memory: '2GiB', // Increased from 1GiB to handle 12 concurrent searches + batch embeddings
     cpu: 2, // Allocate 2 CPUs for better parallel processing
-    minInstances: 1, // Keep at least 1 instance warm to prevent cold starts
     invoker: 'private',
   },
   async (request, response) => {
@@ -879,10 +874,10 @@ export const pipelineInfluencerAnalysis = onRequest(
       const rawTopN = request.body?.top_n ?? request.query?.top_n;
       const topN =
         rawTopN === undefined || rawTopN === null || rawTopN === '' ? 30 : Number(rawTopN);
-      if (!Number.isFinite(topN) || !Number.isInteger(topN) || topN < 30 || topN > 100) {
+      if (!Number.isFinite(topN) || !Number.isInteger(topN) || topN < 30 || topN > 1000) {
         response.status(400).json({
           error: 'INVALID_TOP_N',
-          message: 'top_n must be an integer between 30 and 100.',
+          message: 'top_n must be an integer between 30 and 1000.',
           request_id: requestId,
         });
         return;
@@ -1112,6 +1107,7 @@ export const pipelineInfluencerAnalysis = onRequest(
               return; // Don't send response - already sent 202
             }
             const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            console.error(`[Pipeline] Query expansion failed for job ${jobId}:`, error);
             const queryExpansionEndTimeSeconds = Date.now() / 1000;
             const queryExpansionStartRelativeSeconds = queryExpansionStartTimeSeconds - functionStartTimeSeconds;
             const queryExpansionDurationSeconds = queryExpansionEndTimeSeconds - queryExpansionStartTimeSeconds;
@@ -1123,6 +1119,7 @@ export const pipelineInfluencerAnalysis = onRequest(
               queryExpansionStartRelativeSeconds,
               queryExpansionDurationSeconds
             );
+            await updatePipelineJobStatus(jobId, 'error', errorMsg);
             throw error;
           }
 
@@ -1148,6 +1145,7 @@ export const pipelineInfluencerAnalysis = onRequest(
           let allSearchResults: any[] = [];
           let queriesExecuted = 0;
           let deduplicatedResults: any[] = [];
+          let totalResultsFromSearch = 0;
 
           try {
             // Check for cancellation before starting all searches
@@ -1155,37 +1153,107 @@ export const pipelineInfluencerAnalysis = onRequest(
               throw new Error('Pipeline job was cancelled');
             }
             
-            console.log(`[Pipeline] Calling parallel hybrid search with ${queries.length} keywords and ${alphaValues.length} alphas...`);
+            console.log(`[Pipeline] Calling parallel hybrid search Cloud Function with ${queries.length} keywords and ${alphaValues.length} alphas...`);
             
-            // Use the shared parallel hybrid search function (direct import, no HTTP call)
-            const searchLimit = 300; // Fixed limit per individual search
-            const searchResults = await performParallelHybridSearches(
-              queries,
-              alphaValues,
-              searchLimit,
-              minFollowers ?? undefined,
-              maxFollowers ?? undefined,
-              platform ?? undefined
+            // Call the parallel hybrid search Cloud Function via HTTP
+            const parallelSearchUrl = getParallelHybridSearchUrl();
+            
+            const requestBody: any = {
+              keywords: queries,
+              alphas: alphaValues,
+              top_n: topN, // We'll use top_n but extract all results for compatibility
+              min_followers: minFollowers ?? undefined,
+              max_followers: maxFollowers ?? undefined,
+              platform: platform ?? undefined,
+            };
+            
+            // Remove undefined fields
+            Object.keys(requestBody).forEach(key => {
+              if (requestBody[key] === undefined) {
+                delete requestBody[key];
+              }
+            });
+            
+            console.log(`[Pipeline] Calling ${parallelSearchUrl}...`, {
+              keywords_count: queries.length,
+              alphas: alphaValues,
+              request_id: requestId,
+            });
+            
+            const searchStartTime = Date.now();
+            const searchResponse = await fetchWithServiceIdentity(
+              parallelSearchUrl,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+              },
+              parallelSearchUrl // Pass URL as audience for authentication
             );
             
-            // Extract individual results for compatibility with existing pipeline code
-            allSearchResults = [];
-            for (const searchResult of searchResults.allSearchResults) {
-              if (searchResult.results && Array.isArray(searchResult.results)) {
-                allSearchResults.push(...searchResult.results);
-              }
+            const searchDuration = Date.now() - searchStartTime;
+            console.log(`[Pipeline] Received response from parallel hybrid search in ${searchDuration}ms`, {
+              status: searchResponse.status,
+              ok: searchResponse.ok,
+              request_id: requestId,
+            });
+            
+            if (!searchResponse.ok) {
+              const errorText = await searchResponse.text();
+              throw new Error(`Parallel hybrid search failed: ${searchResponse.status} ${searchResponse.statusText} - ${errorText}`);
             }
             
-            deduplicatedResults = searchResults.deduplicatedResults;
-            queriesExecuted = searchResults.queriesExecuted;
+            console.log(`[Pipeline] Parsing JSON response from parallel hybrid search...`, {
+              request_id: requestId,
+            });
+            
+            const searchResponseData = await searchResponse.json();
+            
+            console.log(`[Pipeline] Successfully parsed response from parallel hybrid search`, {
+              has_results: !!searchResponseData.results,
+              results_count: searchResponseData.results?.length || 0,
+              has_searches: !!searchResponseData.searches,
+              searches_count: searchResponseData.searches?.length || 0,
+              successful_searches: searchResponseData.successful_searches,
+              request_id: requestId,
+            });
+            
+            // Extract results from the Cloud Function response
+            // The response structure: { results: [{ profile_url, score, platform }], searches: [{ query, alpha, count, ... }], ... }
+            // The response.results contains the top N deduplicated results with minimal data (profile_url, score, platform)
+            // The searches array now only contains metadata summaries, not full results
+            const topNResults = searchResponseData.results || [];
+            queriesExecuted = searchResponseData.successful_searches || 0;
+            totalResultsFromSearch = searchResponseData.total_results || 0;
+            
+            // Convert minimal results back to format expected by extractTopProfiles
+            // extractTopProfiles expects: { data: { profile_url }, profile_url, or url }
+            deduplicatedResults = topNResults.map((r: any) => ({
+              data: {
+                profile_url: r.profile_url,
+                platform: r.platform,
+              },
+              profile_url: r.profile_url,
+              score: r.score,
+            }));
+            
+            // For tracking purposes
+            allSearchResults = deduplicatedResults;
+            
+            console.log(`[Pipeline] Parallel hybrid search completed: ${queriesExecuted} searches, ${totalResultsFromSearch} total results, ${deduplicatedResults.length} unique profiles (top ${deduplicatedResults.length} returned)`, {
+              request_id: requestId,
+              job_id: jobId,
+            });
             
             // Check for cancellation after searches
             if (await isJobCancelled(jobId)) {
               throw new Error('Pipeline job was cancelled');
             }
 
-            console.log(`[Pipeline] Collected ${allSearchResults.length} total search results from ${queriesExecuted} successful searches`);
-            console.log(`[Pipeline] After deduplication: ${deduplicatedResults.length} unique profiles`);
+            console.log(`[Pipeline] Collected ${totalResultsFromSearch} total search results from ${queriesExecuted} successful searches`);
+            console.log(`[Pipeline] After deduplication: ${deduplicatedResults.length} unique profiles (top ${deduplicatedResults.length} returned)`);
 
             const weaviateSearchEndTimeSeconds = Date.now() / 1000;
             const weaviateSearchStartRelativeSeconds = weaviateSearchStartTimeSeconds - functionStartTimeSeconds;
@@ -1194,7 +1262,7 @@ export const pipelineInfluencerAnalysis = onRequest(
             await updateWeaviateSearchStage(
               jobId,
               'completed',
-              allSearchResults.length,
+              totalResultsFromSearch, // Use total results count from response
               deduplicatedResults.length,
               queriesExecuted,
               undefined,
@@ -1236,7 +1304,7 @@ export const pipelineInfluencerAnalysis = onRequest(
             await updatePipelineJobStatus(jobId, 'completed');
             await storePipelineResults(jobId, [], {
               queries_generated: queries.length,
-              total_search_results: allSearchResults.length,
+              total_search_results: totalResultsFromSearch,
               deduplicated_results: deduplicatedResults.length,
               profiles_collected: 0,
               profiles_analyzed: 0,
@@ -1278,7 +1346,7 @@ export const pipelineInfluencerAnalysis = onRequest(
           };
 
           // Track all processed profiles
-          const allAnalyzedProfiles: Array<BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string }> = [];
+          const allAnalyzedProfiles: Array<BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string; fit_summary: string }> = [];
           let batchesCompleted = 0;
           let batchesFailed = 0;
           
@@ -1310,8 +1378,8 @@ export const pipelineInfluencerAnalysis = onRequest(
                     throw new Error('Pipeline job was cancelled');
                   }
                   
-                  // LLM analysis
-                  const analyzedProfiles = await analyzeProfilesFit(businessDescription, normalizedProfiles, 5);
+                  // LLM analysis (uses MAX_CONCURRENT_LLM_ANALYSES env var, default: 10)
+                  const analyzedProfiles = await analyzeProfilesFit(businessDescription, normalizedProfiles);
                   console.log(`[Pipeline] Batch ${batchResult.batchIndex + 1}: Analyzed ${analyzedProfiles.length} profiles`);
                   
                   // Sort by fit score
@@ -1419,7 +1487,7 @@ export const pipelineInfluencerAnalysis = onRequest(
           // Store final aggregated results
           const pipelineStats = {
             queries_generated: queries.length,
-            total_search_results: allSearchResults.length,
+            total_search_results: totalResultsFromSearch,
             deduplicated_results: deduplicatedResults.length,
             profiles_collected: allAnalyzedProfiles.length,
             profiles_analyzed: allAnalyzedProfiles.length,

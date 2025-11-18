@@ -271,6 +271,8 @@ export async function performSingleHybridSearch(
   }
   
   // Perform hybrid search
+  // Only return necessary fields: profile_url (for BrightData) and platform (for filtering)
+  // This significantly reduces response size and improves performance
   const hybridQueryOptions: any = {
     vector: { vector: embedding },
     alpha: alpha,
@@ -278,6 +280,7 @@ export async function performSingleHybridSearch(
     targetVector: HYBRID_TARGET_VECTOR,
     queryProperties: ['biography', 'profile_text', 'post_text', 'hashtag_text'],
     returnMetadata: ['score', 'distance'],
+    return: ['profile_url', 'platform'], // Only return fields needed for BrightData and top N selection
   };
   
   if (whereFilter) {
@@ -299,7 +302,10 @@ export async function performSingleHybridSearch(
       id: item.uuid,
       score: item.metadata?.score,
       distance: item.metadata?.distance,
-      data: item.properties,
+      data: {
+        profile_url: item.properties?.profile_url,
+        platform: item.properties?.platform,
+      },
     })),
     timestamp: new Date().toISOString(),
   };

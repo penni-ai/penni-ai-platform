@@ -32,6 +32,7 @@
 		footerModalOpen,
 		influencers,
 		campaignId,
+		navigationDirection,
 		onStageChange,
 		onEditingPlatformChange,
 		onToggleMethod,
@@ -212,6 +213,7 @@
 			onSetEmailAccount={onSetEmailAccount}
 			onEvenlyAssignEmailAccounts={onEvenlyAssignEmailAccounts}
 			onSelectAllForMethod={onSelectAllForMethod}
+			{navigationDirection}
 		/>
 	</SelectMethodsSlide>
 
@@ -237,13 +239,14 @@
 			onOpenDraftModal={onOpenDraftModal}
 			onOpenFooterModal={onOpenFooterModal}
 			onConnectGmail={onConnectGmail}
+			{navigationDirection}
 		/>
 	</DraftMessagesSlide>
 
 	<ReviewInfoSlide
 		active={currentStage === 'review-info'}
 	>
-		<ReviewInfo />
+		<ReviewInfo {navigationDirection} />
 	</ReviewInfoSlide>
 
 	<ReviewSlide
@@ -264,6 +267,7 @@
 			onLoadContactedInfluencers={onLoadContactedInfluencers}
 			onPreviewEmail={onPreviewEmail}
 			onPreviewMessage={onPreviewMessage}
+			{navigationDirection}
 		/>
 	</ReviewSlide>
 	</div>

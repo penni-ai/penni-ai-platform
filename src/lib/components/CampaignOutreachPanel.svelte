@@ -78,14 +78,35 @@
 		onClose: () => void;
 		embedded?: boolean; // If true, render as embedded component instead of modal
 		showNotReadyMessage?: boolean; // If true, show message that campaign isn't ready
+		selectedCount?: number; // Number of selected influencers (for bottom bar)
+		hasInfluencersInTable?: boolean; // Whether there are influencers in the table
+		onSendOutreach?: () => void; // Handler for send outreach button
 	}
 	
-	let { open, influencers, campaignId, onClose, embedded = false, showNotReadyMessage = false }: Props = $props();
+	let { open, influencers, campaignId, onClose, embedded = false, showNotReadyMessage = false, selectedCount = 0, hasInfluencersInTable = false, onSendOutreach }: Props = $props();
 	
 	type ContactMethod = 'email' | 'instagram' | 'tiktok';
 	type Stage = 'select-methods' | 'draft-messages' | 'review-info' | 'review';
 	
 	let currentStage = $state<Stage>('select-methods');
+	let previousStage = $state<Stage | null>(null);
+	let navigationDirection = $state<'forward' | 'backward'>('forward');
+	
+	// Track navigation direction when stage changes
+	$effect(() => {
+		if (previousStage !== null) {
+			const stageOrder: Record<Stage, number> = {
+				'select-methods': 1,
+				'draft-messages': 2,
+				'review-info': 3,
+				'review': 4
+			};
+			const currentIndex = stageOrder[currentStage];
+			const previousIndex = stageOrder[previousStage];
+			navigationDirection = currentIndex > previousIndex ? 'forward' : 'backward';
+		}
+		previousStage = currentStage;
+	});
 	
 	// Track selected contact methods for each influencer
 	// Map: influencerKey -> Set of selected methods
@@ -910,6 +931,38 @@
 		return 1;
 	});
 	
+	// Get title for current stage
+	const stageTitle = $derived(() => {
+		switch (currentStage) {
+			case 'select-methods':
+				return 'Choose Contact Methods';
+			case 'draft-messages':
+				return 'Draft Messages';
+			case 'review-info':
+				return 'Guide: Review & Send Messages';
+			case 'review':
+				return 'Review Messages';
+			default:
+				return 'Send Outreach';
+		}
+	});
+	
+	// Get subtitle for current stage
+	const stageSubtitle = $derived(() => {
+		switch (currentStage) {
+			case 'select-methods':
+				return 'Select how you want to contact each influencer';
+			case 'draft-messages':
+				return 'Customize your message templates for each platform';
+			case 'review-info':
+				return 'Learn how the review and send process works';
+			case 'review':
+				return 'Review and send your outreach messages';
+			default:
+				return '';
+		}
+	});
+	
 	// Wrapper functions for preview callbacks
 	function handlePreviewEmail(content: string, recipient: { name?: string; email?: string }) {
 		previewEmailContent = content;
@@ -1323,6 +1376,7 @@
 			footerModalOpen,
 			influencers,
 			campaignId,
+			navigationDirection,
 			onStageChange: (stage: Stage) => { currentStage = stage; },
 			onEditingPlatformChange: (platform: ContactMethod | null) => { editingPlatform = platform; },
 			onToggleMethod: toggleMethod,
@@ -1383,7 +1437,8 @@
 					</div>
 				</div>
 			{:else if influencers.length === 0}
-				<div class="h-full flex items-center justify-center px-8 py-12">
+				<div class="flex-1 flex flex-col overflow-hidden min-h-0">
+					<div class="flex-1 flex items-center justify-center px-8 py-12">
 					<div class="max-w-md text-center">
 						<div class="mb-4 flex justify-center">
 							<svg class="h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1395,13 +1450,33 @@
 							Select influencers from the list above to start sending outreach messages.
 						</p>
 					</div>
+					</div>
+					<!-- Bottom Bar with Selected Count and Send Button -->
+					{#if hasInfluencersInTable && onSendOutreach}
+						<div class="border-t border-gray-200 bg-white px-8 py-4 shrink-0 flex items-center justify-between">
+							<div class="flex items-center gap-4">
+								<span class="text-sm font-medium text-gray-900">
+									{selectedCount} {selectedCount === 1 ? 'influencer' : 'influencers'} selected
+								</span>
+							</div>
+							<button
+								type="button"
+								onclick={onSendOutreach}
+								disabled={selectedCount === 0}
+								class="px-6 py-2 bg-[#FF6F61] text-white font-medium rounded-lg hover:bg-[#FF5A4A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							>
+								Send Outreach
+							</button>
+						</div>
+					{/if}
 				</div>
 			{:else}
 				<div class="h-full flex flex-col overflow-hidden">
 					<div class="border-b border-gray-200 px-8 py-6 shrink-0">
 						<div class="flex items-center justify-between">
-							<div class="flex items-center gap-3">
-								<h2 class="text-2xl font-semibold text-gray-900">Send Outreach</h2>
+							<div class="flex-1">
+								<div class="flex items-center gap-3 mb-1">
+									<h2 class="text-2xl font-semibold text-gray-900">{stageTitle()}</h2>
 								{#if stateRestored}
 									<span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Resumed</span>
 								{/if}
@@ -1411,11 +1486,33 @@
 									<span class="text-xs text-green-600">Saved</span>
 								{/if}
 							</div>
+								{#if stageSubtitle()}
+									<p class="text-sm text-gray-600">{stageSubtitle()}</p>
+								{/if}
 						</div>
 					</div>
-					<div class="flex-1 overflow-hidden relative">
+					</div>
+					<div class="flex-1 overflow-hidden relative min-h-0">
 						<SendOutreachSequenceRenderer props={getSequenceProps()} />
 					</div>
+					<!-- Bottom Bar with Selected Count and Send Button -->
+					{#if hasInfluencersInTable && onSendOutreach}
+						<div class="border-t border-gray-200 bg-white px-8 py-4 shrink-0 flex items-center justify-between">
+							<div class="flex items-center gap-4">
+								<span class="text-sm font-medium text-gray-900">
+									{selectedCount} {selectedCount === 1 ? 'influencer' : 'influencers'} selected
+								</span>
+							</div>
+							<button
+								type="button"
+								onclick={onSendOutreach}
+								disabled={selectedCount === 0}
+								class="px-6 py-2 bg-[#FF6F61] text-white font-medium rounded-lg hover:bg-[#FF5A4A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							>
+								Send Outreach
+							</button>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -1457,6 +1554,8 @@
 			<SendOutreachPopupPanel
 				open={open}
 				onClose={onClose}
+				title={stageTitle()}
+				subtitle={stageSubtitle()}
 				stateRestored={stateRestored}
 				isSaving={isSaving}
 				isSavingDebounced={isSavingDebounced}

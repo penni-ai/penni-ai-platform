@@ -118,13 +118,13 @@ export const POST = handleApiRoute(async (event) => {
 			});
 		}
 		
-		// Validate top_n (optional, default to 30, minimum 30)
+		// Validate top_n (optional, default to 30, minimum 30, maximum 1000)
 		const topN = top_n !== undefined ? parseInt(String(top_n), 10) : 30;
-		if (isNaN(topN) || topN < 30 || topN > 100) {
+		if (isNaN(topN) || topN < 30 || topN > 1000) {
 			throw new ApiProblem({
 				status: 400,
 				code: 'INVALID_REQUEST',
-				message: 'top_n must be a number between 30 and 100.',
+				message: 'top_n must be a number between 30 and 1000.',
 				details: { request_id: requestId }
 			});
 		}

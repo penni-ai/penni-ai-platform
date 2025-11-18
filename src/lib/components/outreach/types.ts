@@ -50,6 +50,7 @@ export interface SendOutreachSequenceProps {
 	footerModalOpen: boolean;
 	influencers: Influencer[];
 	campaignId?: string | null;
+	navigationDirection: 'forward' | 'backward';
 	onStageChange: (stage: Stage) => void;
 	onEditingPlatformChange: (platform: ContactMethod | null) => void;
 	onToggleMethod: (influencerKey: string, method: ContactMethod) => void;

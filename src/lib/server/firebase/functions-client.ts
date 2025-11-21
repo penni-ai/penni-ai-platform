@@ -138,6 +138,26 @@ export function getFunctionsConfig() {
 }
 
 /**
+ * Gets the Cloud Run pipeline service URL from environment variables.
+ * This function retrieves the URL for the new Cloud Run-based pipeline service
+ * that replaces the Cloud Functions implementation.
+ * 
+ * @returns The Cloud Run service URL with trailing slashes removed
+ * @throws {ApiProblem} If CLOUD_RUN_PIPELINE_SERVICE_URL is not configured
+ */
+export function getCloudRunPipelineUrl(): string {
+	const url = process.env.CLOUD_RUN_PIPELINE_SERVICE_URL;
+	if (!url) {
+		throw new ApiProblem({
+			status: 500,
+			code: 'CONFIG_MISSING',
+			message: 'CLOUD_RUN_PIPELINE_SERVICE_URL is required but not configured.'
+		});
+	}
+	return url.replace(/\/+$/, '');
+}
+
+/**
  * Gets a service account access token for authenticating with Cloud Run services.
  * In App Hosting, this uses the default service account credentials.
  * In local development, this uses Application Default Credentials (ADC).
@@ -153,29 +173,63 @@ export async function getServiceAccountAccessToken(audience: string): Promise<st
 
     try {
         if (!cachedAuth) {
-            cachedAuth = new GoogleAuth();
+            // Initialize GoogleAuth - it will automatically use Application Default Credentials
+            // In App Hosting, this uses the firebase-app-hosting-compute service account
+            // Explicitly set projectId to avoid auto-discovery issues
+            const projectId = getProjectId();
+            cachedAuth = new GoogleAuth({
+                scopes: 'https://www.googleapis.com/auth/cloud-platform',
+                projectId: projectId
+            });
         }
 
+        // Use getIdTokenClient as per Google Auth Library best practices
+        // This automatically handles token refresh and caching
         let client = cachedIdTokenClients.get(audience);
         if (!client) {
+            // getIdTokenClient creates a client that can fetch ID tokens for the given audience
             client = await cachedAuth.getIdTokenClient(audience);
             cachedIdTokenClients.set(audience, client);
         }
 
+        // getRequestHeaders returns headers with the Authorization header containing the ID token
         const headers = await client.getRequestHeaders(audience);
-        const authorization = headers.get('Authorization') ?? headers.get('authorization');
+        // Headers is a Headers object (from fetch API), use .get() method
+        const authorization = headers.get('Authorization') || headers.get('authorization');
         if (!authorization?.startsWith('Bearer ')) {
-            throw new Error('Failed to obtain ID token for Cloud Function call');
+            throw new Error('Failed to obtain ID token: Authorization header missing or invalid');
         }
         return authorization.slice('Bearer '.length);
     } catch (error) {
+        // Log detailed error information for debugging
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        const projectId = getProjectId();
+        
+        console.error('[getServiceAccountAccessToken] Failed to get ID token', {
+            audience,
+            projectId,
+            error: errorMessage,
+            stack: errorStack,
+            environment: {
+                GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set',
+                GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT || 'not set',
+                FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || 'not set'
+            },
+            hint: 'In App Hosting, Application Default Credentials should be automatically available. ' +
+                  'Ensure the service account (firebase-app-hosting-compute) has roles/iam.serviceAccountTokenCreator role.'
+        });
+        
         throw new ApiProblem({
             status: 500,
             code: 'SERVICE_ACCOUNT_AUTH_FAILED',
             message: 'Failed to authenticate with service account for Cloud Function call.',
             cause: error,
             details: {
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage,
+                stack: errorStack,
+                audience,
+                projectId
             }
         });
     }

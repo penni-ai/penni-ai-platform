@@ -2,33 +2,30 @@
  * Client for calling the Cloud Run chatbot service
  */
 
-import { env as privateEnv } from '$env/dynamic/private';
 import { mintIdToken, getServiceAccountAccessToken } from '$lib/server/firebase/functions-client';
 import { ApiProblem } from '../core';
 import type { Logger } from '../core';
-import { env as publicEnv } from '$env/dynamic/public';
+import { getChatbotServiceUrl, isUsingEmulator } from './config';
 
 export interface ConversationSnapshot {
 	id: string;
-	status: 'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error';
+	status: 'collecting' | 'ready' | 'complete' | 'error';
 	collected: {
 		website?: string | null;
 		business_name?: string | null;
 		business_location?: string | null;
 		business_about?: string | null;
 		influencer_location?: string | null;
-		platform?: string | null;
+		platform?: string[] | string | null;
 		type_of_influencer?: string | null;
 		min_followers?: number | null;
 		max_followers?: number | null;
 		campaign_title?: string | null;
-		fieldStatus?: Record<string, 'not_collected' | 'collected' | 'confirmed'>;
 		updatedAt?: number;
 	};
-	missing: string[];
 	messages: Array<{
 		id: string;
-		role: 'assistant' | 'user';
+		role: 'assistant' | 'user' | 'system' | 'tool';
 		content: string;
 		type?: string | null;
 		createdAt: string;
@@ -76,35 +73,6 @@ class ChatbotClientError extends Error {
 	}
 }
 
-/**
- * Check if we're running with Firebase emulators
- */
-function isUsingEmulator(): boolean {
-	return Boolean(
-		process.env.FIREBASE_AUTH_EMULATOR_HOST ||
-		publicEnv.PUBLIC_FIREBASE_AUTH_EMULATOR_HOST ||
-		process.env.FIRESTORE_EMULATOR_HOST
-	);
-}
-
-/**
- * Get the chatbot service URL, with fallback for local development
- */
-function getChatbotServiceUrl(): string {
-	// If using emulator, always use local chatbot service
-	if (isUsingEmulator()) {
-		return process.env.CHATBOT_SERVICE_URL || 'http://localhost:8080';
-	}
-	
-	// Otherwise use configured URL or fallback
-	const chatbotUrl = privateEnv.CHATBOT_SERVICE_URL || process.env.CHATBOT_SERVICE_URL;
-	if (chatbotUrl) {
-		return chatbotUrl;
-	}
-	
-	// Fallback for local development without emulator
-	return 'http://localhost:8080';
-}
 
 /**
  * Call the chatbot service with authentication
@@ -117,11 +85,37 @@ async function callChatbotService<T>(
 		uid: string;
 		logger?: Logger;
 		signal?: AbortSignal;
+		timeout?: number; // Optional timeout in milliseconds
 	}
 ): Promise<T> {
-	const { method = 'GET', body, uid, logger, signal } = options;
+	const { method = 'GET', body, uid, logger, signal, timeout = 15000 } = options;
 	const serviceUrl = getChatbotServiceUrl();
 	const url = `${serviceUrl}${endpoint}`;
+	
+	// Create abort controller for timeout
+	const timeoutController = new AbortController();
+	const timeoutId = setTimeout(() => {
+		timeoutController.abort();
+	}, timeout);
+	
+	// Combine signals: create a combined controller that aborts when either signal aborts
+	const combinedController = new AbortController();
+	
+	// Abort combined controller when timeout triggers
+	timeoutController.signal.addEventListener('abort', () => {
+		clearTimeout(timeoutId);
+		combinedController.abort();
+	});
+	
+	// Abort combined controller when external signal aborts
+	if (signal) {
+		signal.addEventListener('abort', () => {
+			clearTimeout(timeoutId);
+			combinedController.abort();
+		});
+	}
+	
+	const combinedSignal = combinedController.signal;
 
 	// Get Firebase ID token for user authentication (passed to chatbot service)
 	const firebaseToken = await mintIdToken(uid);
@@ -140,8 +134,15 @@ async function callChatbotService<T>(
 			const cloudRunToken = await getServiceAccountAccessToken(serviceUrl);
 			headers.Authorization = `Bearer ${cloudRunToken}`;
 		} catch (error) {
-			logger?.warn('Failed to get service account token, falling back to Firebase token', { error });
-			// Fallback: use Firebase token directly (may not work if Cloud Run IAM is enforced)
+			// If service account token creation fails, we need to allow unauthenticated access
+			// on the chatbot function, OR fix the GoogleAuth initialization
+			// For now, log the error and throw - this will surface the issue
+			logger?.error('Failed to get service account token for chatbot function', { 
+				error: error instanceof Error ? error.message : String(error),
+				serviceUrl,
+				hint: 'The chatbot function may need to allow unauthenticated access, or GoogleAuth needs to be configured to use App Hosting service account'
+			});
+			// Still try with Firebase token as fallback (won't work if IAM is enforced)
 			headers.Authorization = `Bearer ${firebaseToken}`;
 		}
 	} else {
@@ -152,7 +153,7 @@ async function callChatbotService<T>(
 	const fetchOptions: RequestInit = {
 		method,
 		headers,
-		signal
+		signal: combinedSignal
 	};
 
 	if (body && method === 'POST') {
@@ -163,6 +164,11 @@ async function callChatbotService<T>(
 
 	try {
 		const response = await fetch(url, fetchOptions);
+
+		// Clear timeout if request succeeded
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
 
 		// Read response body as text first (can only be read once)
 		const responseText = await response.text();
@@ -181,10 +187,14 @@ async function callChatbotService<T>(
 				error: errorBody
 			});
 
+			// Handle both FastAPI format ({detail: "..."}) and Flask format ({error: "..."})
+			const errorObj = errorBody as { detail?: string; error?: string; message?: string };
+			const errorMessage = errorObj.detail || errorObj.error || errorObj.message || response.statusText;
+
 			throw new ChatbotClientError(
-				`Chatbot service returned ${response.status}`,
+				errorMessage || `Chatbot service returned ${response.status}`,
 				response.status,
-				(errorBody as { detail?: string })?.detail,
+				errorMessage,
 				errorBody
 			);
 		}
@@ -193,14 +203,21 @@ async function callChatbotService<T>(
 		const data = JSON.parse(responseText);
 		return data as T;
 	} catch (error) {
+		// Clear timeout on error
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
+		
 		if (error instanceof ChatbotClientError) {
 			throw error;
 		}
 		if (error instanceof Error && error.name === 'AbortError') {
+			// Check if timeout was the cause (timeout controller aborted but external signal didn't)
+			const isTimeout = timeoutController.signal.aborted && (!signal || !signal.aborted);
 			throw new ApiProblem({
-				status: 499,
-				code: 'REQUEST_CANCELLED',
-				message: 'Request was cancelled',
+				status: 504,
+				code: isTimeout ? 'REQUEST_TIMEOUT' : 'REQUEST_CANCELLED',
+				message: isTimeout ? 'Request timed out. Please try again.' : 'Request was cancelled',
 				cause: error
 			});
 		}
@@ -245,6 +262,7 @@ export async function getConversation(
 		uid: string;
 		logger?: Logger;
 		signal?: AbortSignal;
+		timeout?: number;
 	}
 ): Promise<ConversationResponse> {
 	return callChatbotService<ConversationResponse>(

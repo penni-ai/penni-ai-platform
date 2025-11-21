@@ -1840,6 +1840,12 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 			onToggleInfluencer={toggleInfluencerSelection}
 			onToggleContacted={() => showContacted = !showContacted}
 			onSendOutreach={handleSendOutreach}
+			onRefresh={async () => {
+				const pipelineId = effectivePipelineId();
+				if (pipelineId) {
+					await loadPipelineStatus(pipelineId);
+				}
+			}}
 		/>
 						</div>
 							</div>

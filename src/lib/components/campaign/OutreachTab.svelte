@@ -16,6 +16,7 @@
 		onToggleInfluencer: (id: string) => void;
 		onToggleContacted: () => void;
 		onSendOutreach: () => void;
+		onRefresh?: () => void | Promise<void>;
 	}
 
 	let {
@@ -29,7 +30,8 @@
 		pipelineError = null,
 		onToggleInfluencer,
 		onToggleContacted,
-		onSendOutreach
+		onSendOutreach,
+		onRefresh
 	}: Props = $props();
 
 	const selectedCount = $derived(selectedInfluencerIds.size);
@@ -257,12 +259,28 @@
 		{:else}
 			<div class="flex-1 overflow-y-auto px-8 py-6 min-h-0">
 				<div class="h-full flex items-center justify-center">
-					<div class="max-w-md text-center text-gray-600 space-y-3">
+					<div class="max-w-md text-center text-gray-600 space-y-4">
 						<h3 class="text-lg font-semibold text-gray-900">No influencer search started</h3>
 						<p class="text-sm">
 							Use the chat tab to complete the campaign setup and trigger an influencer search. Once the search is running,
 							you'll be able to review profiles and send outreach here.
 						</p>
+						{#if onRefresh}
+							<button
+								type="button"
+								onclick={async () => {
+									if (onRefresh) {
+										await onRefresh();
+									}
+								}}
+								class="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+							>
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+								</svg>
+								Refresh
+							</button>
+						{/if}
 					</div>
 				</div>
 			</div>

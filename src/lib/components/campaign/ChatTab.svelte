@@ -1,19 +1,18 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import type { ApiMessage, CollectedData, FollowerRange, SearchParams } from '$lib/types/campaign';
 	import type { SerializedCampaign } from '$lib/server/campaigns';
 	import MessageList from './MessageList.svelte';
 	import ChatInput from './ChatInput.svelte';
-	import ProgressBar from './ProgressBar.svelte';
 	import InfluencerSearchForm from './InfluencerSearchForm.svelte';
-	import { calculateProgress } from '$lib/utils/campaign';
 
 	interface Props {
 		campaignId: string | null;
 		messages: ApiMessage[];
 		isInitializing: boolean;
 		initError: string | null;
+		chatError: string | null;
+		conversationStatus: 'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error';
 		draft: string;
 		isSending: boolean;
 		collected: CollectedData;
@@ -25,12 +24,10 @@
 		isSearchFormSubmitting: boolean;
 		effectiveCampaign: SerializedCampaign | null;
 		maxInfluencers: number;
-		debugMode: boolean;
-		messagesContainer: HTMLDivElement | null;
+		onMessagesContainerReady?: (el: HTMLDivElement) => void;
 		onRetry: () => void;
 		onSubmit: (message: string) => void;
 		onSearchSubmit: (params: SearchParams) => void;
-		onToggleDebug: () => void;
 		onScrollToBottom: () => void;
 		onDraftChange?: (value: string) => void;
 		onRerunPipeline?: () => void;
@@ -41,6 +38,8 @@
 		messages,
 		isInitializing,
 		initError,
+		chatError,
+		conversationStatus,
 		draft,
 		isSending,
 		collected,
@@ -52,22 +51,20 @@
 		isSearchFormSubmitting,
 		effectiveCampaign,
 		maxInfluencers,
-		debugMode,
-		messagesContainer,
+		onMessagesContainerReady,
 		onRetry,
 		onSubmit,
 		onSearchSubmit,
-		onToggleDebug,
 		onScrollToBottom,
 		onDraftChange,
 		onRerunPipeline
 	}: Props = $props();
 
+	// Local messages container reference
+	let messagesContainer: HTMLDivElement | null = null;
+
 	// Two-way bindings need to be handled via callbacks
 	// The parent component should handle the state updates
-
-	const progress = $derived(() => calculateProgress(collected, followerRange));
-	const isProgressComplete = $derived(() => progress() === 100);
 
 	function handleSearchSubmit(params: SearchParams) {
 		onSearchSubmit({
@@ -76,17 +73,29 @@
 		});
 	}
 
-	// Auto-scroll when messages change
+	// Expose messagesContainer to parent when it becomes available
 	$effect(() => {
-		if (messages.length > 0) {
-			setTimeout(() => onScrollToBottom(), 0);
+		if (messagesContainer && onMessagesContainerReady) {
+			onMessagesContainerReady(messagesContainer);
+		}
+	});
+
+	// Single effect for auto-scroll: when messages change and initialization is complete
+	$effect(() => {
+		if (messages.length > 0 && !isInitializing) {
+			// Use a short timeout to ensure DOM is updated
+			setTimeout(() => onScrollToBottom(), 50);
 		}
 	});
 </script>
 
 <div class="w-1/2 shrink-0 h-full overflow-hidden">
 	<div class="flex h-full flex-col">
-		<div class="flex-1 overflow-y-auto px-8 py-10" bind:this={messagesContainer}>
+		<div 
+			class="flex-1 overflow-y-auto px-8 py-10" 
+			bind:this={messagesContainer}
+			style="scroll-behavior: smooth;"
+		>
 			<div class="mx-auto flex w-full max-w-3xl flex-col gap-6">
 				{#if isInitializing}
 					<div class="flex justify-center py-12 text-gray-500">Loading conversation…</div>
@@ -102,10 +111,16 @@
 						</button>
 					</div>
 				{:else}
+					{#if chatError}
+						<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">
+							<p class="font-semibold">Failed to send message</p>
+							<p class="text-sm">{chatError}</p>
+						</div>
+					{/if}
 					<MessageList {messages} {isSending} />
 					
-					<!-- Elevated Influencer Search Panel (when progress is 100%) -->
-					{#if isProgressComplete() && influencerSummary && !isInitializing && campaignId}
+					<!-- Elevated Influencer Search Panel (when chatbot is done - status is ready or complete) -->
+					{#if (conversationStatus === 'ready' || conversationStatus === 'complete') && !isInitializing && campaignId}
 						<div class="mx-auto w-full max-w-4xl" transition:fade={{ duration: 300 }}>
 							<InfluencerSearchForm
 								mode="embedded"
@@ -116,7 +131,6 @@
 								maxInfluencers={maxInfluencers}
 								isSubmitting={isSearchFormSubmitting}
 								hasPipeline={!!effectiveCampaign?.pipeline_id}
-								{debugMode}
 								onSubmit={handleSearchSubmit}
 								onRerun={onRerunPipeline}
 							/>
@@ -126,16 +140,11 @@
 			</div>
 		</div>
 
-		<!-- Progress Bar (always stays at bottom) -->
-		{#if !isInitializing && campaignId}
-			<ProgressBar progress={progress()} showDebug={debugMode} toggleDebug={onToggleDebug} />
-		{/if}
-
-		<!-- Chat Input Box (hidden when progress is 100%) -->
+		<!-- Chat Input Box (hidden when conversation is ready or complete) -->
 		<ChatInput
 			draft={draft}
 			disabled={isInitializing || !campaignId}
-			show={!isProgressComplete()}
+			show={conversationStatus !== 'ready' && conversationStatus !== 'complete'}
 			onSubmit={onSubmit}
 			onDraftChange={onDraftChange}
 		/>

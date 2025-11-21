@@ -47,7 +47,7 @@
 	import { onAuthStateChanged } from 'firebase/auth';
 	import type { SerializedCampaign } from '$lib/server/campaigns';
 	import type { ApiMessage, ConversationResponse, PipelineStatus, SearchParams, SearchUsage } from '$lib/types/campaign';
-	import { getProfileId, calculateProgress } from '$lib/utils/campaign';
+	import { getProfileId, getPlatformLogo, getPlatformColor, normalizePlatforms } from '$lib/utils/campaign';
 
 	let { data }: { data: PageData } = $props();
 	const campaign = $derived(data.campaign);
@@ -63,6 +63,7 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	let activeTab = $state<'chat' | 'outreach'>(initialTab);
 	let campaignId = $state<string | null>(null);
 	let messages = $state<ApiMessage[]>([]);
+	let hasLoadedConversation = $state(false);
 	
 	// Check if user has sent any messages (show outreach tab after first message)
 	const hasUserMessages = $derived(() => {
@@ -78,12 +79,15 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	let draft = $state('');
 	let collected = $state<Record<string, string | undefined>>({});
 	let followerRange = $state<{ min: number | null; max: number | null }>({ min: null, max: null });
+	let conversationStatus = $state<'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error'>('collecting');
 	let isInitializing = $state(true);
 	let isSending = $state(false);
 	let initError = $state<string | null>(null);
+	let chatError = $state<string | null>(null);
 	// Removed openSourcesMessageId - now using hover tooltips instead
 	const textDecoder = new TextDecoder();
 	let messagesContainer: HTMLDivElement | null = $state(null);
+	let scrollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	
 	// Influencer search form state (for embedded message)
 	let influencerSummary = $state('');
@@ -91,7 +95,6 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	let searchFormMinFollowers = $state<number | null>(null);
 	let searchFormMaxFollowers = $state<number | null>(null);
 	let isSearchFormSubmitting = $state(false);
-	let debugMode = $state(false);
 	
 	// Outreach tab state
 let searchUsage = $state<{ count: number; limit: number; remaining: number; resetDate: number } | null>(null);
@@ -116,6 +119,17 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 			business_email?: string;
 			_id?: string; // Unique identifier for tracking
 		}>;
+		preliminary_candidates?: Array<{
+			profile_url?: string;
+			display_name?: string;
+			followers?: number;
+			platform?: string;
+			biography?: string;
+			bio?: string;
+			email_address?: string;
+			business_email?: string;
+			_id?: string; // Unique identifier for tracking
+		}>;
 		stages: {
 			query_expansion?: { status: string; queries?: string[] } | null;
 			weaviate_search?: { status: string; deduplicated_results?: number } | null;
@@ -125,6 +139,8 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		error_message?: string | null;
 	} | null>(null);
 	let pipelinePollInterval: ReturnType<typeof setInterval> | null = null;
+	let currentPollingPipelineId = $state<string | null>(null); // Track which pipeline ID we're currently polling
+	let manualRefreshInterval: ReturnType<typeof setInterval> | null = null; // Manual refresh interval for outreach tab
 	let previousProfileIds = $state<Set<string>>(new Set());
 	let selectedInfluencerIds = $state<Set<string>>(new Set());
 	let contactedInfluencerIds = $state<Set<string>>(new Set());
@@ -133,6 +149,25 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	let upgradePanelOpen = $state(false);
 	let searchLimitExceededOpen = $state(false);
 	let searchLimitError = $state<{ remaining?: number; requested?: number; limit?: number } | null>(null);
+	// Track when pipeline_id is set from API response to prevent Firestore listener from overwriting it
+	let lastApiSetPipelineId = $state<{ pipelineId: string; timestamp: number } | null>(null);
+	let unsubscribePipelineJob: (() => void) | null = null; // Firestore listener for pipeline job updates
+	
+	// Track temporary pipeline ID from search API response (before Firestore sync)
+	let temporaryPipelineId = $state<string | null>(null);
+	
+	// Derived pipeline ID that falls back to temporaryPipelineId when campaign pipeline_id is not yet available
+	const effectivePipelineId = $derived(() => {
+		const campaignPipelineId = effectiveCampaign?.pipeline_id;
+		if (campaignPipelineId) return campaignPipelineId;
+		return temporaryPipelineId;
+	});
+	
+	// Track pipeline creation timestamp and attempt count for grace period handling
+	let pipelineCreationTimestamps = $state<Map<string, { createdAt: number; attemptCount: number }>>(new Map());
+	
+	// Track last seen pipeline ID in the effect to detect changes
+	let lastSeenPipelineId = $state<string | null>(null);
 	
 	// Get user's current plan from layout data
 	const currentPlanKey = $derived(data.user?.currentPlan?.planKey ?? null);
@@ -149,7 +184,6 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				createdAt: new Date().toISOString()
 			}
 		];
-		setTimeout(() => scrollToBottom(), 0);
 	}
 
 	function addAssistantPlaceholder(id: string) {
@@ -167,8 +201,6 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 
 	function updateAssistantPlaceholder(id: string, content: string) {
 		messages = messages.map((message) => (message.id === id ? { ...message, content } : message));
-		// Scroll during streaming updates
-		setTimeout(() => scrollToBottom(), 0);
 	}
 
 	function removeMessageById(id: string) {
@@ -178,24 +210,56 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	// Removed toggleSources - now using hover tooltips instead
 
 	function scrollToBottom() {
-		if (messagesContainer) {
-			messagesContainer.scrollTop = messagesContainer.scrollHeight;
+		// Clear any pending scroll
+		if (scrollTimeoutId) {
+			clearTimeout(scrollTimeoutId);
+			scrollTimeoutId = null;
 		}
+		
+		// Debounce scroll to coalesce rapid updates
+		scrollTimeoutId = setTimeout(() => {
+		if (messagesContainer) {
+				// Custom smooth scroll animation with slower, more animated behavior
+				const startScrollTop = messagesContainer.scrollTop;
+				const targetScrollTop = messagesContainer.scrollHeight;
+				const distance = targetScrollTop - startScrollTop;
+				const duration = Math.min(800, Math.max(300, Math.abs(distance) * 0.5)); // 300-800ms based on distance
+				const startTime = performance.now();
+				
+				// Easing function for smooth animation (ease-out cubic)
+				const easeOutCubic = (t: number): number => {
+					return 1 - Math.pow(1 - t, 3);
+				};
+				
+				const animateScroll = (currentTime: number) => {
+					const elapsed = currentTime - startTime;
+					const progress = Math.min(elapsed / duration, 1);
+					const easedProgress = easeOutCubic(progress);
+					
+					messagesContainer!.scrollTop = startScrollTop + (distance * easedProgress);
+					
+					if (progress < 1) {
+						requestAnimationFrame(animateScroll);
+					}
+				};
+				
+				requestAnimationFrame(animateScroll);
+		}
+			scrollTimeoutId = null;
+		}, 50);
 	}
-
-	// Auto-scroll when messages change
+	
+	// Auto-scroll when messages change and we're on chat tab
 	$effect(() => {
-		if (messages.length > 0) {
-			// Use setTimeout to ensure DOM has updated
-			setTimeout(() => scrollToBottom(), 0);
+		if (messages.length > 0 && activeTab === 'chat') {
+			scrollToBottom();
 		}
 	});
-	
-	// Auto-scroll to bottom when switching to chat tab
+
+	// Auto-scroll when switching to chat tab
 	$effect(() => {
-		if (activeTab === 'chat' && messagesContainer) {
-			// Use setTimeout to ensure DOM has updated after tab switch
-			setTimeout(() => scrollToBottom(), 100);
+		if (activeTab === 'chat' && messagesContainer && messages.length > 0) {
+			scrollToBottom();
 		}
 	});
 
@@ -212,11 +276,16 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				followerRange = { min: null, max: null };
 				isInitializing = true;
 				initError = null;
+				hasLoadedConversation = false;
 				// Reset localCampaign when switching campaigns to ensure reactivity
 				localCampaign = null;
+				// Clear temporary pipeline ID when switching campaigns
+				temporaryPipelineId = null;
+				// Clear pipeline creation timestamps
+				pipelineCreationTimestamps.clear();
 				// Load conversation for the new campaign
 				void loadConversation(currentCampaignId);
-			} else if (!campaignId && !isInitializing && campaign?.id) {
+			} else if (!hasLoadedConversation && campaign?.id) {
 				// Load if we're on chat tab but haven't loaded yet
 				void loadConversation(campaign.id);
 			}
@@ -228,12 +297,6 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		
 		// Load search usage when component mounts
 		void loadSearchUsage();
-		
-		// Load pipeline status if pipeline_id exists and we're on outreach tab
-		if (effectiveCampaign?.pipeline_id && activeTab === 'outreach') {
-			void loadPipelineStatus(effectiveCampaign.pipeline_id);
-			startPipelinePolling(effectiveCampaign.pipeline_id);
-		}
 		
 		// Set up real-time listener for campaign document to sync pipeline_id updates
 		let unsubscribeCampaign: (() => void) | null = null;
@@ -267,33 +330,60 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 					}
 					
 					// Update localCampaign with the latest pipeline_id from Firestore
-					// Always update if pipeline_id differs to ensure reactivity
+					// But don't overwrite if we just set it from an API response (within 5 seconds)
 					const currentPipelineId = baseCampaign.pipeline_id ?? null;
+					const recentlySetFromApi = lastApiSetPipelineId && 
+						(Date.now() - lastApiSetPipelineId.timestamp < 5000) &&
+						currentPipelineId === lastApiSetPipelineId.pipelineId;
 					
 					if (updatedPipelineId !== currentPipelineId) {
-						// Update localCampaign with new pipeline_id
-						localCampaign = {
-							...baseCampaign,
-							pipeline_id: updatedPipelineId
-						};
-						
-						console.log('[campaign] Pipeline ID synced from Firestore:', updatedPipelineId, {
-							previous: currentPipelineId,
-							new: updatedPipelineId,
-							campaignId: campaignId
-						});
-						
-						// If we're on the outreach tab and pipeline_id was just set, load status and start polling
-						if (activeTab === 'outreach' && updatedPipelineId) {
-							void loadPipelineStatus(updatedPipelineId);
-							startPipelinePolling(updatedPipelineId);
+						// If Firestore has a different pipeline_id but we just set one from API, 
+						// prefer the API-set one (it's newer)
+						if (recentlySetFromApi && lastApiSetPipelineId && updatedPipelineId !== lastApiSetPipelineId.pipelineId) {
+							console.warn('[campaign] Firestore has old pipeline_id, but we just set a new one from API. Keeping API-set pipeline_id:', {
+								firestorePipelineId: updatedPipelineId,
+								apiSetPipelineId: lastApiSetPipelineId.pipelineId,
+								campaignId: campaignId
+							});
+							// Don't update - keep the API-set pipeline_id
+							return;
 						}
+						
+					// Update localCampaign with new pipeline_id
+					localCampaign = {
+						...baseCampaign,
+						pipeline_id: updatedPipelineId
+					};
+					
+					// Clear temporary pipeline ID since Firestore has synced
+					if (temporaryPipelineId === updatedPipelineId) {
+						temporaryPipelineId = null;
+					}
+					
+					// Clear the API-set tracking since Firestore has synced
+					lastApiSetPipelineId = null;
+					
+					console.log('[campaign] Pipeline ID synced from Firestore:', {
+						event: 'firestore_pipeline_id_update',
+						pipelineId: updatedPipelineId,
+						previous: currentPipelineId,
+						campaignId: campaignId,
+						activeTab,
+						effectivePipelineId: effectivePipelineId(),
+						currentPollingPipelineId
+					});
+					
+					// Pipeline loading/polling is handled by the $effect watching effectivePipelineId and activeTab
 					} else if (updatedPipelineId === null && currentPipelineId !== null) {
 						// Handle case where pipeline_id is cleared (shouldn't happen normally, but handle it)
+						// But don't clear if we just set it from API
+						if (!recentlySetFromApi) {
 						localCampaign = {
 							...baseCampaign,
 							pipeline_id: null
 						};
+							lastApiSetPipelineId = null;
+						}
 					}
 				},
 				(error) => {
@@ -314,19 +404,207 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 			setupCampaignListener();
 		}
 		
+		// Set up pipeline job listener when pipeline_id is available
+		// Use $effect to manage listener lifecycle properly
+		$effect(() => {
+			const pipelineId = effectiveCampaign?.pipeline_id;
+			const currentUser = firebaseAuth.currentUser;
+			
+			// Clean up existing listener first
+			if (unsubscribePipelineJob) {
+				try {
+					unsubscribePipelineJob();
+				} catch (error) {
+					console.warn('[pipeline] Error cleaning up listener:', error);
+				}
+				unsubscribePipelineJob = null;
+			}
+			
+			// Only set up listener if we have both pipelineId and user
+			if (!pipelineId || !currentUser) {
+				return;
+			}
+			
+			// Set up new listener
+			const pipelineJobDocRef = doc(firebaseFirestore, 'pipeline_jobs', pipelineId);
+			
+			unsubscribePipelineJob = onSnapshot(
+				pipelineJobDocRef,
+				(snapshot) => {
+					try {
+						// Only process if this is still the current pipeline
+						if (currentPollingPipelineId && currentPollingPipelineId !== pipelineId) {
+							console.log(`[pipeline] Skipping Firestore update for old pipeline ID: ${pipelineId} (current: ${currentPollingPipelineId})`);
+							return;
+						}
+						
+						if (!snapshot.exists()) {
+							console.log('[pipeline] Pipeline job document does not exist:', pipelineId);
+							return;
+						}
+						
+						// Get data - wrap in try-catch to handle any Firestore access errors
+						let data: any;
+						try {
+							data = snapshot.data();
+						} catch (error) {
+							console.error('[pipeline] Error getting snapshot data:', error);
+							return;
+						}
+						
+						if (!data || typeof data !== 'object') {
+							console.warn('[pipeline] Invalid snapshot data:', pipelineId);
+							return;
+						}
+						
+						// Helper to safely get nested property
+						const safeGet = (obj: any, path: string[]): any => {
+							try {
+								let current = obj;
+								for (const key of path) {
+									if (current == null || typeof current !== 'object') {
+										return undefined;
+									}
+									current = current[key];
+								}
+								return current;
+							} catch {
+								return undefined;
+							}
+						};
+						
+						// Map Firestore fields to PipelineStatus shape with safe property access
+						const firestoreStatus = {
+							status: (data.status || 'pending') as 'pending' | 'running' | 'completed' | 'error' | 'cancelled',
+							current_stage: data.current_stage || null,
+							completed_stages: Array.isArray(data.completed_stages) ? data.completed_stages : [],
+							overall_progress: typeof data.overall_progress === 'number' ? data.overall_progress : 0,
+							profiles_count: typeof data.profiles_count === 'number' ? data.profiles_count : 0,
+							profiles: pipelineStatus?.profiles || [], // Keep existing profiles until API loads them
+							stages: {
+								query_expansion: (() => {
+									const qe = safeGet(data, ['query_expansion']);
+									if (!qe || typeof qe !== 'object') return null;
+									return {
+										status: qe.status || 'pending',
+										queries: Array.isArray(qe.queries) ? qe.queries : []
+									};
+								})(),
+								weaviate_search: (() => {
+									const ws = safeGet(data, ['weaviate_search']);
+									if (!ws || typeof ws !== 'object') return null;
+									return {
+										status: ws.status || 'pending',
+										deduplicated_results: typeof ws.deduplicated_results === 'number' ? ws.deduplicated_results : undefined
+									};
+								})(),
+								brightdata_collection: (() => {
+									const bd = safeGet(data, ['brightdata_collection']);
+									if (!bd || typeof bd !== 'object') return null;
+									return {
+										status: bd.status || 'pending',
+										profiles_collected: typeof bd.profiles_collected === 'number' ? bd.profiles_collected : undefined,
+										batches_completed: typeof bd.batches_completed === 'number' ? bd.batches_completed : undefined,
+										total_batches: typeof bd.total_batches === 'number' ? bd.total_batches : undefined
+									};
+								})(),
+								llm_analysis: (() => {
+									const llm = safeGet(data, ['llm_analysis']);
+									if (!llm || typeof llm !== 'object') return null;
+									return {
+										status: llm.status || 'pending',
+										profiles_analyzed: typeof llm.profiles_analyzed === 'number' ? llm.profiles_analyzed : undefined
+									};
+								})()
+							},
+							error_message: data.error_message || null
+						};
+						
+						// Update pipelineStatus with Firestore data
+						// Preserve profiles and preliminary_candidates from previous state or API response
+						pipelineStatus = {
+							...firestoreStatus,
+							profiles: pipelineStatus?.profiles || [],
+							preliminary_candidates: pipelineStatus?.preliminary_candidates || []
+						};
+						
+						console.log('[pipeline] Pipeline status synced from Firestore:', {
+							event: 'pipeline_status_firestore_sync',
+							pipelineId,
+							status: firestoreStatus.status,
+							current_stage: firestoreStatus.current_stage,
+							overall_progress: firestoreStatus.overall_progress,
+							currentPollingPipelineId,
+							activeTab
+						});
+						
+						// If pipeline is completed, error, or cancelled, stop polling
+						if (firestoreStatus.status === 'completed' || firestoreStatus.status === 'error' || firestoreStatus.status === 'cancelled') {
+							if (pipelinePollInterval) {
+								clearInterval(pipelinePollInterval);
+								pipelinePollInterval = null;
+							}
+						}
+					} catch (error) {
+						console.error('[pipeline] Error processing Firestore snapshot:', error);
+						// Don't throw - just log the error and continue
+					}
+				},
+				(error) => {
+					console.error('[pipeline] Failed to listen to pipeline job updates', error);
+				}
+			);
+			
+			// Cleanup function for this effect
+			return () => {
+				if (unsubscribePipelineJob) {
+					try {
+						unsubscribePipelineJob();
+					} catch (error) {
+						console.warn('[pipeline] Error cleaning up listener in effect cleanup:', error);
+					}
+					unsubscribePipelineJob = null;
+				}
+			};
+		});
+		
 		return () => {
 			// Cleanup polling interval
 			if (pipelinePollInterval) {
 				clearInterval(pipelinePollInterval);
 				pipelinePollInterval = null;
 			}
+			// Cleanup manual refresh interval
+			if (manualRefreshInterval) {
+				clearInterval(manualRefreshInterval);
+				manualRefreshInterval = null;
+			}
 			// Cleanup campaign listener
 			if (unsubscribeCampaign) {
+				try {
 				unsubscribeCampaign();
+				} catch (error) {
+					console.warn('[campaign] Error cleaning up campaign listener:', error);
+				}
 				unsubscribeCampaign = null;
+			}
+			// Note: pipeline job listener cleanup is handled by $effect cleanup
+			// But we also clean it up here as a safety measure
+			if (unsubscribePipelineJob) {
+				try {
+					unsubscribePipelineJob();
+				} catch (error) {
+					console.warn('[pipeline] Error cleaning up pipeline job listener:', error);
+				}
+				unsubscribePipelineJob = null;
 			}
 			// Cleanup auth listener
 			unsubscribeAuth();
+			// Cleanup scroll timeout
+			if (scrollTimeoutId) {
+				clearTimeout(scrollTimeoutId);
+				scrollTimeoutId = null;
+			}
 		};
 	});
 	
@@ -396,12 +674,29 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 			if (response.ok) {
 				const data = await response.json();
 				if (data.state?.selectedInfluencerIds && Array.isArray(data.state.selectedInfluencerIds)) {
-					// Validate that the saved IDs still exist in current profiles
-					const validIds = new Set<string>();
-					const profileIds = new Set(
-						(pipelineStatus?.profiles || []).map(p => p._id || getProfileId(p))
-					);
+					// Build profileIds set from all profile sources (final profiles and preliminary candidates)
+					const profileIds = new Set<string>();
 					
+					// Include final profiles
+					if (pipelineStatus?.profiles && Array.isArray(pipelineStatus.profiles)) {
+						pipelineStatus.profiles.forEach((p) => {
+							const id = p._id || getProfileId(p);
+							if (id) profileIds.add(id);
+						});
+					}
+					
+					// Include preliminary candidates (if status is running and no final profiles yet)
+					if (pipelineStatus?.status === 'running' && 
+						(!pipelineStatus.profiles || pipelineStatus.profiles.length === 0) &&
+						pipelineStatus?.preliminary_candidates && Array.isArray(pipelineStatus.preliminary_candidates)) {
+						pipelineStatus.preliminary_candidates.forEach((c) => {
+							const id = c._id || getProfileId(c);
+							if (id) profileIds.add(id);
+						});
+					}
+					
+					// Validate that the saved IDs still exist in current profiles or preliminary candidates
+					const validIds = new Set<string>();
 					data.state.selectedInfluencerIds.forEach((id: string) => {
 						if (profileIds.has(id)) {
 							validIds.add(id);
@@ -514,10 +809,33 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		upgradePanelDescription = undefined;
 	}
 	
+	let pipelineError = $state<{ code: string; message: string; pipelineId: string } | null>(null);
+	
 	async function loadPipelineStatus(pipelineId: string) {
+		// Only load if this is still the current pipeline we're tracking
+		// This prevents loading old pipeline IDs after rerunning
+		if (currentPollingPipelineId && currentPollingPipelineId !== pipelineId) {
+			console.log('[pipeline] Skipping loadPipelineStatus for old pipeline ID:', {
+				event: 'pipeline_load_skipped',
+				pipelineId,
+				currentPollingPipelineId,
+				reason: 'pipeline_id_mismatch'
+			});
+			return;
+		}
+		
+		// Increment attempt count for grace period tracking
+		const creationInfo = pipelineCreationTimestamps.get(pipelineId);
+		if (creationInfo) {
+			creationInfo.attemptCount += 1;
+		}
+		
 		try {
 			const response = await fetch(`/api/pipeline/${pipelineId}`);
 			if (response.ok) {
+				// Clear any previous errors on success
+				pipelineError = null;
+				
 				const result = await response.json();
 				// The API returns { data: {...} } structure
 				const data = result.data || result;
@@ -530,16 +848,64 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 					}));
 				}
 				
+				// Add unique IDs to preliminary candidates if they don't have them
+				if (data.preliminary_candidates && Array.isArray(data.preliminary_candidates)) {
+					data.preliminary_candidates = data.preliminary_candidates.map((candidate: any) => ({
+						...candidate,
+						_id: candidate._id || getProfileId(candidate)
+					}));
+				}
+				
 				const previousCount = pipelineStatus?.profiles?.length ?? 0;
 				const newCount = data.profiles?.length ?? 0;
 				
-				console.log(`[Frontend] Loaded pipeline status:`, {
+				console.log('[pipeline] Loaded pipeline status:', {
+					event: 'pipeline_status_loaded',
+					pipelineId,
 					status: data.status,
 					profilesCount: newCount,
 					previousCount,
 					newProfiles: newCount - previousCount,
-					profilesStoragePath: data.profiles_storage_path
+					profilesStoragePath: data.profiles_storage_path,
+					currentPollingPipelineId,
+					activeTab
 				});
+				
+				// Merge completed profiles back into preliminary_candidates to update rows in place
+				if (data.preliminary_candidates && data.preliminary_candidates.length > 0 && data.profiles && data.profiles.length > 0) {
+					// Create a map of completed profiles by ID for quick lookup
+					const completedProfilesMap = new Map<string, typeof data.profiles[0]>();
+					data.profiles.forEach((profile: any) => {
+						const profileId = profile._id || getProfileId(profile);
+						completedProfilesMap.set(profileId, profile);
+					});
+					
+					// Update preliminary candidates with real data where available
+					data.preliminary_candidates = data.preliminary_candidates.map((candidate: any) => {
+						const candidateId = candidate._id || getProfileId(candidate);
+						const completedProfile = completedProfilesMap.get(candidateId);
+						
+						if (completedProfile) {
+							// Merge completed profile data into candidate, preserving candidate's position
+							return {
+								...candidate,
+								...completedProfile,
+								// Ensure we keep the candidate's _id to maintain position
+								_id: candidateId
+							};
+						}
+						
+						return candidate;
+					});
+					
+					console.log('[pipeline] Merged completed profiles into preliminary candidates:', {
+						event: 'preliminary_candidates_updated',
+						pipelineId,
+						preliminaryCount: data.preliminary_candidates.length,
+						completedCount: data.profiles.length,
+						updatedCount: Array.from(completedProfilesMap.keys()).length
+					});
+				}
 				
 				// Update previous profile IDs set for animation tracking
 				if (pipelineStatus?.profiles) {
@@ -547,6 +913,9 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				}
 				
 				pipelineStatus = data;
+				
+				// Clear creation tracking on success
+				pipelineCreationTimestamps.delete(pipelineId);
 				
 				// Load saved influencer selection and contacted influencers after profiles are loaded
 				// Always load contacted influencers if we have profiles, regardless of status
@@ -561,70 +930,394 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				}
 			} else {
 				const errorData = await response.json().catch(() => ({ message: 'Failed to load pipeline status' }));
-				console.error('Failed to load pipeline status:', errorData);
+				const errorCode = errorData?.error?.code || errorData?.code || 'UNKNOWN_ERROR';
+				const errorMessage = errorData?.error?.message || errorData?.message || 'Failed to load pipeline status';
+				
+				console.error('[pipeline] Failed to load pipeline status:', {
+					event: 'pipeline_load_failed',
+					pipelineId,
+					status: response.status,
+					code: errorCode,
+					message: errorMessage,
+					currentPollingPipelineId,
+					activeTab,
+					errorData
+				});
+				
+				// Handle terminal error conditions
+				if (errorCode === 'PIPELINE_NOT_FOUND' || errorCode === 'PIPELINE_FORBIDDEN') {
+					const now = Date.now();
+					const creationInfo = pipelineCreationTimestamps.get(pipelineId);
+					const timeSinceCreation = creationInfo ? now - creationInfo.createdAt : Infinity;
+					const attemptCount = creationInfo?.attemptCount ?? 0;
+					
+					// Grace period: first 2 attempts OR within 5 seconds of creation
+					const isWithinGracePeriod = attemptCount <= 2 || timeSinceCreation < 5000;
+					
+					// Enhanced logging for PIPELINE_FORBIDDEN
+					if (errorCode === 'PIPELINE_FORBIDDEN') {
+						const currentUser = firebaseAuth.currentUser;
+						console.warn('[pipeline] PIPELINE_FORBIDDEN error:', {
+							event: 'pipeline_forbidden',
+							pipelineId,
+							userId: currentUser?.uid || 'unknown',
+							campaignId: effectiveCampaign?.id || 'unknown',
+							attemptCount,
+							timeSinceCreation,
+							isWithinGracePeriod,
+							reason: isWithinGracePeriod 
+								? 'likely_replication_delay' 
+								: 'possible_structural_mismatch',
+							currentPollingPipelineId,
+							activeTab
+						});
+					}
+					
+					// Only fake pending state during grace period
+					if (isWithinGracePeriod && !pipelineStatus && currentPollingPipelineId === pipelineId) {
+						console.log('[pipeline] Creating fake pending state during grace period:', {
+							event: 'pipeline_fake_pending',
+							pipelineId,
+							attemptCount,
+							timeSinceCreation,
+							reason: 'grace_period'
+						});
+						
+						pipelineStatus = {
+							status: 'pending',
+							current_stage: null,
+							completed_stages: [],
+							overall_progress: 0,
+							profiles_count: 0,
+							profiles: [],
+							preliminary_candidates: [],
+							stages: {
+								query_expansion: null,
+								weaviate_search: null,
+								brightdata_collection: null,
+								llm_analysis: null
+							},
+							error_message: null
+						};
+						// Don't set error if we initialized status - document might just be creating
+						pipelineError = null;
+					} else {
+						// Grace period expired or not applicable - show actual error
+						console.error('[pipeline] Grace period expired, showing error:', {
+							event: 'pipeline_error_shown',
+							pipelineId,
+							errorCode,
+							attemptCount,
+							timeSinceCreation,
+							isWithinGracePeriod,
+							hasExistingStatus: !!pipelineStatus
+						});
+						
+						pipelineError = {
+							code: errorCode,
+							message: errorCode === 'PIPELINE_FORBIDDEN' 
+								? 'You do not have permission to access this pipeline.'
+								: 'Pipeline not found.',
+							pipelineId
+						};
+						
+						// Stop polling for this pipeline
+						if (currentPollingPipelineId === pipelineId) {
+							if (pipelinePollInterval) {
+								clearInterval(pipelinePollInterval);
+								pipelinePollInterval = null;
+							}
+							currentPollingPipelineId = null;
+						}
+						
+						// Clear creation tracking since we're giving up
+						pipelineCreationTimestamps.delete(pipelineId);
+					}
+					// Don't clear pipelineStatus - keep last successful state to avoid UI flicker
+					// The error will be displayed while preserving any existing data
+				} else {
+					// Non-terminal error - set error state but continue polling
+					pipelineError = {
+						code: errorCode,
+						message: errorMessage,
+						pipelineId
+					};
+				}
 			}
 		} catch (error) {
-			console.error('Failed to load pipeline status:', error);
+			console.error('[pipeline] Network error loading pipeline status:', {
+				event: 'pipeline_load_network_error',
+				pipelineId,
+				error: error instanceof Error ? error.message : String(error),
+				currentPollingPipelineId,
+				activeTab
+			});
+			pipelineError = {
+				code: 'NETWORK_ERROR',
+				message: error instanceof Error ? error.message : 'Failed to load pipeline status',
+				pipelineId
+			};
 		}
 	}
 	
 	function startPipelinePolling(pipelineId: string) {
-		// Clear existing interval
+		// Always clear existing interval at the top to ensure only one active interval
 		if (pipelinePollInterval) {
-			clearInterval(pipelinePollInterval);
-		}
-		
-		// Poll every 3 seconds
-		pipelinePollInterval = setInterval(async () => {
-			// Only poll if we're still on the outreach tab
-			if (activeTab === 'outreach') {
-				await loadPipelineStatus(pipelineId);
-				
-				// Stop polling if pipeline is completed, error, or cancelled
-				if (pipelineStatus?.status === 'completed' || pipelineStatus?.status === 'error' || pipelineStatus?.status === 'cancelled') {
-					// Give it one more poll cycle to ensure we have the final data, then stop
-					setTimeout(() => {
-						if (pipelinePollInterval && (pipelineStatus?.status === 'completed' || pipelineStatus?.status === 'error' || pipelineStatus?.status === 'cancelled')) {
-							clearInterval(pipelinePollInterval);
-							pipelinePollInterval = null;
-						}
-					}, 3000);
-				}
-			} else {
-				// Stop polling if user switched away from outreach tab
-				if (pipelinePollInterval) {
-					clearInterval(pipelinePollInterval);
-					pipelinePollInterval = null;
-				}
-			}
-		}, 3000);
-	}
-	
-	// Watch for campaign pipeline_id changes and activeTab changes
-	$effect(() => {
-		const pipelineId = effectiveCampaign?.pipeline_id;
-		const currentTab = activeTab;
-		
-		// Clear existing polling when effect runs
-		if (pipelinePollInterval) {
+			console.log('[pipeline] Clearing existing polling interval:', {
+				event: 'pipeline_polling_cleared',
+				previousPipelineId: currentPollingPipelineId,
+				newPipelineId: pipelineId,
+				reason: 'starting_new_polling'
+			});
 			clearInterval(pipelinePollInterval);
 			pipelinePollInterval = null;
 		}
 		
+		// Update the current polling pipeline ID
+		currentPollingPipelineId = pipelineId;
+		
+		// Clear any previous errors when starting polling
+		pipelineError = null;
+		
+		// Reduce polling frequency when Firestore listener is active (poll every 10 seconds instead of 3)
+		// The Firestore listener will handle real-time updates, polling is just a fallback
+		const pollInterval = unsubscribePipelineJob ? 10000 : 3000;
+		
+		console.log('[pipeline] Starting pipeline polling:', {
+			event: 'pipeline_polling_started',
+			pipelineId,
+			pollInterval,
+			hasFirestoreListener: !!unsubscribePipelineJob,
+			activeTab,
+			effectivePipelineId: effectivePipelineId()
+		});
+		
+		// Poll at reduced frequency (or stop entirely if Firestore listener is active and working)
+		pipelinePollInterval = setInterval(async () => {
+			// Only poll if we're still on the outreach tab and this is still the current pipeline
+			if (activeTab === 'outreach' && currentPollingPipelineId === pipelineId) {
+				// If Firestore listener is active, skip polling for status updates (only poll for profiles)
+				// Profiles are loaded from Storage via API, not Firestore
+				if (!unsubscribePipelineJob) {
+					await loadPipelineStatus(pipelineId);
+				} else {
+					// Firestore listener handles status, but we still need to poll for profile updates
+					// Only load profiles if status indicates we should have profiles
+					if (pipelineStatus?.status === 'running' || pipelineStatus?.status === 'completed') {
+						await loadPipelineStatus(pipelineId);
+					}
+				}
+				
+				// Stop polling if pipeline is completed, error, cancelled, or if we have a terminal error
+				// Also check that we're still polling the same pipeline ID
+				if (currentPollingPipelineId !== pipelineId) {
+					// Pipeline ID changed, stop polling
+					console.log('[pipeline] Pipeline ID changed during polling, stopping:', {
+						event: 'pipeline_polling_stopped',
+						previousPipelineId: pipelineId,
+						newPipelineId: currentPollingPipelineId,
+						reason: 'pipeline_id_changed'
+					});
+					if (pipelinePollInterval) {
+						clearInterval(pipelinePollInterval);
+						pipelinePollInterval = null;
+					}
+					return;
+				}
+				
+				if (pipelineStatus?.status === 'completed' || pipelineStatus?.status === 'error' || pipelineStatus?.status === 'cancelled' || 
+					(pipelineError && (pipelineError.code === 'PIPELINE_NOT_FOUND' || pipelineError.code === 'PIPELINE_FORBIDDEN'))) {
+					// Give it one more poll cycle to ensure we have the final data, then stop
+					setTimeout(() => {
+						if (pipelinePollInterval && currentPollingPipelineId === pipelineId && 
+							(pipelineStatus?.status === 'completed' || pipelineStatus?.status === 'error' || pipelineStatus?.status === 'cancelled' ||
+							(pipelineError && (pipelineError.code === 'PIPELINE_NOT_FOUND' || pipelineError.code === 'PIPELINE_FORBIDDEN')))) {
+							console.log('[pipeline] Pipeline reached terminal state, stopping polling:', {
+								event: 'pipeline_polling_stopped',
+								pipelineId,
+								status: pipelineStatus?.status,
+								errorCode: pipelineError?.code,
+								reason: 'terminal_state'
+							});
+							clearInterval(pipelinePollInterval);
+							pipelinePollInterval = null;
+							if (currentPollingPipelineId === pipelineId) {
+								currentPollingPipelineId = null;
+							}
+						}
+					}, pollInterval);
+				}
+			} else {
+				// Stop polling if user switched away from outreach tab or pipeline ID changed
+				console.log('[pipeline] Stopping polling due to tab change or pipeline ID mismatch:', {
+					event: 'pipeline_polling_stopped',
+					pipelineId,
+					activeTab,
+					currentPollingPipelineId,
+					reason: activeTab !== 'outreach' ? 'tab_changed' : 'pipeline_id_mismatch'
+				});
+				if (pipelinePollInterval) {
+					clearInterval(pipelinePollInterval);
+					pipelinePollInterval = null;
+				}
+				if (currentPollingPipelineId === pipelineId) {
+					currentPollingPipelineId = null;
+				}
+			}
+		}, pollInterval);
+	}
+	
+	// Watch for pipeline ID changes and activeTab changes
+	// This is the single owner for pipeline loading and polling
+	$effect(() => {
+		const pipelineId = effectivePipelineId();
+		const currentTab = activeTab;
+		const previousPipelineId = lastSeenPipelineId;
+		
+		// Update last seen pipeline ID
+		lastSeenPipelineId = pipelineId;
+		
+		// Determine if pipeline ID changed
+		const pipelineIdChanged = pipelineId !== previousPipelineId;
+		
+		console.log('[campaign] Pipeline loading effect triggered:', {
+			event: 'pipeline_loading_effect',
+			pipelineId,
+			previousPipelineId,
+			pipelineIdChanged,
+			activeTab: currentTab,
+			currentPollingPipelineId,
+			effectiveCampaignPipelineId: effectiveCampaign?.pipeline_id,
+			temporaryPipelineId
+		});
+		
+		// Clear existing polling when pipeline ID changes or tab changes away from outreach
+		if (pipelinePollInterval && (pipelineIdChanged || currentTab !== 'outreach')) {
+			console.log('[campaign] Stopping pipeline polling:', {
+				event: 'pipeline_polling_stopped',
+				reason: pipelineIdChanged ? 'pipeline_id_changed' : 'tab_changed',
+				previousPipelineId,
+				newPipelineId: pipelineId,
+				activeTab: currentTab
+			});
+			clearInterval(pipelinePollInterval);
+			pipelinePollInterval = null;
+			if (currentPollingPipelineId && currentPollingPipelineId !== pipelineId) {
+				currentPollingPipelineId = null;
+			}
+		}
+		
 		// Start loading and polling if on outreach tab and pipeline exists
 		if (pipelineId && currentTab === 'outreach') {
-			// Always load pipeline status when switching to outreach tab
-			// This ensures data is fresh even if it was previously loaded
+			const shouldStartPolling = !currentPollingPipelineId || currentPollingPipelineId !== pipelineId;
+			
+			console.log('[campaign] Starting pipeline loading/polling:', {
+				event: 'pipeline_loading_started',
+				pipelineId,
+				shouldStartPolling,
+				currentPollingPipelineId,
+				pipelineIdChanged
+			});
+			
+			// Load pipeline status once when pipeline ID becomes available or changes
 			void loadPipelineStatus(pipelineId);
-			// Start polling
-			startPipelinePolling(pipelineId);
+			
+			// Start polling if not already polling this pipeline
+			if (shouldStartPolling) {
+				startPipelinePolling(pipelineId);
+			}
+		} else if (!pipelineId && currentTab === 'outreach') {
+			console.log('[campaign] Pipeline ID not available on outreach tab:', {
+				event: 'pipeline_id_missing',
+				activeTab: currentTab,
+				effectiveCampaignPipelineId: effectiveCampaign?.pipeline_id,
+				temporaryPipelineId
+			});
 		}
 		
 		return () => {
 			// Cleanup polling when effect cleanup runs
 			if (pipelinePollInterval) {
+				console.log('[campaign] Pipeline loading effect cleanup:', {
+					event: 'pipeline_loading_effect_cleanup',
+					pipelineId,
+					activeTab: currentTab
+				});
 				clearInterval(pipelinePollInterval);
 				pipelinePollInterval = null;
+			}
+		};
+	});
+	
+	// Manual refresh interval for outreach tab - refreshes data every 5 seconds
+	// Stops when pipeline is completed, error, or cancelled
+	$effect(() => {
+		const pipelineId = effectivePipelineId();
+		const currentTab = activeTab;
+		const pipelineStatusValue = pipelineStatus?.status;
+		
+		// Clear existing manual refresh interval
+		if (manualRefreshInterval) {
+			clearInterval(manualRefreshInterval);
+			manualRefreshInterval = null;
+		}
+		
+		// Check if pipeline is in a terminal state (completed, error, or cancelled)
+		const isTerminalState = pipelineStatusValue === 'completed' || 
+		                        pipelineStatusValue === 'error' || 
+		                        pipelineStatusValue === 'cancelled';
+		
+		// Start manual refresh if on outreach tab, pipeline exists, and not in terminal state
+		if (pipelineId && currentTab === 'outreach' && !isTerminalState) {
+			console.log('[campaign] Starting manual refresh interval:', {
+				event: 'manual_refresh_started',
+				pipelineId,
+				interval: 5000,
+				pipelineStatus: pipelineStatusValue
+			});
+			
+			manualRefreshInterval = setInterval(() => {
+				// Check if pipeline reached terminal state
+				const currentStatus = pipelineStatus?.status;
+				const isTerminal = currentStatus === 'completed' || 
+				                  currentStatus === 'error' || 
+				                  currentStatus === 'cancelled';
+				
+				// Stop refreshing if pipeline is complete or user switched tabs
+				if (isTerminal || activeTab !== 'outreach' || effectivePipelineId() !== pipelineId) {
+					if (manualRefreshInterval) {
+						console.log('[campaign] Stopping manual refresh interval:', {
+							event: 'manual_refresh_stopped',
+							pipelineId,
+							reason: isTerminal ? 'pipeline_complete' : activeTab !== 'outreach' ? 'tab_changed' : 'pipeline_id_changed',
+							pipelineStatus: currentStatus
+						});
+						clearInterval(manualRefreshInterval);
+						manualRefreshInterval = null;
+					}
+					return;
+				}
+				
+				console.log('[campaign] Manual refresh triggered:', {
+					event: 'manual_refresh',
+					pipelineId,
+					pipelineStatus: currentStatus
+				});
+				void loadPipelineStatus(pipelineId);
+			}, 5000); // 5 seconds
+		}
+		
+		return () => {
+			// Cleanup manual refresh interval
+			if (manualRefreshInterval) {
+				console.log('[campaign] Stopping manual refresh interval:', {
+					event: 'manual_refresh_stopped',
+					pipelineId,
+					activeTab: currentTab,
+					pipelineStatus: pipelineStatusValue
+				});
+				clearInterval(manualRefreshInterval);
+				manualRefreshInterval = null;
 			}
 		};
 	});
@@ -659,16 +1352,31 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	async function loadConversation(campId: string) {
 		isInitializing = true;
 		initError = null;
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+		
 		try {
-			const response = await fetch(`/api/chat/${campId}`);
+			const response = await fetch(`/api/chat/${campId}`, {
+				signal: controller.signal
+			});
+			
+			clearTimeout(timeoutId);
+			
 			if (!response.ok) {
 				throw new Error(`Failed to load conversation (${response.status})`);
 			}
 			const data = (await response.json()) as ConversationResponse;
 			applyConversationSnapshot(data);
+			hasLoadedConversation = true;
 		} catch (error) {
+			clearTimeout(timeoutId);
 			console.error('[campaign] conversation load failed', error);
+			if (error instanceof Error && error.name === 'AbortError') {
+				initError = 'Request timed out. Please try again.';
+			} else {
 			initError = error instanceof Error ? error.message : 'Failed to load conversation';
+			}
+			hasLoadedConversation = false;
 		} finally {
 			isInitializing = false;
 		}
@@ -679,21 +1387,86 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		messages = data.conversation.messages;
 		collected = data.conversation.collected ?? {};
 		followerRange = data.conversation.followerRange ?? { min: null, max: null };
+		conversationStatus = data.conversation.status;
 		
-		// Extract influencer summary from last assistant message when status is ready
-		if (data.conversation.status === 'ready' && messages.length > 0) {
-			const lastMessage = messages[messages.length - 1];
-			if (lastMessage.role === 'assistant' && lastMessage.content) {
-				// Extract summary from message content (it's after "All required slots filled...")
-				const content = lastMessage.content;
-				const summaryMatch = content.match(/All required slots filled[^\n]*\n\n([\s\S]*)/);
-				if (summaryMatch && summaryMatch[1]) {
-					influencerSummary = summaryMatch[1].trim();
-					// Initialize form fields from collected data
-					if (followerRange.min !== null) searchFormMinFollowers = followerRange.min;
-					if (followerRange.max !== null) searchFormMaxFollowers = followerRange.max;
+		// Extract or generate influencer summary when status is ready or complete
+		if (data.conversation.status === 'ready' || data.conversation.status === 'complete') {
+			// Try to extract summary from last assistant message first
+			if (messages.length > 0) {
+				const lastMessage = messages[messages.length - 1];
+				if (lastMessage.role === 'assistant' && lastMessage.content) {
+					const content = lastMessage.content;
+					const summaryMatch = content.match(/All required slots filled[^\n]*\n\n([\s\S]*)/);
+					if (summaryMatch && summaryMatch[1]) {
+						influencerSummary = summaryMatch[1].trim();
+					}
 				}
 			}
+			
+			// Always generate a summary from collected data when status is ready
+			// This ensures we have something to show even if message extraction fails
+			if (collected) {
+				const parts: string[] = [];
+				
+				// Business information
+				if (collected.business_name) {
+					parts.push(collected.business_name);
+				}
+				if (collected.business_about) {
+					parts.push(collected.business_about);
+				}
+				if (collected.website) {
+					parts.push(`Website: ${collected.website}`);
+				}
+				
+				// Influencer criteria
+				const influencerParts: string[] = [];
+				if (collected.type_of_influencer) {
+					influencerParts.push(collected.type_of_influencer);
+				}
+				const platforms = normalizePlatforms(collected.platform);
+				if (platforms.length > 0) {
+					const platformText = platforms.length === 1 
+						? platforms[0] 
+						: platforms.join(' and ');
+					influencerParts.push(`on ${platformText}`);
+				}
+				if (collected.influencer_location) {
+					influencerParts.push(`in ${collected.influencer_location}`);
+				}
+				if (followerRange.min !== null || followerRange.max !== null) {
+					const followerStr = followerRange.min !== null && followerRange.max !== null
+						? `${followerRange.min}-${followerRange.max}`
+						: followerRange.min !== null
+						? `${followerRange.min}+`
+						: `up to ${followerRange.max}`;
+					influencerParts.push(`with ${followerStr} followers`);
+				}
+				
+				if (influencerParts.length > 0) {
+					parts.push(`Looking for ${influencerParts.join(' ')}`);
+				}
+				
+				// Use generated summary if we don't have one from message, or combine them
+				if (parts.length > 0) {
+					const generatedSummary = parts.join('. ');
+					if (!influencerSummary) {
+						influencerSummary = generatedSummary;
+					} else if (!influencerSummary.includes(generatedSummary)) {
+						// Combine if they're different
+						influencerSummary = `${influencerSummary}. ${generatedSummary}`;
+					}
+				}
+			}
+			
+			// Fallback: if still no summary, create a basic one
+			if (!influencerSummary) {
+				influencerSummary = 'Ready to search for influencers matching your campaign criteria.';
+			}
+			
+			// Initialize form fields from collected data
+			if (followerRange.min !== null) searchFormMinFollowers = followerRange.min;
+			if (followerRange.max !== null) searchFormMaxFollowers = followerRange.max;
 		}
 	}
 
@@ -724,10 +1497,11 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 					hasPlaceholder = false;
 				}
 				applyConversationSnapshot({ conversation: payload.conversation } as ConversationResponse);
-				setTimeout(() => scrollToBottom(), 0);
 			} else if (eventType === 'error') {
 				const payload = JSON.parse(data) as { message?: string };
-				throw new Error(payload.message ?? 'Assistant stream failed');
+				const errorMessage = payload.message ?? 'Assistant stream failed';
+				chatError = errorMessage;
+				throw new Error(errorMessage);
 			}
 		};
 
@@ -797,14 +1571,8 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		}
 	}
 
-	// Calculate progress based on collected campaign data
-	const progress = $derived(() => calculateProgress(collected, followerRange));
-	
-	// Check if progress is 100%
-	const isProgressComplete = $derived(progress() === 100);
-	
 	// Handle search form submission
-	async function handleSearchFormSubmit(event?: SubmitEvent) {
+	async function handleSearchFormSubmit(event?: SubmitEvent, params?: SearchParams) {
 		if (event) {
 			event.preventDefault();
 		}
@@ -812,15 +1580,18 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		
 		isSearchFormSubmitting = true;
 		try {
+			// Use campaign_id from params if provided, otherwise fall back to page-level logic
+			const campaignId = params?.campaign_id ?? campaign?.id ?? routeCampaignId ?? null;
+			
 			const response = await fetch('/api/search/influencers', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					business_description: influencerSummary.trim(),
-					top_n: searchFormTopN,
-					min_followers: searchFormMinFollowers,
-					max_followers: searchFormMaxFollowers,
-					campaign_id: campaign?.id ?? routeCampaignId ?? null
+					business_description: params?.business_description ?? influencerSummary.trim(),
+					top_n: params?.top_n ?? searchFormTopN,
+					min_followers: params?.min_followers ?? searchFormMinFollowers,
+					max_followers: params?.max_followers ?? searchFormMaxFollowers,
+					campaign_id: campaignId
 				})
 			});
 			
@@ -853,6 +1624,32 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 			
 			const data = responseData.data ?? responseData;
 			
+			// Log campaign binding status if present
+			if (data.campaign_binding_status) {
+				if (data.campaign_binding_status !== 'updated' && data.campaign_binding_status !== 'noop_same') {
+					console.warn('[Frontend] Campaign pipeline binding issue:', {
+						status: data.campaign_binding_status,
+						existingPipelineId: data.existingPipelineId || null,
+						job_id: data.job_id || null
+					});
+					
+					// When noop_other is returned, the campaign document still has the old pipeline_id
+					// We need to use the new job_id, but the Firestore listener might overwrite it
+					// So we track that we just set it from the API to prevent the listener from overwriting
+					if (data.campaign_binding_status === 'noop_other' && data.job_id) {
+						console.warn('[Frontend] Campaign has existing pipeline_id, but new job was created. Using new job_id:', {
+							oldPipelineId: data.existingPipelineId,
+							newPipelineId: data.job_id
+						});
+					}
+				} else {
+					console.log('[Frontend] Campaign pipeline binding:', {
+						status: data.campaign_binding_status,
+						existingPipelineId: data.existingPipelineId || null
+					});
+				}
+			}
+			
 			// Update local campaign with pipeline_id
 			if (data.job_id) {
 				const baseCampaign = localCampaign ?? campaign;
@@ -862,14 +1659,36 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 						pipeline_id: data.job_id,
 						updatedAt: Date.now()
 					};
+					// Track that we just set this pipeline_id from API response
+					// This prevents the Firestore listener from overwriting it for 5 seconds
+					lastApiSetPipelineId = {
+						pipelineId: data.job_id,
+						timestamp: Date.now()
+					};
 				}
+				
+				// Set temporary pipeline ID for immediate availability in effectivePipelineId
+				temporaryPipelineId = data.job_id;
+				
+				// Track creation timestamp for grace period handling
+				pipelineCreationTimestamps.set(data.job_id, {
+					createdAt: Date.now(),
+					attemptCount: 0
+				});
+				
 				// Switch to outreach tab
 				activeTab = 'outreach';
-				await loadPipelineStatus(data.job_id);
-				startPipelinePolling(data.job_id);
-				if (browser) {
-					setTimeout(() => window.location.reload(), 0);
-				}
+				
+				console.log('[campaign] Search form submitted successfully:', {
+					event: 'search_form_submit_success',
+					pipelineId: data.job_id,
+					campaignId: baseCampaign?.id,
+					activeTab: 'outreach',
+					effectivePipelineId: effectivePipelineId(),
+					currentPollingPipelineId
+				});
+				
+				// Pipeline loading/polling is handled by the $effect watching effectivePipelineId and activeTab
 			}
 		} catch (error) {
 			console.error('Failed to start influencer search:', error);
@@ -914,29 +1733,15 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	}
 	
 	// Track if page is fully loaded
+	// This should return true as soon as campaign is loaded and initial route hydration is complete,
+	// without waiting on chat or pipeline data
 	const isPageLoaded = $derived(() => {
 		// During SSR, always return true to prevent hydration mismatches
 		if (!browser) return true;
 		
-		// Page is loaded when:
-		// 1. Campaign data exists
-		// 2. If on chat tab: conversation is loaded (not initializing and no error)
-		// 3. If on outreach tab: either no pipeline_id (show search form) or pipeline status is loaded
-		if (!campaign) return false;
-		
-		if (activeTab === 'chat') {
-			// For chat tab, we're loaded if not initializing and no error
-			// Allow showing content even if there's an error (user can retry)
-			return !isInitializing;
-		} else if (activeTab === 'outreach') {
-			// If no pipeline_id, we show search form (loaded)
-			if (!effectiveCampaign?.pipeline_id) return true;
-			// If pipeline_id exists, wait for pipeline status to load
-			// But don't wait forever - if it's been a while, show content anyway
-			return pipelineStatus !== null;
-		}
-		
-		return true;
+		// Page is loaded when campaign data exists
+		// Chat and pipeline data will show their own loading states within their tabs
+		return campaign !== null;
 	});
 </script>
 
@@ -959,13 +1764,12 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		onTabChange={(tab) => {
 			activeTab = tab;
 			if (tab === 'chat' && campaign?.id) {
-						if (!campaignId || isInitializing) {
+				// Only load if we haven't loaded yet or campaign changed
+				if (!hasLoadedConversation || campaignId !== campaign.id) {
 							void loadConversation(campaign.id);
 						}
-			} else if (tab === 'outreach' && effectiveCampaign?.pipeline_id) {
-							void loadPipelineStatus(effectiveCampaign.pipeline_id);
-							startPipelinePolling(effectiveCampaign.pipeline_id);
 						}
+			// Pipeline loading/polling is handled by the $effect watching pipeline_id and activeTab
 					}}
 	/>
 
@@ -982,6 +1786,8 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				{messages}
 				{isInitializing}
 				{initError}
+				{chatError}
+				{conversationStatus}
 				draft={draft}
 				{isSending}
 				{collected}
@@ -993,12 +1799,19 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				{isSearchFormSubmitting}
 				{effectiveCampaign}
 				maxInfluencers={maxInfluencers()}
-				{debugMode}
-				messagesContainer={messagesContainer}
+				onMessagesContainerReady={(el) => { messagesContainer = el; }}
 				onRetry={() => campaign?.id && void loadConversation(campaign.id)}
 				onSubmit={async (message) => {
 					draft = '';
-					await sendStreamingMessage(message);
+					chatError = null;
+					try {
+						await sendStreamingMessage(message);
+					} catch (error) {
+						console.error('[chat] Failed to send message', error);
+						if (!chatError) {
+							chatError = error instanceof Error ? error.message : 'Failed to send message. Please try again.';
+						}
+					}
 				}}
 				onDraftChange={(value) => { draft = value; }}
 				onSearchSubmit={(params) => {
@@ -1007,10 +1820,9 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 					searchFormTopN = params.top_n;
 					searchFormMinFollowers = params.min_followers;
 					searchFormMaxFollowers = params.max_followers;
-					// Call the actual submit handler
-																void handleSearchFormSubmit();
+					// Call the actual submit handler with params to honor campaign_id
+					void handleSearchFormSubmit(undefined, params);
 														}}
-				onToggleDebug={() => debugMode = !debugMode}
 				onScrollToBottom={scrollToBottom}
 				onRerunPipeline={openRerunPipelineWarning}
 			/>
@@ -1024,6 +1836,7 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 			{showContacted}
 			{previousProfileIds}
 			campaignId={routeCampaignId ?? null}
+			pipelineError={pipelineError}
 			onToggleInfluencer={toggleInfluencerSelection}
 			onToggleContacted={() => showContacted = !showContacted}
 			onSendOutreach={handleSendOutreach}

@@ -73,6 +73,7 @@ export type PipelineStatus = {
 	overall_progress: number;
 	profiles_count: number;
 	profiles: InfluencerProfile[];
+	preliminary_candidates?: InfluencerProfile[]; // Low-fidelity candidates from Weaviate search (before LLM analysis)
 	stages: PipelineStages;
 	error_message?: string | null;
 };

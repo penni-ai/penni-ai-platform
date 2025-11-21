@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { sendMessage } from '$lib/server/chat/chatbot-client';
+import { mapConversationToUi } from '$lib/server/chat/mapper';
 import { ApiProblem, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 
 const encoder = new TextEncoder();
@@ -90,35 +91,29 @@ export const POST = handleApiRoute(async (event) => {
 
 					// Transform conversation to UI format
 					const conversation = response.conversation;
-					const uiConversation = {
-						id: conversation.id,
-						status: conversation.status,
-						collected: {
-							website: conversation.collected.website ?? undefined,
-							business_name: conversation.collected.business_name ?? undefined,
-							business_location: conversation.collected.business_location ?? undefined,
-							business_about: conversation.collected.business_about ?? undefined,
-							locations: conversation.collected.influencer_location ?? undefined,
-							platform: conversation.collected.platform ?? undefined,
-							type_of_influencer: conversation.collected.type_of_influencer ?? undefined,
-							followers: conversation.collected.min_followers !== null || conversation.collected.max_followers !== null
-								? `${conversation.collected.min_followers ?? ''}-${conversation.collected.max_followers ?? ''}`
-								: undefined
-						},
-						missing: conversation.missing,
-						messages: conversation.messages,
-						followerRange: {
-							min: conversation.collected.min_followers,
-							max: conversation.collected.max_followers
-						}
-					};
+					const uiConversation = mapConversationToUi(conversation);
 
 					send('final', { conversation: uiConversation });
 					controller.close();
 				} catch (error) {
 					logger.error('Streamed assistant turn failed', { error });
+					
+					// Extract detailed error message
+					let errorMessage = 'Assistant stream failed';
+					if (error instanceof Error) {
+						errorMessage = error.message;
+					} else if (typeof error === 'string') {
+						errorMessage = error;
+					}
+					
+					// If it's a ChatbotClientError, include more details
+					if (error && typeof error === 'object' && 'status' in error && 'code' in error) {
+						const chatbotError = error as { status: number; code?: string; message: string };
+						errorMessage = chatbotError.message || errorMessage;
+					}
+					
 					send('error', {
-						message: error instanceof Error ? error.message : 'ASSISTANT_STREAM_FAILED'
+						message: errorMessage
 					});
 					controller.close();
 				}

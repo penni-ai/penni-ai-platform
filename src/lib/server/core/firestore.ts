@@ -8,6 +8,19 @@ import {
 
 export const firestore: Firestore = adminDb;
 
+// Log Firestore configuration on module load (once)
+let firestoreConfigLogged = false;
+if (!firestoreConfigLogged) {
+	firestoreConfigLogged = true;
+	const firestoreProjectId = (adminDb as any).app?.options?.projectId || process.env.GOOGLE_CLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || 'unknown';
+	const firestoreEmulatorHost = process.env.FIRESTORE_EMULATOR_HOST || 'none';
+	console.info('[Firestore] Initialized Firestore client', {
+		projectId: firestoreProjectId,
+		emulatorHost: firestoreEmulatorHost,
+		isEmulator: firestoreEmulatorHost !== 'none'
+	});
+}
+
 export function userDocRef(uid: string) {
 	return firestore.collection('users').doc(uid);
 }

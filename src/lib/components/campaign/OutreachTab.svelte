@@ -12,6 +12,7 @@
 		showContacted: boolean;
 		previousProfileIds: Set<string>;
 		campaignId: string | null;
+		pipelineError?: { code: string; message: string; pipelineId: string } | null;
 		onToggleInfluencer: (id: string) => void;
 		onToggleContacted: () => void;
 		onSendOutreach: () => void;
@@ -25,13 +26,33 @@
 		showContacted,
 		previousProfileIds,
 		campaignId,
+		pipelineError = null,
 		onToggleInfluencer,
 		onToggleContacted,
 		onSendOutreach
 	}: Props = $props();
 
 	const selectedCount = $derived(selectedInfluencerIds.size);
-	const hasInfluencersInTable = $derived(!!(pipelineStatus?.profiles && pipelineStatus.profiles.length > 0));
+	
+	// Determine which profiles to show: use final profiles if available, otherwise preliminary candidates
+	const displayedProfiles = $derived.by(() => {
+		if (pipelineStatus?.profiles && pipelineStatus.profiles.length > 0) {
+			return pipelineStatus.profiles;
+		}
+		// Show preliminary candidates if status is running and no final profiles yet
+		if (pipelineStatus?.status === 'running' && pipelineStatus?.preliminary_candidates && pipelineStatus.preliminary_candidates.length > 0) {
+			return pipelineStatus.preliminary_candidates;
+		}
+		return [];
+	});
+	
+	const hasInfluencersInTable = $derived(displayedProfiles.length > 0);
+	const isShowingPreliminary = $derived(
+		!!(pipelineStatus?.status === 'running' && 
+		   (!pipelineStatus.profiles || pipelineStatus.profiles.length === 0) && 
+		   pipelineStatus?.preliminary_candidates && 
+		   pipelineStatus.preliminary_candidates.length > 0)
+	);
 
 	/**
 	 * Removes keys whose value is a dict or a list of dicts (i.e., nested).
@@ -114,12 +135,13 @@
 	 * Downloads the CSV file
 	 */
 	function handleExportToCsv() {
-		if (!pipelineStatus?.profiles || pipelineStatus.profiles.length === 0) {
+		const profilesToExport = displayedProfiles;
+		if (!profilesToExport || profilesToExport.length === 0) {
 			return;
 		}
 
 		// Filter out profiles with missing or empty display_name
-		const validProfiles = pipelineStatus.profiles.filter(profile => {
+		const validProfiles = profilesToExport.filter(profile => {
 			const displayName = profile.display_name;
 			return displayName && typeof displayName === 'string' && displayName.trim() !== '' && displayName !== 'N/A';
 		});
@@ -154,18 +176,67 @@
 		<!-- Show pipeline status and influencers list if pipeline exists -->
 		{#if effectiveCampaign?.pipeline_id}
 			<div class="flex-1 overflow-y-auto px-8 py-6 border-b border-gray-200 min-h-0">
-				{#if pipelineStatus !== null && pipelineStatus !== undefined}
+				{#if pipelineError}
+					<!-- Pipeline Error State - Show error but allow viewing existing data -->
+					<div class="mx-auto w-full max-w-6xl space-y-6">
+						<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+							<div class="flex items-start gap-3">
+								<div class="shrink-0">
+									<svg class="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+								</svg>
+								</div>
+								<div class="flex-1">
+									<p class="text-sm font-medium text-red-900">{pipelineError.message}</p>
+									<p class="mt-1 text-xs text-red-700">Error code: {pipelineError.code}</p>
+								</div>
+							</div>
+						</div>
+						{#if pipelineStatus !== null && pipelineStatus !== undefined}
+							<!-- Show existing pipeline status data below error -->
+							<div class="space-y-6">
+								<PipelineStatusComponent status={pipelineStatus} />
+								
+								<!-- Influencers Table -->
+								{#if pipelineStatus.status === 'running' || pipelineStatus.status === 'completed' || pipelineStatus.status === 'pending'}
+									{#if isShowingPreliminary}
+										<div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+											<strong>Preview:</strong> Showing preliminary search results. Final analysis with fit scores will appear shortly.
+										</div>
+									{/if}
+									<InfluencersTable
+										profiles={displayedProfiles}
+										selectedIds={selectedInfluencerIds}
+										contactedIds={contactedInfluencerIds}
+										{showContacted}
+										status={pipelineStatus.status}
+										isPreliminary={isShowingPreliminary}
+										{previousProfileIds}
+										onToggleSelection={onToggleInfluencer}
+										onToggleContacted={onToggleContacted}
+									/>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{:else if pipelineStatus !== null && pipelineStatus !== undefined}
 					<div class="space-y-6">
 						<PipelineStatusComponent status={pipelineStatus} />
 						
 						<!-- Influencers Table -->
 						{#if pipelineStatus.status === 'running' || pipelineStatus.status === 'completed' || pipelineStatus.status === 'pending'}
+							{#if isShowingPreliminary}
+								<div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+									<strong>Preview:</strong> Showing preliminary search results. Final analysis with fit scores will appear shortly.
+								</div>
+							{/if}
 							<InfluencersTable
-								profiles={pipelineStatus.profiles}
+								profiles={displayedProfiles}
 								selectedIds={selectedInfluencerIds}
 								contactedIds={contactedInfluencerIds}
 								{showContacted}
 								status={pipelineStatus.status}
+								isPreliminary={isShowingPreliminary}
 								{previousProfileIds}
 								onToggleSelection={onToggleInfluencer}
 								onToggleContacted={onToggleContacted}

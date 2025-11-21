@@ -1,4 +1,5 @@
 import { getConversation, sendMessage } from '$lib/server/chat/chatbot-client';
+import { mapConversationToUi } from '$lib/server/chat/mapper';
 import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 
 export const GET = handleApiRoute(async (event) => {
@@ -17,47 +18,38 @@ export const GET = handleApiRoute(async (event) => {
 		userId: user.uid
 	});
 
+	// Create abort signal from request or use timeout
+	const requestSignal = event.request.signal;
+	const timeoutMs = 15000; // 15 seconds
+
 	try {
 		const response = await getConversation(campaignId, {
 			uid: user.uid,
-			logger
+			logger,
+			signal: requestSignal,
+			timeout: timeoutMs
 		});
 
 		const conversation = response.conversation;
 
 		// Transform to UI-compatible format
-		const uiConversation = {
-			id: conversation.id,
-			status: conversation.status,
-			collected: {
-				website: conversation.collected.website ?? undefined,
-				business_name: conversation.collected.business_name ?? undefined,
-				business_location: conversation.collected.business_location ?? undefined,
-				business_about: conversation.collected.business_about ?? undefined,
-				locations: conversation.collected.influencer_location ?? undefined,
-				platform: conversation.collected.platform ?? undefined,
-			type_of_influencer: conversation.collected.type_of_influencer ?? undefined,
-				followers: conversation.collected.min_followers !== null || conversation.collected.max_followers !== null
-					? `${conversation.collected.min_followers ?? ''}-${conversation.collected.max_followers ?? ''}`
-					: undefined
-			},
-			missing: conversation.missing,
-			messages: conversation.messages,
-			followerRange: {
-				min: conversation.collected.min_followers,
-				max: conversation.collected.max_followers
-			}
-		};
+		const uiConversation = mapConversationToUi(conversation);
 
 		return apiOk({ conversation: uiConversation });
 	} catch (error) {
 		logger.error('Failed to get conversation', { error });
-		if (error instanceof ApiProblem && error.status === 404) {
+		if (error instanceof ApiProblem) {
+			if (error.status === 404) {
 			throw new ApiProblem({
 				status: 404,
 				code: 'CONVERSATION_NOT_FOUND',
 				message: 'Conversation not found.'
 			});
+			}
+			// Propagate timeout and cancellation errors
+			if (error.status === 504 || error.status === 499) {
+				throw error;
+			}
 		}
 		throw error;
 	}
@@ -130,28 +122,7 @@ export const POST = handleApiRoute(async (event) => {
 		const conversation = response.conversation;
 
 		// Transform to UI-compatible format
-		const uiConversation = {
-			id: conversation.id,
-			status: conversation.status,
-			collected: {
-				website: conversation.collected.website ?? undefined,
-				business_name: conversation.collected.business_name ?? undefined,
-				business_location: conversation.collected.business_location ?? undefined,
-				business_about: conversation.collected.business_about ?? undefined,
-				locations: conversation.collected.influencer_location ?? undefined,
-				platform: conversation.collected.platform ?? undefined,
-			type_of_influencer: conversation.collected.type_of_influencer ?? undefined,
-				followers: conversation.collected.min_followers !== null || conversation.collected.max_followers !== null
-					? `${conversation.collected.min_followers ?? ''}-${conversation.collected.max_followers ?? ''}`
-					: undefined
-			},
-			missing: conversation.missing,
-			messages: conversation.messages,
-			followerRange: {
-				min: conversation.collected.min_followers,
-				max: conversation.collected.max_followers
-			}
-		};
+		const uiConversation = mapConversationToUi(conversation);
 
 		return apiOk({
 			campaignId: response.campaignId,

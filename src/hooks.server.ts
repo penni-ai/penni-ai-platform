@@ -6,6 +6,19 @@ import { createLogger } from '$lib/server/core';
 
 const SESSION_COOKIE_NAME = '__session';
 
+// Log Firestore configuration on server startup
+let firestoreStartupLogged = false;
+if (!firestoreStartupLogged) {
+	firestoreStartupLogged = true;
+	const firestoreProjectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || 'unknown';
+	const firestoreEmulatorHost = process.env.FIRESTORE_EMULATOR_HOST || 'none';
+	console.info('[SvelteKit] Firestore configuration', {
+		projectId: firestoreProjectId,
+		emulatorHost: firestoreEmulatorHost,
+		isEmulator: firestoreEmulatorHost !== 'none'
+	});
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
 	const requestId = randomUUID();
 	event.locals.requestId = requestId;

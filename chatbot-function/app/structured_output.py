@@ -1,22 +1,21 @@
-"""Pydantic models for structured output from the analyzer agent."""
+"""Pydantic models for the Agent's Tools."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-
-from pydantic import BaseModel, ConfigDict, Field
+from typing import List, Optional
+from pydantic import BaseModel, Field
 from pydantic.json_schema import GenerateJsonSchema
 
 
 class VertexAICompatibleJsonSchema(GenerateJsonSchema):
     """Custom JSON schema generator that removes null types for Vertex AI compatibility."""
     
-    def generate(self, schema: Any, mode: str = "validation") -> Dict[str, Any]:
+    def generate(self, schema, mode: str = "validation"):
         """Generate JSON schema and remove null types from anyOf."""
-        json_schema = super().generate(schema, mode=mode)
+        json_schema = super().generate(schema, mode)
         return self._remove_null_types(json_schema)
     
-    def _remove_null_types(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+    def _remove_null_types(self, schema):
         """Recursively remove null types from anyOf schemas."""
         if isinstance(schema, dict):
             # Process $defs first (definitions that may be referenced)
@@ -70,71 +69,30 @@ class VertexAICompatibleJsonSchema(GenerateJsonSchema):
         return schema
 
 
-class Guidance(BaseModel):
-    """Guidance for the speaker agent."""
-
-    ack: str = Field(description="One sentence summary to acknowledge captured information")
-    ask: str = Field(description="Question requesting exactly ONE missing field")
-
-
-class SlotUpdates(BaseModel):
-    """Slot updates extracted from the conversation."""
-
-    website: Optional[str] = Field(default=None, description="Business website URL")
-    business_name: Optional[str] = Field(default=None, description="Business name")
-    business_location: Optional[str] = Field(default=None, description="Business location")
-    influencer_location: Optional[str] = Field(default=None, description="Desired influencer location")
-    min_followers: Optional[int] = Field(default=None, description="Minimum follower count", ge=0)
-    max_followers: Optional[int] = Field(default=None, description="Maximum follower count", ge=0)
-    business_about: Optional[str] = Field(default=None, description="Business description/about")
-    platform: Optional[List[str]] = Field(default=None, description="Platform(s): must be one or both of 'tiktok' and/or 'instagram' (lowercase)")
-    type_of_influencer: Optional[str] = Field(default=None, description="Type of influencer (e.g., lifestyle, food, travel, fashion, tech, etc.)")
-    campaign_title: Optional[str] = Field(default=None, description="Campaign title (maximum 5 words)")
-
+class CampaignDetails(BaseModel):
+    """
+    Call this tool ONLY when you have collected ALL required information.
+    
+    INSTRUCTIONS:
+    - If the user says they don't have a website, set website to 'N/A'.
+    - If the user says 'remote', set business_location to 'Remote'.
+    - Infer campaign_title from the conversation context (e.g. 'Austin Coffee Launch').
+    """
+    
+    business_name: str = Field(description="Name of the business")
+    website: str = Field(description="Business website URL. Use 'N/A' if they don't have one.")
+    business_location: str = Field(description="City/Region of the business")
+    influencer_location: str = Field(description="City/Region where influencers should be based")
+    min_followers: int = Field(description="Minimum follower count (integer)")
+    max_followers: int = Field(description="Maximum follower count (integer)")
+    platform: List[str] = Field(description="List of platforms (e.g. ['instagram', 'tiktok'])")
+    type_of_influencer: str = Field(description="Niche (e.g. 'food', 'lifestyle', 'tech')")
+    campaign_title: str = Field(description="A short title for the campaign (max 5 words)")
+    business_about: Optional[str] = Field(default=None, description="Brief description of the business if mentioned")
+    
     @classmethod
     def model_json_schema(cls, **kwargs):
         """Generate JSON schema compatible with Vertex AI (removes null types)."""
-        # Get the base schema from parent class
         base_schema = super().model_json_schema(**kwargs)
-        # Remove null types using custom generator
         generator = VertexAICompatibleJsonSchema()
-        # The generator needs the core schema, so we'll process the base_schema directly
         return generator._remove_null_types(base_schema)
-
-
-class AnalyzerOutput(BaseModel):
-    """Structured output from the analyzer agent."""
-
-    slot_updates: SlotUpdates = Field(description="Updated slot values extracted from conversation")
-    missing_fields: List[str] = Field(description="List of required fields that are still missing")
-    guidance: Guidance = Field(description="Guidance for the speaker agent")
-
-    @classmethod
-    def model_json_schema(cls, **kwargs):
-        """Generate JSON schema compatible with Vertex AI (removes null types)."""
-        # Get the base schema from parent class
-        base_schema = super().model_json_schema(**kwargs)
-        # Remove null types using custom generator
-        generator = VertexAICompatibleJsonSchema()
-        # The generator needs the core schema, so we'll process the base_schema directly
-        return generator._remove_null_types(base_schema)
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "slot_updates": {
-                    "website": "https://example.com",
-                    "business_location": "Austin, TX",
-                    "influencer_location": "Los Angeles, CA",
-                    "min_followers": 25000,
-                    "max_followers": 250000,
-                },
-                "missing_fields": ["website"],
-                "guidance": {
-                    "ack": "Great! I've noted your location preferences.",
-                    "ask": "What's your business website?",
-                },
-            }
-        }
-    )
-

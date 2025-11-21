@@ -1,9 +1,0 @@
-node_modules
-lib
-.cache
-.firebase
-npm-debug.log*
-.idea
-.DS_Store
-.env.local
-.firebase-config.json

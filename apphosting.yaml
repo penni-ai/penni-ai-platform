@@ -140,3 +140,9 @@ env:
     value: https://penni-chatbot-function-szs2cmou6q-uc.a.run.app
     availability:
       - RUNTIME
+
+  # Pipeline service configuration
+  - variable: CLOUD_RUN_PIPELINE_SERVICE_URL
+    value: https://pipeline-service-szs2cmou6q-uc.a.run.app
+    availability:
+      - RUNTIME

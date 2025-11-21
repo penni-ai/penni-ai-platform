@@ -13,23 +13,19 @@
 	let { draft, disabled, show = true, onSubmit, onDraftChange }: Props = $props();
 	
 	let localDraft = $state(draft);
-	let lastDraft = $state(draft);
 	
 	// Sync from parent when draft prop changes
 	$effect(() => {
-		if (draft !== lastDraft) {
-			localDraft = draft;
-			lastDraft = draft;
-		}
+		localDraft = draft;
 	});
-	
-	// Notify parent when local draft changes (but avoid loops)
-	$effect(() => {
-		if (onDraftChange && localDraft !== lastDraft) {
-			lastDraft = localDraft;
+
+	function handleInput(e: Event) {
+		const target = e.target as HTMLInputElement;
+		localDraft = target.value;
+		if (onDraftChange) {
 			onDraftChange(localDraft);
 		}
-	});
+	}
 
 	function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
@@ -37,6 +33,9 @@
 		if (message && !disabled) {
 			onSubmit(message);
 			localDraft = '';
+			if (onDraftChange) {
+				onDraftChange('');
+			}
 		}
 	}
 </script>
@@ -48,7 +47,8 @@
 				type="text"
 				class="flex-1 rounded-full border border-gray-300 px-5 py-3 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10"
 				placeholder="Type your reply..."
-				bind:value={localDraft}
+				value={localDraft}
+				oninput={handleInput}
 				autocomplete="off"
 				disabled={disabled}
 			/>

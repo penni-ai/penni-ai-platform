@@ -94,32 +94,28 @@ export function getPlatformColor(platform: string | null | undefined): string {
 }
 
 /**
- * Calculate progress based on collected campaign data
- * Required fields: website, business_location, influencer_location, min_followers, max_followers, platform, type_of_influencer
- * Note: business_about is optional (implied field)
+ * Normalize platform to array format
  */
-export function calculateProgress(collected: CollectedData, followerRange: FollowerRange): number {
-	const requiredFields = ['website', 'business_location', 'influencer_location', 'platform', 'type_of_influencer', 'followers'];
-	let collectedCount = 0;
-	
-	// Check website - collected if not null (including "N/A")
-	if (collected.website !== null && collected.website !== undefined) collectedCount++;
-	
-	// Check business_location - collected if not null (including "N/A")
-	if (collected.business_location !== null && collected.business_location !== undefined) collectedCount++;
-	
-	// Check influencer_location - collected if not null
-	if (collected.locations !== null && collected.locations !== undefined) collectedCount++;
-	
-	// Check platform - collected if not null
-	if (collected.platform !== null && collected.platform !== undefined) collectedCount++;
-	
-	// Check type_of_influencer - collected if not null
-	if (collected.type_of_influencer !== null && collected.type_of_influencer !== undefined) collectedCount++;
-	
-	// Check followers - both min and max must be collected
-	if (followerRange.min !== null && followerRange.max !== null) collectedCount++;
-	
-	return Math.round((collectedCount / requiredFields.length) * 100);
+export function normalizePlatforms(platform: string | string[] | null | undefined): string[] {
+	if (!platform) return [];
+	if (Array.isArray(platform)) {
+		return platform.filter(p => p && typeof p === 'string');
+	}
+	if (typeof platform === 'string') {
+		return [platform];
+	}
+	return [];
+}
+
+/**
+ * Get platform logos for multiple platforms
+ */
+export function getPlatformLogos(platforms: string | string[] | null | undefined): Array<{ platform: string; logo: string; color: string }> {
+	const normalized = normalizePlatforms(platforms);
+	return normalized.map(platform => ({
+		platform,
+		logo: getPlatformLogo(platform),
+		color: getPlatformColor(platform)
+	}));
 }
 

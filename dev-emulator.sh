@@ -16,6 +16,28 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}Starting local development environment...${NC}"
 echo ""
 
+# Function to kill processes on specific ports
+kill_port() {
+    local port=$1
+    local pids=$(lsof -ti:$port 2>/dev/null)
+    if [ -n "$pids" ]; then
+        echo -e "${YELLOW}Killing process on port $port...${NC}"
+        echo "$pids" | xargs kill -9 2>/dev/null || true
+        sleep 1
+    fi
+}
+
+# Kill processes on all emulator ports before starting
+echo -e "${BLUE}Cleaning up ports...${NC}"
+kill_port 5002  # Svelte App (App Hosting)
+kill_port 6200  # Firebase Functions
+kill_port 6201  # Firestore Emulator
+kill_port 6202  # Emulator UI
+kill_port 9100  # Auth Emulator
+kill_port 8080  # Chatbot Function
+kill_port 8081  # Pipeline Service
+echo ""
+
 # Check if Firebase CLI is installed
 if ! command -v firebase &> /dev/null; then
     echo -e "${RED}Error: Firebase CLI not found. Install with: npm install -g firebase-tools${NC}"
@@ -49,12 +71,20 @@ fi
 cleanup() {
     echo ""
     echo -e "${BLUE}Shutting down...${NC}"
+    # Stop Docker container if running
+    if [ -n "${PIPELINE_CONTAINER:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${PIPELINE_CONTAINER}$"; then
+        echo -e "${BLUE}Stopping pipeline service container...${NC}"
+        docker stop "$PIPELINE_CONTAINER" > /dev/null 2>&1 || true
+    fi
     # Kill all background jobs
     jobs -p | xargs -r kill 2>/dev/null || true
     exit 0
 }
 
 trap cleanup SIGINT SIGTERM EXIT
+
+# Initialize variables
+PIPELINE_CONTAINER=""
 
 # Start Firebase emulator in background (including apphosting for Svelte app)
 echo -e "${GREEN}Starting Firebase emulator...${NC}"
@@ -105,6 +135,78 @@ if ! kill -0 $CHATBOT_PID 2>/dev/null; then
     exit 1
 fi
 
+# Start pipeline service in Docker
+echo -e "${GREEN}Starting pipeline service in Docker (port 8081)...${NC}"
+PIPELINE_DIR="$ROOT_DIR/services/pipeline-service"
+
+# Check if Docker is installed
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}Error: Docker not found. Install Docker to run pipeline service.${NC}"
+    echo -e "${YELLOW}Continuing without pipeline service...${NC}"
+    PIPELINE_CONTAINER=""
+else
+    cd "$PIPELINE_DIR"
+    
+    # Stop and remove existing container if it exists
+    if docker ps -a --format '{{.Names}}' | grep -q "^pipeline-service$"; then
+        echo -e "${BLUE}Stopping existing pipeline-service container...${NC}"
+        docker stop pipeline-service > /dev/null 2>&1 || true
+        docker rm pipeline-service > /dev/null 2>&1 || true
+    fi
+    
+    # Build Docker image
+    echo -e "${BLUE}Building pipeline service Docker image...${NC}"
+    docker build -t pipeline-service:local . > /tmp/pipeline-service-build.log 2>&1
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: Failed to build pipeline service Docker image. Check /tmp/pipeline-service-build.log${NC}"
+        echo -e "${YELLOW}Continuing without pipeline service...${NC}"
+        PIPELINE_CONTAINER=""
+    else
+        # Check if .env file exists
+        ENV_FILE_FLAG=""
+        if [ -f ".env" ]; then
+            ENV_FILE_FLAG="--env-file .env"
+        else
+            echo -e "${YELLOW}Warning: .env file not found in pipeline-service directory. Some environment variables may be missing.${NC}"
+        fi
+        
+        # Start container with emulator configuration
+        # Use --env-file to load all variables from .env if it exists, then override with -e for emulator-specific settings
+        echo -e "${BLUE}Starting pipeline service container...${NC}"
+        docker run -d \
+            --name pipeline-service \
+            --rm \
+            -p 8081:8080 \
+            $ENV_FILE_FLAG \
+            -e PORT=8080 \
+            -e NODE_ENV=development \
+            -e FIRESTORE_EMULATOR_HOST="host.docker.internal:6201" \
+            -e FIREBASE_AUTH_EMULATOR_HOST="host.docker.internal:9100" \
+            -e GOOGLE_CLOUD_PROJECT="penni-ai-platform" \
+            -e FIREBASE_PROJECT_ID="penni-ai-platform" \
+            --add-host=host.docker.internal:host-gateway \
+            pipeline-service:local > /tmp/pipeline-service.log 2>&1
+        
+        if [ $? -eq 0 ]; then
+            PIPELINE_CONTAINER="pipeline-service"
+            echo -e "${GREEN}Pipeline service container started${NC}"
+            
+            # Wait a moment for service to start
+            sleep 3
+            
+            # Check if container is running
+            if ! docker ps --format '{{.Names}}' | grep -q "^pipeline-service$"; then
+                echo -e "${RED}Error: Pipeline service container failed to start. Check logs: docker logs pipeline-service${NC}"
+                PIPELINE_CONTAINER=""
+            fi
+        else
+            echo -e "${RED}Error: Failed to start pipeline service container. Check /tmp/pipeline-service.log${NC}"
+            PIPELINE_CONTAINER=""
+        fi
+    fi
+fi
+
 # Start Stripe webhook listener if available
 STRIPE_PID=""
 if [ "$STRIPE_AVAILABLE" = true ]; then
@@ -129,6 +231,9 @@ echo "  - Firebase Functions: http://localhost:6200"
 echo "  - Firestore Emulator: http://localhost:6201"
 echo "  - Auth Emulator: http://localhost:9100"
 echo "  - Chatbot Function: http://localhost:8080"
+if [ -n "${PIPELINE_CONTAINER:-}" ]; then
+    echo "  - Pipeline Service (Docker): http://localhost:8081"
+fi
 if [ -n "$STRIPE_PID" ]; then
     echo "  - Stripe Webhook Listener: forwarding to http://localhost:5002/api/public/billing/webhook"
 fi
@@ -137,6 +242,9 @@ echo ""
 echo "Logs:"
 echo "  - Firebase emulator: /tmp/firebase-emulator.log"
 echo "  - Chatbot function: /tmp/chatbot-function.log"
+if [ -n "${PIPELINE_CONTAINER:-}" ]; then
+    echo "  - Pipeline service (Docker): docker logs -f pipeline-service"
+fi
 if [ -n "$STRIPE_PID" ]; then
     echo "  - Stripe webhook: /tmp/stripe-webhook.log"
 fi

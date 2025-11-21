@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { getSearchUsage, incrementSearchUsage } from '$lib/server/usage';
-import { getFunctionsConfig, getServiceAccountAccessToken } from '$lib/server/firebase';
+import { getServiceAccountAccessToken, getCloudRunPipelineUrl } from '$lib/server/firebase';
 import { campaignDocRef, serverTimestamp, firestore } from '$lib/server/core';
 
 const PIPELINE_BIND_RETRY_DELAYS_MS = [0, 100, 500, 1000];
@@ -39,7 +39,14 @@ async function bindCampaignPipelineId(options: {
 					if (existingPipelineId === pipelineId) {
 						return { status: 'noop_same' as const };
 					}
-					return { status: 'noop_other' as const, existingPipelineId };
+					// If there's an existing pipeline_id but it's different, update it
+					// This handles rerunning pipelines - the new pipeline_id should replace the old one
+					tx.set(
+						campaignRef,
+						{ pipeline_id: pipelineId, updatedAt: serverTimestamp() },
+						{ merge: true }
+					);
+					return { status: 'updated' as const, existingPipelineId };
 				}
 				tx.set(
 					campaignRef,
@@ -91,8 +98,6 @@ async function bindCampaignPipelineId(options: {
 	const elapsed = Date.now() - startedAt;
 	return { status: 'failed' as const, attempts: PIPELINE_BIND_RETRY_DELAYS_MS.length, campaign_binding_ms: elapsed };
 }
-
-const INFLUENCER_ANALYSIS_FUNCTION_NAME = 'pipelineInfluencerAnalysis';
 
 export const POST = handleApiRoute(async (event) => {
 	assertSameOrigin(event);
@@ -220,11 +225,16 @@ export const POST = handleApiRoute(async (event) => {
 			});
 		}
 		
-		// Call the cloud function
+		// Use Cloud Run pipeline service
 		// Note: Using service account authentication (no user ID token needed)
 		// User is already verified in hooks.server.ts via session cookie
-		const config = getFunctionsConfig();
-		const functionUrl = `${config.FUNCTION_BASE}/${INFLUENCER_ANALYSIS_FUNCTION_NAME}`;
+		const cloudRunBaseUrl = getCloudRunPipelineUrl();
+		const serviceUrl = `${cloudRunBaseUrl}/pipeline/start`;
+		
+		logger?.info('Calling Cloud Run pipeline service', {
+			serviceUrl,
+			request_id: requestId
+		});
 		
 		const requestBody: Record<string, unknown> = {
 			business_description: business_description.trim(),
@@ -243,9 +253,9 @@ export const POST = handleApiRoute(async (event) => {
 			requestBody.campaign_id = campaignId;
 		}
 		
-		logger?.info('Calling influencer analysis function', {
+		logger?.info('Calling Cloud Run pipeline service', {
 			userId: user.uid,
-			functionUrl,
+			serviceUrl,
 			topN,
 			minFollowers,
 			maxFollowers,
@@ -255,12 +265,12 @@ export const POST = handleApiRoute(async (event) => {
 		
 		let functionResponse: Response;
 		try {
-			// Get per-audience ID token for Cloud Run authentication (required for private invokers)
-			const idToken = await getServiceAccountAccessToken(functionUrl);
+			// Get service account ID token for Cloud Run authentication (required for private invokers)
+			const idToken = await getServiceAccountAccessToken(serviceUrl);
 			
-			// Call Cloud Function with service account token
+			// Call Cloud Run pipeline service with service account token
 			// User ID is passed in request body (already verified by App Hosting)
-			functionResponse = await fetch(functionUrl, {
+			functionResponse = await fetch(serviceUrl, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -269,20 +279,20 @@ export const POST = handleApiRoute(async (event) => {
 				body: JSON.stringify(requestBody)
 			});
 		} catch (error) {
-			logger?.error('Failed to call Cloud Function', {
+			logger?.error('Failed to call Cloud Run pipeline service', {
 				userId: user.uid,
-				functionUrl,
+				serviceUrl,
 				error: error instanceof Error ? error.message : String(error),
 				errorName: error instanceof Error ? error.name : undefined,
 				request_id: requestId
 			});
 			throw new ApiProblem({
 				status: 500,
-				code: 'FUNCTION_CALL_FAILED',
-				message: 'Failed to reach Cloud Function. The service may be temporarily unavailable.',
+				code: 'PIPELINE_SERVICE_FAILED',
+				message: 'Failed to reach pipeline service. The service may be temporarily unavailable.',
 				cause: error,
 				details: { 
-					functionUrl,
+					serviceUrl,
 					request_id: requestId 
 				}
 			});
@@ -303,7 +313,7 @@ export const POST = handleApiRoute(async (event) => {
 				: requestId;
 
 		if (!functionResponse.ok) {
-			logger?.error('Cloud function call failed', {
+			logger?.error('Cloud Run pipeline service call failed', {
 				status: functionResponse.status,
 				error: functionResult,
 				request_id: functionRequestId
@@ -311,7 +321,7 @@ export const POST = handleApiRoute(async (event) => {
 			const errorCode =
 				typeof functionResult?.error === 'string'
 					? (functionResult.error as string)
-					: 'FUNCTION_ERROR';
+					: 'PIPELINE_ERROR';
 			const message =
 				typeof functionResult?.message === 'string'
 					? (functionResult.message as string)
@@ -321,7 +331,7 @@ export const POST = handleApiRoute(async (event) => {
 				code: errorCode,
 				message,
 				details: {
-					function_response: functionResult,
+					pipeline_response: functionResult,
 					request_id: functionRequestId
 				}
 			});
@@ -340,6 +350,7 @@ export const POST = handleApiRoute(async (event) => {
 		}
 		
 		// Save pipeline ID to campaign if campaign_id is provided (non-critical - don't fail if this fails)
+		let campaignBindingStatus: { status: string; existingPipelineId?: string; error?: string } | null = null;
 		if (campaignId && pipelineId) {
 			try {
 				const result = await bindCampaignPipelineId({
@@ -349,6 +360,12 @@ export const POST = handleApiRoute(async (event) => {
 					logger: pipelineLogger,
 					requestId: functionRequestId
 				});
+				campaignBindingStatus = {
+					status: result.status,
+					existingPipelineId: result.existingPipelineId,
+					error: result.error
+				};
+				
 				if (result.status === 'missing_campaign') {
 					logger?.warn('Campaign document missing while binding pipeline ID', {
 						userId: user.uid,
@@ -376,9 +393,20 @@ export const POST = handleApiRoute(async (event) => {
 						existingPipelineId: result.existingPipelineId,
 						request_id: functionRequestId
 					});
+				} else if (result.status === 'updated') {
+					logger?.info('Campaign pipeline binding successful', {
+						userId: user.uid,
+						campaignId,
+						pipelineId,
+						request_id: functionRequestId
+					});
 				}
 			} catch (error) {
 				// Log but don't fail the request - campaign binding is non-critical
+				campaignBindingStatus = {
+					status: 'failed',
+					error: error instanceof Error ? error.message : String(error)
+				};
 				logger?.warn('Campaign pipeline binding failed (non-critical)', {
 					userId: user.uid,
 					campaignId,
@@ -432,6 +460,8 @@ export const POST = handleApiRoute(async (event) => {
 				profiles_storage_url: null,
 				pipeline_stats: null,
 				request_id: functionRequestId,
+				campaign_binding_status: campaignBindingStatus?.status || null,
+				existingPipelineId: campaignBindingStatus?.existingPipelineId || null,
 				usage: {
 					count: usage.count + topN,
 					limit: usage.limit,
@@ -449,6 +479,8 @@ export const POST = handleApiRoute(async (event) => {
 			profiles_storage_url: functionResult.profiles_storage_url,
 			pipeline_stats: functionResult.pipeline_stats,
 			request_id: functionRequestId,
+			campaign_binding_status: campaignBindingStatus?.status || null,
+			existingPipelineId: campaignBindingStatus?.existingPipelineId || null,
 			usage: {
 				count: usage.count + topN,
 				limit: usage.limit,

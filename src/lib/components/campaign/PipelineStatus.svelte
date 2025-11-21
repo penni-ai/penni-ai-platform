@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PipelineStatus as PipelineStatusType } from '$lib/types/campaign';
+	import QuerySearchAnimation from './QuerySearchAnimation.svelte';
 
 	interface Props {
 		status: PipelineStatusType;
@@ -67,6 +68,20 @@
 					></div>
 				</div>
 			</div>
+			
+			<!-- Query Search Animation -->
+			{#if status.status === 'running' && status.stages.query_expansion?.queries && status.stages.query_expansion.queries.length > 0}
+				{@const isQueryExpansionRunning = status.stages.query_expansion?.status === 'running'}
+				{@const isWeaviateSearchRunning = status.stages.weaviate_search?.status === 'running'}
+				{@const shouldShowQueries = isQueryExpansionRunning || isWeaviateSearchRunning || status.stages.query_expansion?.status === 'completed'}
+				{#if shouldShowQueries}
+					<QuerySearchAnimation
+						queries={status.stages.query_expansion.queries}
+						stage={isWeaviateSearchRunning ? 'weaviate_search' : 'query_expansion'}
+						isRunning={shouldShowQueries}
+					/>
+				{/if}
+			{/if}
 			
 			<!-- Stage Status -->
 			<div class="grid grid-cols-2 gap-4 text-sm">

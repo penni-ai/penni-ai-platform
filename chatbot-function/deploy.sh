@@ -109,11 +109,40 @@ gcloud functions deploy "$FUNCTION_NAME" \
   --source="$SCRIPT_DIR" \
   --entry-point=chatbot \
   --trigger-http \
+  --no-allow-unauthenticated \
   --set-env-vars "$ENV_VARS_STRING" \
   --memory="$MEMORY" \
   --timeout="$TIMEOUT" \
   --max-instances="$MAX_INSTANCES" \
   --min-instances="$MIN_INSTANCES"
+
+echo ""
+echo "Granting IAM permissions..."
+
+# Get project number for compute service account
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+COMPUTE_SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+APP_HOSTING_SERVICE_ACCOUNT="firebase-app-hosting-compute@${PROJECT_ID}.iam.gserviceaccount.com"
+
+# Grant App Hosting service account permission to invoke the function
+echo "Granting App Hosting service account permission to invoke function..."
+gcloud run services add-iam-policy-binding "$FUNCTION_NAME" \
+  --region="$REGION" \
+  --member="serviceAccount:${APP_HOSTING_SERVICE_ACCOUNT}" \
+  --role="roles/run.invoker" \
+  --project="$PROJECT_ID" 2>/dev/null || echo "Note: App Hosting IAM policy may already be set"
+
+# Grant compute service account permission to invoke the function (for other services)
+echo "Granting compute service account permission to invoke function..."
+gcloud run services add-iam-policy-binding "$FUNCTION_NAME" \
+  --region="$REGION" \
+  --member="serviceAccount:${COMPUTE_SERVICE_ACCOUNT}" \
+  --role="roles/run.invoker" \
+  --project="$PROJECT_ID" 2>/dev/null || echo "Note: Compute IAM policy may already be set"
+
+# Note: We don't allow unauthenticated access due to organization policy restrictions
+# The App Hosting service account has been granted run.invoker permission, which is sufficient
+# The function validates Firebase tokens internally for user authentication
 
 echo ""
 echo "Deployment complete!"

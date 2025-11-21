@@ -39,7 +39,7 @@ function parseFirebaseEnvConfig(): FirebaseEnvConfig {
 const firebaseEnvConfig = parseFirebaseEnvConfig();
 const resolvedProjectId =
 	process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || firebaseEnvConfig.projectId;
-const fallbackBucket = resolvedProjectId ? `${resolvedProjectId}.appspot.com` : 'penni-ai-platform.firebasestorage.app';
+const fallbackBucket = resolvedProjectId ? `${resolvedProjectId}.firebasestorage.app` : 'penni-ai-platform.firebasestorage.app';
 const resolvedStorageBucket =
 	process.env.STORAGE_BUCKET ||
 	process.env.FIREBASE_STORAGE_BUCKET ||

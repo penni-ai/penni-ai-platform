@@ -46,6 +46,10 @@ env:
     value: penni-ai-platform
     availability:
       - RUNTIME
+  - variable: GOOGLE_CLOUD_PROJECT
+    value: penni-ai-platform
+    availability:
+      - RUNTIME
 
   # Site configuration.
   - variable: PUBLIC_SITE_URL
@@ -129,6 +133,13 @@ env:
   # Chatbot service configuration (local development)
   - variable: CHATBOT_SERVICE_URL
     value: http://localhost:8080
+    availability:
+      - RUNTIME
+
+  # Pipeline service configuration (local development)
+  # Note: Pipeline service runs on port 8081, chatbot function runs on port 8080
+  - variable: CLOUD_RUN_PIPELINE_SERVICE_URL
+    value: http://localhost:8081
     availability:
       - RUNTIME
 

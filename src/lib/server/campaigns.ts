@@ -25,7 +25,7 @@ export type SerializedCampaign = {
 	// Detailed fields for info panel
 	status?: 'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error';
 	collected?: Record<string, string | undefined>;
-	missing?: string[];
+	slot_collection?: Record<string, 'not_collected' | 'explicitly_asked' | 'explicitly_confirmed_after_infer' | 'inferred'>;
 	fieldStatus?: {
 		website?: 'not_collected' | 'collected' | 'confirmed';
 		business_name?: 'not_collected' | 'collected' | 'confirmed';
@@ -124,7 +124,7 @@ export async function serializeCampaignRecord(
 		// Include detailed fields
 		status: typeof data.status === 'string' ? data.status as SerializedCampaign['status'] : undefined,
 		collected: Object.keys(collected).length > 0 ? collected : undefined,
-		missing: Array.isArray(data.missing) ? data.missing.filter((m): m is string => typeof m === 'string') : undefined,
+		slot_collection: data.slot_collection && typeof data.slot_collection === 'object' ? data.slot_collection as Record<string, 'not_collected' | 'explicitly_asked' | 'explicitly_confirmed_after_infer' | 'inferred'> : undefined,
 		fieldStatus: collectedData?.fieldStatus,
 		search: data.search && typeof data.search === 'object' ? {
 			status: typeof (data.search as any).status === 'string' ? (data.search as any).status : 'idle',

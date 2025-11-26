@@ -1,0 +1,29 @@
+services:
+  pipeline-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pipeline-service
+    ports:
+      - "8085:8080"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      # Use Application Default Credentials (mounted from host)
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/.config/gcloud/application_default_credentials.json
+      # Storage emulator (use host.docker.internal to access host's emulator)
+      - STORAGE_EMULATOR_HOST=host.docker.internal:9199
+      - FIREBASE_STORAGE_EMULATOR_HOST=host.docker.internal:9199
+    volumes:
+      # Mount gcloud config directory for Application Default Credentials
+      - ~/.config/gcloud:/app/.config/gcloud:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+

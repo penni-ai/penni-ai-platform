@@ -1,0 +1,41 @@
+{
+  "name": "@penny-platform/pipeline-service",
+  "version": "1.0.0",
+  "description": "Cloud Run service for Penny Platform search pipeline",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "ts-node --esm src/index.ts",
+    "dev:watch": "ts-node --esm --watch src/index.ts"
+  },
+  "keywords": [
+    "cloud-run",
+    "pipeline",
+    "typescript"
+  ],
+  "author": "Penny Platform",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "firebase-admin": "^13.6.0",
+    "google-auth-library": "^10.5.0",
+    "axios": "^1.13.2",
+    "zod": "^4.1.12",
+    "openai": "^6.8.1",
+    "weaviate-client": "^3.9.0",
+    "deepinfra": "^2.0.2",
+    "@google-cloud/pubsub": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@types/node": "^24.10.1",
+    "@types/express": "^4.17.21",
+    "ts-node": "^10.9.2"
+  }
+}
+

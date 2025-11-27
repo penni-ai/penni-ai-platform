@@ -20,6 +20,8 @@ const pipelineStartSchema = z.object({
   campaign_id: z.string().optional(),
   uid: z.string().min(10).max(128, 'uid must be between 10 and 128 characters'),
   request_id: z.string().uuid().optional(),
+  // Profile URLs to exclude from search results (for "find more influencers" functionality)
+  exclude_profile_urls: z.array(z.string()).optional(),
 });
 
 type PipelineStartRequest = z.infer<typeof pipelineStartSchema>;
@@ -181,6 +183,7 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
       max_followers: data.max_followers,
       platform: data.platform,
       request_id: requestId,
+      exclude_profile_urls: data.exclude_profile_urls, // Pass through for "find more" functionality
     };
 
     // Check if we're in emulator mode (Pub/Sub not available)

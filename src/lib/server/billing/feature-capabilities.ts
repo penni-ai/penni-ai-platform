@@ -13,6 +13,18 @@ import type { PlanKey } from './stripe';
  * Get user's feature capabilities from Firestore
  * Returns null if user document doesn't exist or capabilities aren't set
  */
+function normalizeFreeCapabilities(cap: FeatureCapabilities): FeatureCapabilities {
+	if (cap.planKey !== 'free') return cap;
+	// Enforce new free defaults
+	return {
+		...cap,
+		outreach: true,
+		connectedInboxes: Math.max(cap.connectedInboxes, 1),
+		influencerSearchResults: 10,
+		monthlyOutreachEmails: 10
+	};
+}
+
 export async function getUserFeatureCapabilities(uid: string): Promise<FeatureCapabilities | null> {
 	const userDoc = await userDocRef(uid).get();
 	const userData = userDoc.data();
@@ -23,12 +35,13 @@ export async function getUserFeatureCapabilities(uid: string): Promise<FeatureCa
 	
 	// Check if feature_capabilities exists
 	if (userData.feature_capabilities) {
-		return userData.feature_capabilities as FeatureCapabilities;
+		const cap = userData.feature_capabilities as FeatureCapabilities;
+		return normalizeFreeCapabilities(cap);
 	}
 	
 	// Fallback: build from current plan if available
 	const planKey = (userData.currentPlan as { planKey?: PlanKey | null } | undefined)?.planKey ?? null;
-	return buildFeatureCapabilities(planKey);
+	return normalizeFreeCapabilities(buildFeatureCapabilities(planKey));
 }
 
 /**
@@ -111,7 +124,7 @@ export async function ensureFeatureCapabilities(uid: string): Promise<void> {
 		
 		// Set feature_capabilities if missing
 		if (needsCapabilitiesUpdate) {
-			update.feature_capabilities = buildFeatureCapabilities(planKey);
+			update.feature_capabilities = normalizeFreeCapabilities(buildFeatureCapabilities(planKey));
 		}
 		
 		// Set usage if missing
@@ -164,7 +177,12 @@ export async function getFeatureLimits(uid: string): Promise<{
 } | null> {
 	const capabilities = await getUserFeatureCapabilities(uid);
 	if (!capabilities) {
-		return null;
+		return {
+			influencerSearchResults: 10,
+			maxActiveCampaigns: 1,
+			monthlyOutreachEmails: 10,
+			connectedInboxes: 1
+		};
 	}
 	
 	return {
@@ -174,4 +192,3 @@ export async function getFeatureLimits(uid: string): Promise<{
 		connectedInboxes: capabilities.connectedInboxes
 	};
 }
-

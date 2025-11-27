@@ -36,7 +36,6 @@ class CollectedData(BaseModel):
     
     website: Optional[str] = None
     business_name: Optional[str] = None
-    business_location: Optional[str] = None
     min_followers: Optional[int] = None
     max_followers: Optional[int] = None
     influencer_location: Optional[str] = None

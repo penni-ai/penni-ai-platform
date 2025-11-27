@@ -27,8 +27,8 @@
 		open, 
 		onClose, 
 		returnUrl,
-		title = "Upgrade to Send Outreach",
-		description = "Outreach capabilities are not available on the free plan. Choose a plan below to start sending outreach messages."
+		title = "Upgrade to send more outreach",
+		description = "Free includes 10 outreach emails. Upgrade to unlock higher limits and more inboxes."
 	}: Props = $props();
 
 	const paidPlans: Plan[] = [
@@ -238,4 +238,3 @@
 		</div>
 	</div>
 {/if}
-

@@ -3,13 +3,14 @@
 
 	export let open = false;
 	export let onClose: () => void;
-	export let title = 'Send Outreach';
-	export let subtitle = '';
-	export let stateRestored = false;
-	export let isSaving = false;
-	export let isSavingDebounced = false;
-	export let saveSuccess = false;
-	export let showHeader = true;
+export let title = 'Send Outreach';
+export let subtitle = '';
+export let stateRestored = false;
+export let isSaving = false;
+export let isSavingDebounced = false;
+export let saveSuccess = false;
+export let showHeader = true;
+export let size: 'default' | 'compact' = 'default';
 </script>
 
 {#if open}
@@ -23,7 +24,9 @@
 		transition:fade={{ duration: 200 }}
 	>
 		<div
-			class="relative h-full w-full bg-white shadow-2xl rounded-2xl overflow-hidden flex flex-col"
+			class={`relative bg-white shadow-2xl rounded-2xl overflow-hidden flex flex-col ${
+				size === 'compact' ? 'max-w-xl w-full max-h-[85vh]' : 'h-full w-full'
+			}`}
 			on:click|stopPropagation
 			on:keydown={(event) => event.key === 'Escape' && onClose()}
 			role="dialog"

@@ -13,8 +13,8 @@ export function getSearchLimit(planKey: string | null | undefined): number {
 	if (planKey === 'event') {
 		return 5000; // Event plan: 5000 searches (one-time)
 	}
-	// Free plan (or no plan): 30 searches/month
-	return 30;
+	// Free plan (or no plan): 10 searches/month
+	return 10;
 }
 
 /**
@@ -101,9 +101,10 @@ export async function incrementSearchUsage(uid: string, amount: number = 1): Pro
 			usage.influencersFound.updatedAt = now;
 		}
 		
-		tx.update(userRef, {
-			usage,
-				updatedAt: now
-			});
+		if (userDoc.exists) {
+			tx.update(userRef, { usage, updatedAt: now });
+		} else {
+			tx.set(userRef, { usage, updatedAt: now }, { merge: true });
+		}
 	});
 }

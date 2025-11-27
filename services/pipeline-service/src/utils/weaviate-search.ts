@@ -210,6 +210,7 @@ export const HYBRID_TARGET_VECTOR: MultiTargetVectorJoin<any> = {
 /**
  * Perform a single hybrid search on Weaviate
  * @param embeddingMap Optional map of query -> embedding for batch optimization
+ * @param excludeProfileUrls Optional array of profile URLs to exclude from results
  */
 export async function performSingleHybridSearch(
   query: string,
@@ -218,7 +219,8 @@ export async function performSingleHybridSearch(
   minFollowers?: number | null,
   maxFollowers?: number | null,
   platform?: string | null,
-  embeddingMap?: Map<string, number[]>
+  embeddingMap?: Map<string, number[]>,
+  excludeProfileUrls?: string[] | null
 ): Promise<WeaviateHybridSearchResponse> {
   const client = await getWeaviateClientInstance();
   const collectionName = getWeaviateCollectionName();
@@ -234,7 +236,7 @@ export async function performSingleHybridSearch(
   // Get the collection
   const collection = client.collections.get(collectionName);
   
-  // Build where filter for follower count and platform if provided
+  // Build where filter for follower count, platform, and exclusions
   let whereFilter: any = undefined;
   const conditions: any[] = [];
   
@@ -260,6 +262,14 @@ export async function performSingleHybridSearch(
     });
   }
   
+  // Exclude previously found profiles by profile_url
+  // Weaviate supports ContainsAny for arrays but for text fields we need to use multiple NotEqual conditions
+  // However, for large exclusion lists, we'll filter post-query to avoid performance issues
+  // Weaviate v4 supports "NotEqual" with ContainsAny for text fields via a workaround
+  // For now, we increase the limit and filter client-side for better reliability
+  const hasExclusions = excludeProfileUrls && excludeProfileUrls.length > 0;
+  const adjustedLimit = hasExclusions ? limit + excludeProfileUrls.length : limit;
+  
   // Combine conditions with AND if multiple conditions exist
   if (conditions.length === 1) {
     whereFilter = conditions[0];
@@ -276,7 +286,7 @@ export async function performSingleHybridSearch(
   const hybridQueryOptions: any = {
     vector: { vector: embedding },
     alpha: alpha,
-    limit: limit,
+    limit: adjustedLimit, // Use adjusted limit to account for exclusions
     targetVector: HYBRID_TARGET_VECTOR,
     queryProperties: ['biography', 'profile_text', 'post_text', 'hashtag_text'],
     returnMetadata: ['score', 'distance'],
@@ -288,7 +298,19 @@ export async function performSingleHybridSearch(
   }
   
   const result = await collection.query.hybrid(query, hybridQueryOptions);
-  const objects = result.objects || [];
+  let objects = result.objects || [];
+  
+  // Filter out excluded profile URLs client-side
+  // This is more reliable than complex Weaviate filters for large exclusion lists
+  if (hasExclusions) {
+    const excludeSet = new Set(excludeProfileUrls!.map(url => url.toLowerCase()));
+    objects = objects.filter((item: any) => {
+      const profileUrl = item.properties?.profile_url;
+      return !profileUrl || !excludeSet.has(profileUrl.toLowerCase());
+    });
+    // Trim to original limit after filtering
+    objects = objects.slice(0, limit);
+  }
   
   return {
     query,
@@ -351,6 +373,7 @@ export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve
 
 /**
  * Perform parallel hybrid searches with batching
+ * @param excludeProfileUrls Optional array of profile URLs to exclude from results (for "find more" functionality)
  */
 export async function performParallelHybridSearches(
   keywords: string[],
@@ -360,7 +383,8 @@ export async function performParallelHybridSearches(
   maxFollowers?: number | null,
   platform?: string | null,
   timingTracker?: import('./timing-tracker.js').PipelineTimingTracker,
-  onProgressUpdate?: (stage: 'embedding_generation' | 'searches_complete') => Promise<void>
+  onProgressUpdate?: (stage: 'embedding_generation' | 'searches_complete') => Promise<void>,
+  excludeProfileUrls?: string[] | null
 ): Promise<{
   allSearchResults: WeaviateHybridSearchResponse[];
   deduplicatedResults: any[];
@@ -420,7 +444,7 @@ export async function performParallelHybridSearches(
     
     // Create search promises for this batch
     const batchPromises = batch.map(({ keyword, alpha }) => {
-      return performSingleHybridSearch(keyword, alpha, limit, minFollowers, maxFollowers, platform, embeddingMap)
+      return performSingleHybridSearch(keyword, alpha, limit, minFollowers, maxFollowers, platform, embeddingMap, excludeProfileUrls)
         .then((result) => {
           return { success: true, keyword, alpha, result };
         })

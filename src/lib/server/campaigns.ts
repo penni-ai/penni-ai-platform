@@ -13,7 +13,6 @@ export type SerializedCampaign = {
 	type_of_influencer: string | null;
 	locations: string | null;
 	followers: string | null;
-	business_location: string | null;
 	platform: string | null;
 	followersMin: number | null;
 	followersMax: number | null;
@@ -29,7 +28,6 @@ export type SerializedCampaign = {
 	fieldStatus?: {
 		website?: 'not_collected' | 'collected' | 'confirmed';
 		business_name?: 'not_collected' | 'collected' | 'confirmed';
-		business_location?: 'not_collected' | 'collected' | 'confirmed';
 		business_about?: 'not_collected' | 'collected' | 'confirmed';
 		influencer_location?: 'not_collected' | 'collected' | 'confirmed';
 		min_followers?: 'not_collected' | 'collected' | 'confirmed';
@@ -88,7 +86,6 @@ export async function serializeCampaignRecord(
 	const typeOfInfluencer = collectedData?.type_of_influencer ?? null;
 	const website = collectedData?.website ?? null;
 	const businessName = collectedData?.business_name ?? null;
-	const businessLocation = collectedData?.business_location ?? null;
 	const locations = collectedData?.influencer_location ?? null;
 	const platform = collectedData?.platform ?? null;
 	const followersMin = collectedData?.min_followers ?? null;
@@ -99,7 +96,6 @@ export async function serializeCampaignRecord(
 	const collected: Record<string, string | undefined> = {};
 	if (collectedData?.website) collected.website = collectedData.website;
 	if (collectedData?.business_name) collected.business_name = collectedData.business_name;
-	if (collectedData?.business_location) collected.business_location = collectedData.business_location;
 	if (collectedData?.influencer_location) collected.locations = collectedData.influencer_location;
 	if (collectedData?.platform) collected.platform = collectedData.platform;
 	if (collectedData?.type_of_influencer) collected.type_of_influencer = collectedData.type_of_influencer;
@@ -114,7 +110,6 @@ export async function serializeCampaignRecord(
 		type_of_influencer: typeOfInfluencer,
 		locations,
 		followers: null, // No longer stored as text, use followersMin/followersMax
-		business_location: businessLocation,
 		platform,
 		followersMin,
 		followersMax,
@@ -168,7 +163,6 @@ export async function createCampaign(uid: string, logger?: Logger): Promise<stri
 	await collectedRef.set({
 		website: null,
 		business_name: null,
-		business_location: null,
 		business_about: null,
 		influencer_location: null,
 		platform: null,

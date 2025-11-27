@@ -52,9 +52,9 @@ import { fly } from 'svelte/transition';
 			description: 'Perfect for trying out Penny with basic features.',
 			estimatedAttendance: 'Great for testing',
 			features: [
-				'Access to 30 influencer profiles (one-time)',
-				'Up to 30 influencer searches per month',
-				'No email outreach capabilities'
+				'Access to 10 influencer profiles',
+				'Up to 10 influencer searches per month',
+				'10 outreach emails & 1 connected inbox'
 			],
 			oneTime: false
 		},

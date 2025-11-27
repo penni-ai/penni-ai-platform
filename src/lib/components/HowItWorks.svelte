@@ -87,7 +87,9 @@
 											if (!response.ok) throw new Error('Failed to create campaign');
 											const data = await response.json();
 											if (data.campaignId) {
-												window.location.href = `/campaign/${data.campaignId}`;
+												// Force simple view for new campaigns
+												localStorage.setItem('campaignViewMode', 'simple');
+												window.location.href = `/campaign/${data.campaignId}?mode=simple`;
 											}
 										} catch (error) {
 											console.error('Failed to create campaign', error);

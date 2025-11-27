@@ -11,8 +11,10 @@
 		status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
 		isPreliminary?: boolean; // True if showing preliminary candidates (before LLM analysis)
 		previousProfileIds: Set<string>;
+		isSearching?: boolean; // True if a search is in progress
 		onToggleSelection: (id: string) => void;
 		onToggleContacted: () => void;
+		onFindMore?: (excludeProfileUrls: string[]) => void;
 	}
 
 	let {
@@ -23,8 +25,10 @@
 		status,
 		isPreliminary = false,
 		previousProfileIds,
+		isSearching = false,
 		onToggleSelection,
-		onToggleContacted
+		onToggleContacted,
+		onFindMore
 	}: Props = $props();
 
 	// Filter profiles based on contacted status and exclude profiles with N/A display_name
@@ -231,22 +235,41 @@
 	}
 </script>
 
-<div class="rounded-2xl border border-gray-200 bg-white shadow-sm">
-	<div class="border-b border-gray-200 px-6 py-4">
-		<div class="flex items-center justify-between">
-			<h3 class="text-lg font-semibold text-gray-900">
-				Influencers
-				{#if filteredProfiles().length > 0}
-					<span class="text-base font-normal text-gray-500">
-						{#if isPreliminary}
-							({filteredProfiles().length} preview of {allFilteredProfiles().length})
-						{:else}
-							({filteredProfiles().length} of {profiles.length})
-						{/if}
-					</span>
-				{/if}
-			</h3>
-			
+<div>
+<div class="border-b border-gray-200 px-6 py-4">
+	<div class="flex items-center justify-between">
+		<h3 class="text-lg font-semibold text-gray-900">
+			Campaign Influencers
+			{#if filteredProfiles().length > 0}
+				<span class="text-base font-normal text-gray-500">
+					{#if isPreliminary}
+						({filteredProfiles().length} preview of {allFilteredProfiles().length})
+					{:else}
+						({filteredProfiles().length} of {profiles.length})
+					{/if}
+				</span>
+			{/if}
+		</h3>
+		
+		<div class="flex items-center gap-2">
+			{#if onFindMore && !isPreliminary && profiles.length > 0}
+				<button
+					type="button"
+					onclick={() => {
+						const existingUrls = profiles
+							.map(p => p.profile_url)
+							.filter((url): url is string => !!url);
+						onFindMore(existingUrls);
+					}}
+					disabled={isSearching}
+					class="px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+					</svg>
+					{isSearching ? 'Searching...' : 'Find More Influencers'}
+				</button>
+			{/if}
 			{#if profiles.length > 0}
 				<button
 					type="button"
@@ -262,6 +285,7 @@
 			{/if}
 		</div>
 	</div>
+</div>
 	
 	{#if filteredProfiles().length > 0}
 		<div class={isPreliminary ? "overflow-hidden" : "overflow-x-auto"}>
@@ -360,11 +384,11 @@
 							</td>
 							<td class="px-6 py-4 text-sm text-gray-500 overflow-hidden">
 								{#if shouldBlurBio}
-									<div class="line-clamp-3 text-gray-400 select-none blur-[3px] break-words">
+									<div class="line-clamp-3 text-gray-400 select-none blur-[3px] wrap-break-word">
 										{getBlurredBio(profileId)}
 									</div>
 								{:else}
-									<div class="line-clamp-3 break-words">{formatBio(profile.biography ?? profile.bio ?? '—')}</div>
+									<div class="line-clamp-3 wrap-break-word">{formatBio(profile.biography ?? profile.bio ?? '—')}</div>
 								{/if}
 							</td>
 							<td class="w-[120px] whitespace-nowrap px-6 py-4 text-sm text-gray-500">
@@ -377,25 +401,26 @@
 								{/if}
 							</td>
 							<td class="w-[120px] whitespace-nowrap px-6 py-4">
-								{#if isPreliminary && !hasFitScore}
-									<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">
-										Analyzing...
-									</span>
-								{:else if hasFitScore}
-									<div class="relative group inline-block">
-										<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium cursor-help {
-											profile.fit_score >= 80 ? 'bg-green-100 text-green-800' :
-											profile.fit_score >= 60 ? 'bg-yellow-100 text-yellow-800' :
-											'bg-red-100 text-red-800'
-										}">
-											{profile.fit_score}/100
-										</span>
+				{#if isPreliminary && !hasFitScore}
+					<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">
+						Analyzing...
+					</span>
+				{:else if hasFitScore}
+					{@const fitScore = profile.fit_score ?? 0}
+					<div class="relative group inline-block">
+						<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium cursor-help {
+							fitScore >= 80 ? 'bg-green-100 text-green-800' :
+							fitScore >= 60 ? 'bg-yellow-100 text-yellow-800' :
+							'bg-red-100 text-red-800'
+						}">
+							{fitScore}/100
+						</span>
 										{#if profile.fit_rationale}
-											<!-- Tooltip -->
-											<div class="absolute right-0 bottom-full mb-2 hidden group-hover:block z-50 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
+											<!-- Tooltip (drops down) -->
+											<div class="absolute right-0 top-full mt-2 hidden group-hover:block z-50 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
+												<!-- Arrow pointing up -->
+												<div class="absolute right-4 bottom-full w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-gray-900"></div>
 												<div class="whitespace-normal">{profile.fit_rationale}</div>
-												<!-- Arrow -->
-												<div class="absolute right-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
 											</div>
 										{/if}
 									</div>
@@ -437,4 +462,3 @@
 		</div>
 	{/if}
 </div>
-

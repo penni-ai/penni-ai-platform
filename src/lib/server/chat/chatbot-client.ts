@@ -13,7 +13,6 @@ export interface ConversationSnapshot {
 	collected: {
 		website?: string | null;
 		business_name?: string | null;
-		business_location?: string | null;
 		business_about?: string | null;
 		influencer_location?: string | null;
 		platform?: string[] | string | null;
@@ -273,4 +272,3 @@ export async function getConversation(
 		}
 	);
 }
-

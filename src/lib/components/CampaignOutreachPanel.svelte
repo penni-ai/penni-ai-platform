@@ -133,7 +133,6 @@
 		title?: string | null;
 		website?: string | null;
 		businessSummary?: string | null;
-		business_location?: string | null;
 		type_of_influencer?: string | null;
 		locations?: string | null;
 		platform?: string | null;
@@ -1113,7 +1112,6 @@
 					title: campaign?.title ?? null,
 					website: campaign?.website ?? null,
 					businessSummary: campaign?.businessSummary ?? null,
-					business_location: campaign?.business_location ?? null,
 					type_of_influencer: campaign?.type_of_influencer ?? null,
 					locations: campaign?.locations ?? null,
 					platform: campaign?.platform ?? null,
@@ -1662,15 +1660,9 @@
 									<span class="text-gray-600 ml-2">{campaignData.businessSummary}</span>
 								</div>
 							{/if}
-							{#if campaignData.business_location}
-								<div>
-									<span class="font-medium text-gray-700">Business Location:</span>
-									<span class="text-gray-600 ml-2">{campaignData.business_location}</span>
-								</div>
-							{/if}
-						{:else}
-							<div class="text-gray-500 text-center py-4">No campaign data available</div>
-						{/if}
+					{:else}
+						<div class="text-gray-500 text-center py-4">No campaign data available</div>
+					{/if}
 					</div>
 				</div>
 			</div>

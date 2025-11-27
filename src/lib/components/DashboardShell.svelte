@@ -21,6 +21,7 @@ export let onUpgrade: (() => void) | undefined = undefined;
 						<Logo size="md" />
 					</a>
 				</slot>
+				<slot name="sidebar-controls" />
 				{#if showToggleControls}
 					<button
 						type="button"

@@ -104,6 +104,7 @@ export async function handlePipelineExecution(messageData: {
   max_followers?: number | null;
   platform?: string | null;
   request_id?: string;
+  exclude_profile_urls?: string[] | null; // Profile URLs to exclude (for "find more" functionality)
 }): Promise<void> {
   const {
     job_id: jobId,
@@ -117,6 +118,7 @@ export async function handlePipelineExecution(messageData: {
     max_followers: maxFollowers,
     platform,
     request_id: requestId = `req_${Date.now()}`,
+    exclude_profile_urls: excludeProfileUrls,
   } = messageData;
 
   // Initialize timing tracker
@@ -159,7 +161,6 @@ export async function handlePipelineExecution(messageData: {
         // Business information (from collected data, fallback to campaign document)
         const businessName = collectedData?.business_name || campaignData?.business_name || null;
         const businessAbout = collectedData?.business_about || campaignData?.business_about || campaignData?.businessSummary || null;
-        const businessLocation = collectedData?.business_location || campaignData?.business_location || null;
         const website = collectedData?.website || campaignData?.website || null;
         
         if (businessName) {
@@ -167,9 +168,6 @@ export async function handlePipelineExecution(messageData: {
         }
         if (businessAbout) {
           campaignDetails.push(`Business Description: ${businessAbout}`);
-        }
-        if (businessLocation) {
-          campaignDetails.push(`Business Location: ${businessLocation}`);
         }
         if (website && website !== 'N/A') {
           campaignDetails.push(`Website: ${website}`);
@@ -274,7 +272,6 @@ export async function handlePipelineExecution(messageData: {
             sources: {
               businessName: !!businessName,
               businessAbout: !!businessAbout,
-              businessLocation: !!businessLocation,
               website: !!website,
               influencerLocation: !!influencerLocation,
               typeOfInfluencer: !!typeOfInfluencer,
@@ -420,6 +417,7 @@ export async function handlePipelineExecution(messageData: {
 
       // Perform parallel hybrid searches directly (no HTTP call needed)
       // Request 300 results per search to ensure we have enough after deduplication
+      // Pass excludeProfileUrls to filter out already-found profiles (for "find more" functionality)
       const searchResult = await performParallelHybridSearches(
         queries,
         alphaValues,
@@ -435,7 +433,8 @@ export async function handlePipelineExecution(messageData: {
           } else if (stage === 'searches_complete') {
             await updateProgress(jobId, 'weaviate_search', 'searches_complete');
           }
-        }
+        },
+        excludeProfileUrls // Exclude previously found profiles
       );
 
       deduplicatedResults = searchResult.deduplicatedResults;
@@ -747,5 +746,3 @@ export async function handlePipelineExecution(messageData: {
     throw error;
   }
 }
-
-

@@ -33,18 +33,20 @@
 </script>
 
 <div class="mx-auto w-full max-w-6xl space-y-6">
-	<div>
-		<h2 class="text-2xl font-semibold text-gray-900">Influencer Search</h2>
-		<p class="mt-1 text-sm text-gray-500">
-			Pipeline Status: <span class="font-medium capitalize text-gray-900">{status.status}</span>
-			{#if status.status === 'running'}
-				<span class="ml-2 inline-flex items-center gap-1">
-					<span class="h-2 w-2 animate-pulse rounded-full bg-green-500"></span>
-					<span class="text-xs text-gray-500">Processing...</span>
-				</span>
-			{/if}
-		</p>
-	</div>
+	{#if status.status !== 'completed'}
+		<div>
+			<h2 class="text-2xl font-semibold text-gray-900">Influencer Search</h2>
+			<p class="mt-1 text-sm text-gray-500">
+				Pipeline Status: <span class="font-medium capitalize text-gray-900">{status.status}</span>
+				{#if status.status === 'running'}
+					<span class="ml-2 inline-flex items-center gap-1">
+						<span class="h-2 w-2 animate-pulse rounded-full bg-green-500"></span>
+						<span class="text-xs text-gray-500">Processing...</span>
+					</span>
+				{/if}
+			</p>
+		</div>
+	{/if}
 
 	<!-- Pipeline Progress -->
 	{#if status.status !== 'completed'}

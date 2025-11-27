@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import DashboardShell from '$lib/components/DashboardShell.svelte';
+import DashboardShell from '$lib/components/DashboardShell.svelte';
+import ViewModeMiniToggle from '$lib/components/ViewModeMiniToggle.svelte';
 	import OutreachUpgradePanel from '$lib/components/OutreachUpgradePanel.svelte';
 import { firebaseAuth, firebaseFirestore } from '$lib/firebase/client';
 import { ensureFirebaseAuthSession } from '$lib/firebase/auth-sync';
@@ -166,7 +167,6 @@ onMount(() => {
 		type_of_influencer: pickString((data as any).type_of_influencer) ?? null,
 		locations: pickString(data.locations) ?? null,
 		followers: pickString(data.followers) ?? null,
-		business_location: pickString((data as any).business_location) ?? null,
 		platform: pickString((data as any).platform) ?? null,
 		followersMin: numberOrNull(data.followersMin),
 		followersMax: numberOrNull(data.followersMax),
@@ -177,7 +177,6 @@ onMount(() => {
 		influencerSearchQuery: pickString((data as any).influencerSearchQuery) ?? null,
 		pipeline_id: pickString((data as any).pipeline_id) ?? null,
 		fieldStatus: undefined,
-		missing: undefined,
 		collected: undefined,
 		search: undefined,
 		followerRange: undefined,
@@ -253,7 +252,11 @@ onMount(() => {
 	}
 </script>
 
+
 <DashboardShell campaigns={sidebarCampaigns()} activeCampaignId={activeCampaignId()} showToggleControls={false} onUpgrade={openUpgradePanel}>
+	<svelte:fragment slot="sidebar-controls">
+		<ViewModeMiniToggle />
+	</svelte:fragment>
 	{@render children()}
 </DashboardShell>
 

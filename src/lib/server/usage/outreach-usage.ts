@@ -13,8 +13,8 @@ export function getOutreachLimit(planKey: string | null | undefined): number {
 	if (planKey === 'event') {
 		return 5000; // Event plan: 5000 outreach emails (one-time)
 	}
-	// Free plan (or no plan): 0 emails (no email capabilities)
-	return 0;
+	// Free plan (or no plan): 10 emails
+	return 10;
 }
 
 /**
@@ -96,10 +96,10 @@ export async function incrementOutreachUsage(uid: string, amount: number = 1): P
 			usage.outreachSent.updatedAt = now;
 		}
 		
-		tx.update(userRef, {
-			usage,
-				updatedAt: now
-			});
+		if (userDoc.exists) {
+			tx.update(userRef, { usage, updatedAt: now });
+		} else {
+			tx.set(userRef, { usage, updatedAt: now }, { merge: true });
+		}
 	});
 }
-

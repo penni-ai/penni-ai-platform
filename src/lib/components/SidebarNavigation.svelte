@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { getPlatformLogo, getPlatformColor, normalizePlatforms } from '$lib/utils/campaign';
+	import { setViewMode } from '$lib/stores/viewMode';
 
 	type NavItem = {
 		label: string;
@@ -40,35 +41,46 @@
 	let isLoadingInfo = $state(false);
 	
 	// Editable campaign fields state
-	let editingFields = $state<Record<string, string | string[]>>({});
-	let selectedPlatforms = $state<string[]>([]);
-	let isSaving = $state(false);
-	let saveError = $state<string | null>(null);
-	let saveSuccess = $state(false);
-	
-	// Initialize editing fields when campaign data loads
-	$effect(() => {
-		if (infoCampaignData) {
-			const platformData = infoCampaignData.collected?.platform ?? infoCampaignData.platform ?? '';
-			const platforms = Array.isArray(platformData) 
-				? platformData 
-				: platformData 
-					? [platformData] 
-					: [];
-			
-			editingFields = {
-				title: infoCampaignData.title ?? '',
-				website: infoCampaignData.collected?.website ?? infoCampaignData.website ?? '',
-				business_name: infoCampaignData.collected?.business_name ?? infoCampaignData.business_name ?? '',
-				business_location: infoCampaignData.collected?.business_location ?? infoCampaignData.business_location ?? '',
-				businessSummary: infoCampaignData.businessSummary ?? '',
-				locations: infoCampaignData.collected?.locations ?? infoCampaignData.locations ?? '',
-				type_of_influencer: infoCampaignData.collected?.type_of_influencer ?? infoCampaignData.type_of_influencer ?? '',
-				platform: platforms,
-				followersMin: infoCampaignData.followersMin?.toString() ?? infoCampaignData.followerRange?.min?.toString() ?? '',
-				followersMax: infoCampaignData.followersMax?.toString() ?? infoCampaignData.followerRange?.max?.toString() ?? ''
-			};
-			selectedPlatforms = platforms;
+let editingFields = $state<Record<string, string | string[]>>({});
+	// Default platforms: Instagram + TikTok preselected
+	let selectedPlatforms = $state<string[]>(['instagram', 'tiktok']);
+let isSaving = $state(false);
+let saveError = $state<string | null>(null);
+let saveSuccess = $state(false);
+
+function normalizePlatformList(value: string | string[] | null | undefined): string[] {
+	const list = normalizePlatforms(value);
+	const normalized = list
+		.map((p) => (typeof p === 'string' ? p.toLowerCase().trim() : ''))
+		.filter(Boolean);
+	return Array.from(new Set(normalized));
+}
+
+// Initialize editing fields when campaign data loads
+$effect(() => {
+	if (infoCampaignData) {
+		const platformData = infoCampaignData.collected?.platform ?? infoCampaignData.platform ?? ['instagram', 'tiktok'];
+		const platforms = normalizePlatformList(platformData.length ? platformData : ['instagram', 'tiktok']);
+		
+		const defaultMinFollowers = infoCampaignData.followersMin?.toString()
+			?? infoCampaignData.followerRange?.min?.toString()
+			?? '10000';
+		const defaultMaxFollowers = infoCampaignData.followersMax?.toString()
+			?? infoCampaignData.followerRange?.max?.toString()
+			?? '500000';
+
+		editingFields = {
+			title: infoCampaignData.title ?? '',
+			website: infoCampaignData.collected?.website ?? infoCampaignData.website ?? '',
+			business_name: infoCampaignData.collected?.business_name ?? infoCampaignData.business_name ?? '',
+			businessSummary: infoCampaignData.businessSummary ?? '',
+			locations: infoCampaignData.collected?.locations ?? infoCampaignData.locations ?? '',
+			type_of_influencer: infoCampaignData.collected?.type_of_influencer ?? infoCampaignData.type_of_influencer ?? '',
+			platform: platforms,
+			followersMin: defaultMinFollowers,
+			followersMax: defaultMaxFollowers
+		};
+			selectedPlatforms = platforms.length ? platforms : ['instagram', 'tiktok'];
 		}
 	});
 	
@@ -86,16 +98,11 @@
 			if (editingFields.title !== undefined) updateData.title = editingFields.title || null;
 			if (editingFields.website !== undefined) updateData.website = editingFields.website || null;
 			if (editingFields.business_name !== undefined) updateData.business_name = editingFields.business_name || null;
-			if (editingFields.business_location !== undefined) updateData.business_location = editingFields.business_location || null;
 			if (editingFields.businessSummary !== undefined) updateData.businessSummary = editingFields.businessSummary || null;
 			if (editingFields.locations !== undefined) updateData.locations = editingFields.locations || null;
 			if (editingFields.type_of_influencer !== undefined) updateData.type_of_influencer = editingFields.type_of_influencer || null;
 			if (editingFields.platform !== undefined) {
-				const platforms = Array.isArray(editingFields.platform) 
-					? editingFields.platform.filter(p => p) 
-					: editingFields.platform 
-						? [editingFields.platform] 
-						: [];
+				const platforms = normalizePlatformList(editingFields.platform);
 				updateData.platform = platforms.length > 0 ? (platforms.length === 1 ? platforms[0] : platforms) : null;
 			}
 			if (editingFields.followersMin !== undefined) updateData.followersMin = editingFields.followersMin ? parseInt(editingFields.followersMin as string, 10) : null;
@@ -304,6 +311,12 @@
 			alert('Failed to delete campaign. Please try again.');
 		}
 	}
+$effect(() => {
+  if (selectedPlatforms.length === 0) {
+    selectedPlatforms = ['instagram', 'tiktok'];
+    editingFields = { ...editingFields, platform: selectedPlatforms };
+  }
+});
 </script>
 
 <div class="flex flex-1 flex-col min-h-0">
@@ -318,7 +331,8 @@
 					}
 					const data = await response.json();
 					if (data.campaignId) {
-						await goto(`/campaign/${data.campaignId}`);
+						setViewMode('simple');
+						await goto(`/campaign/${data.campaignId}?mode=simple`);
 					}
 				} catch (error) {
 					console.error('Failed to create campaign', error);
@@ -627,35 +641,9 @@
 									</dd>
 								</div>
 
-								<!-- Business Location -->
-								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
-										Business Location
-										{#if infoCampaignData.fieldStatus?.business_location === 'confirmed'}
-											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
-										{:else if infoCampaignData.fieldStatus?.business_location === 'collected'}
-											<span class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800">Collected</span>
-										{:else if infoCampaignData.slot_collection?.business_location === 'not_collected' || (infoCampaignData.collected?.business_location ?? infoCampaignData.business_location) === null}
-											<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
-										{:else if (infoCampaignData.collected?.business_location ?? infoCampaignData.business_location) !== null && (infoCampaignData.collected?.business_location ?? infoCampaignData.business_location) !== undefined}
-											<span class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800">Collected</span>
-										{:else}
-											<span class="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">Not Collected</span>
-										{/if}
-									</dt>
-									<dd class="mt-1">
-										<input
-											type="text"
-											bind:value={editingFields.business_location}
-											placeholder="Enter business location"
-											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
-										/>
-									</dd>
-								</div>
-
-								<!-- Business About -->
-								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+				<!-- Business About -->
+				<div>
+					<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
 										Business About
 										{#if infoCampaignData.fieldStatus?.business_about === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -738,7 +726,7 @@
 									{#if selectedPlatforms.length > 0}
 										<div class="flex flex-wrap gap-2 mb-2">
 											{#each selectedPlatforms as platform}
-												<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-gray-50 border border-gray-200 {getPlatformColor(platform)}">
+												<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-50 border border-green-200 {getPlatformColor(platform)}">
 													{@html getPlatformLogo(platform)}
 													<span class="text-sm font-medium capitalize">{platform}</span>
 												</div>
@@ -752,16 +740,14 @@
 												type="checkbox"
 												checked={selectedPlatforms.includes('instagram')}
 												onchange={(e) => {
-													if (e.currentTarget.checked) {
-														if (!selectedPlatforms.includes('instagram')) {
-															selectedPlatforms = [...selectedPlatforms, 'instagram'];
-														}
-													} else {
-														selectedPlatforms = selectedPlatforms.filter(p => p !== 'instagram');
-													}
-													editingFields.platform = selectedPlatforms;
+													const next = e.currentTarget.checked
+														? [...selectedPlatforms, 'instagram']
+														: selectedPlatforms.filter((p) => p !== 'instagram');
+													const normalized = normalizePlatformList(next);
+													selectedPlatforms = normalized;
+													editingFields = { ...editingFields, platform: normalized };
 												}}
-												class="rounded border-gray-300 text-[#FF6F61] focus:ring-[#FF6F61]"
+												class="rounded border-gray-300 text-green-600 focus:ring-green-600"
 											/>
 											<div class="flex items-center gap-1.5 {getPlatformColor('instagram')}">
 												{@html getPlatformLogo('instagram')}
@@ -773,16 +759,14 @@
 												type="checkbox"
 												checked={selectedPlatforms.includes('tiktok')}
 												onchange={(e) => {
-													if (e.currentTarget.checked) {
-														if (!selectedPlatforms.includes('tiktok')) {
-															selectedPlatforms = [...selectedPlatforms, 'tiktok'];
-														}
-													} else {
-														selectedPlatforms = selectedPlatforms.filter(p => p !== 'tiktok');
-													}
-													editingFields.platform = selectedPlatforms;
+													const next = e.currentTarget.checked
+														? [...selectedPlatforms, 'tiktok']
+														: selectedPlatforms.filter((p) => p !== 'tiktok');
+													const normalized = normalizePlatformList(next);
+													selectedPlatforms = normalized;
+													editingFields = { ...editingFields, platform: normalized };
 												}}
-												class="rounded border-gray-300 text-[#FF6F61] focus:ring-[#FF6F61]"
+												class="rounded border-gray-300 text-green-600 focus:ring-green-600"
 											/>
 											<div class="flex items-center gap-1.5 {getPlatformColor('tiktok')}">
 												{@html getPlatformLogo('tiktok')}
@@ -858,17 +842,15 @@
 								<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Follower Range</h3>
 								<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 									<div>
-										<dt class="text-xs font-medium text-gray-500">Text Description</dt>
-										<dd class="mt-1 text-sm text-gray-900">{infoCampaignData.followers ?? '—'}</dd>
+										<dt class="text-xs font-medium text-gray-500">Min Followers</dt>
+										<dd class="mt-1 text-sm text-gray-900">
+											{infoCampaignData.followerRange?.min ?? infoCampaignData.followersMin ?? '—'}
+										</dd>
 									</div>
 									<div>
-										<dt class="text-xs font-medium text-gray-500">Numeric Range</dt>
+										<dt class="text-xs font-medium text-gray-500">Max Followers</dt>
 										<dd class="mt-1 text-sm text-gray-900">
-											{#if infoCampaignData.followerRange}
-												{infoCampaignData.followerRange.min ?? '—'} – {infoCampaignData.followerRange.max ?? '—'}
-											{:else}
-												{infoCampaignData.followersMin ?? '—'} – {infoCampaignData.followersMax ?? '—'}
-											{/if}
+											{infoCampaignData.followerRange?.max ?? infoCampaignData.followersMax ?? '—'}
 										</dd>
 									</div>
 								</dl>

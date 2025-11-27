@@ -111,7 +111,7 @@ export const POST = handleApiRoute(async (event) => {
 		logger?.info('Search request received', { userId: user.uid, request_id: requestId });
 		
 		const body = await event.request.json();
-		const { business_description, top_n, min_followers, max_followers, campaign_id } = body;
+		const { business_description, top_n, min_followers, max_followers, campaign_id, exclude_profile_urls } = body;
 		
 		// Validate required fields
 		if (!business_description || typeof business_description !== 'string' || !business_description.trim()) {
@@ -123,13 +123,13 @@ export const POST = handleApiRoute(async (event) => {
 			});
 		}
 		
-		// Validate top_n (optional, default to 30, minimum 30, maximum 1000)
-		const topN = top_n !== undefined ? parseInt(String(top_n), 10) : 30;
-		if (isNaN(topN) || topN < 30 || topN > 1000) {
+		// Validate top_n (optional, default to 10, minimum 10, maximum 1000)
+		const topN = top_n !== undefined ? parseInt(String(top_n), 10) : 10;
+		if (isNaN(topN) || topN < 10 || topN > 1000) {
 			throw new ApiProblem({
 				status: 400,
 				code: 'INVALID_REQUEST',
-				message: 'top_n must be a number between 30 and 1000.',
+				message: 'top_n must be a number between 10 and 1000.',
 				details: { request_id: requestId }
 			});
 		}
@@ -252,6 +252,10 @@ export const POST = handleApiRoute(async (event) => {
 		if (campaignId) {
 			requestBody.campaign_id = campaignId;
 		}
+		// Pass excluded profile URLs for "find more influencers" functionality
+		if (exclude_profile_urls && Array.isArray(exclude_profile_urls) && exclude_profile_urls.length > 0) {
+			requestBody.exclude_profile_urls = exclude_profile_urls;
+		}
 		
 		logger?.info('Calling Cloud Run pipeline service', {
 			userId: user.uid,
@@ -360,10 +364,12 @@ export const POST = handleApiRoute(async (event) => {
 					logger: pipelineLogger,
 					requestId: functionRequestId
 				});
+				const existingPipelineId = 'existingPipelineId' in result ? result.existingPipelineId : undefined;
+				const resultError = 'error' in result ? result.error : undefined;
 				campaignBindingStatus = {
 					status: result.status,
-					existingPipelineId: result.existingPipelineId,
-					error: result.error
+					existingPipelineId,
+					error: resultError
 				};
 				
 				if (result.status === 'missing_campaign') {
@@ -384,13 +390,13 @@ export const POST = handleApiRoute(async (event) => {
 						request_id: functionRequestId
 					});
 					// Don't throw - this is non-critical
-				} else if (result.status === 'noop_same' || result.status === 'noop_other') {
+				} else if (result.status === 'noop_same') {
 					logger?.info('Campaign pipeline binding already satisfied (API fallback)', {
 						userId: user.uid,
 						campaignId,
 						pipelineId,
 						status: result.status,
-						existingPipelineId: result.existingPipelineId,
+						existingPipelineId,
 						request_id: functionRequestId
 					});
 				} else if (result.status === 'updated') {

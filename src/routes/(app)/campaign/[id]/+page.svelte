@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+import { onMount } from 'svelte';
+import { page } from '$app/stores';
+import { goto } from '$app/navigation';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	
@@ -31,23 +32,25 @@
 			}
 		};
 	}
-	import Button from '$lib/components/Button.svelte';
-	import CampaignOutreachPanel from '$lib/components/CampaignOutreachPanel.svelte';
-	import OutreachUpgradePanel from '$lib/components/OutreachUpgradePanel.svelte';
-	import SearchLimitExceededPanel from '$lib/components/SearchLimitExceededPanel.svelte';
-	import CampaignLoadingCover from '$lib/components/campaign/CampaignLoadingCover.svelte';
-	import CampaignTabs from '$lib/components/campaign/CampaignTabs.svelte';
-	import ChatTab from '$lib/components/campaign/ChatTab.svelte';
-	import OutreachTab from '$lib/components/campaign/OutreachTab.svelte';
-	import RerunPipelineWarning from '$lib/components/campaign/RerunPipelineWarning.svelte';
-	import type { PageData } from './$types';
-	import { firebaseFirestore, firebaseAuth } from '$lib/firebase/client';
-	import { doc, onSnapshot } from 'firebase/firestore';
-	import { browser } from '$app/environment';
-	import { onAuthStateChanged } from 'firebase/auth';
-	import type { SerializedCampaign } from '$lib/server/campaigns';
-	import type { ApiMessage, ConversationResponse, PipelineStatus, SearchParams, SearchUsage } from '$lib/types/campaign';
-	import { getProfileId, getPlatformLogo, getPlatformColor, normalizePlatforms } from '$lib/utils/campaign';
+import CampaignOutreachPanel from '$lib/components/CampaignOutreachPanel.svelte';
+import SimplePipelinePanel from '$lib/components/campaign/SimplePipelinePanel.svelte';
+import OutreachUpgradePanel from '$lib/components/OutreachUpgradePanel.svelte';
+import SearchLimitExceededPanel from '$lib/components/SearchLimitExceededPanel.svelte';
+import CampaignLoadingCover from '$lib/components/campaign/CampaignLoadingCover.svelte';
+import CampaignTabs from '$lib/components/campaign/CampaignTabs.svelte';
+import ChatTab from '$lib/components/campaign/ChatTab.svelte';
+import OutreachTab from '$lib/components/campaign/OutreachTab.svelte';
+import RerunPipelineWarning from '$lib/components/campaign/RerunPipelineWarning.svelte';
+import FindMorePopup from '$lib/components/campaign/FindMorePopup.svelte';
+import type { PageData } from './$types';
+import { firebaseFirestore, firebaseAuth } from '$lib/firebase/client';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { browser } from '$app/environment';
+import { onAuthStateChanged } from 'firebase/auth';
+import type { SerializedCampaign } from '$lib/server/campaigns';
+import type { ApiMessage, ConversationResponse, PipelineStatus, SearchParams, SearchUsage, InfluencerProfile } from '$lib/types/campaign';
+import { getProfileId, getPlatformLogo, getPlatformColor, normalizePlatforms } from '$lib/utils/campaign';
+import { viewMode as viewModeStore, setViewMode, DEFAULT_VIEW_MODE, type ViewMode } from '$lib/stores/viewMode';
 
 	let { data }: { data: PageData } = $props();
 	const campaign = $derived(data.campaign);
@@ -57,10 +60,13 @@
 let localCampaign = $state<SerializedCampaign | null>(null);
 const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 
-	// Initialize activeTab from query parameter, default to 'chat'
-	const tabFromQuery = $page.url.searchParams.get('tab');
-	const initialTab = (tabFromQuery === 'chat' || tabFromQuery === 'outreach') ? tabFromQuery : 'chat';
-	let activeTab = $state<'chat' | 'outreach'>(initialTab);
+// Initialize activeTab from query parameter, default to 'chat'
+const tabFromQuery = $page.url.searchParams.get('tab');
+const initialTab = (tabFromQuery === 'chat' || tabFromQuery === 'outreach') ? tabFromQuery : 'chat';
+let activeTab = $state<'chat' | 'outreach'>(initialTab);
+
+// View mode toggle (simple vs advanced) from shared store
+let viewModeValue = $state<ViewMode>(DEFAULT_VIEW_MODE);
 	let campaignId = $state<string | null>(null);
 	let messages = $state<ApiMessage[]>([]);
 	let hasLoadedConversation = $state(false);
@@ -71,11 +77,50 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	});
 	
 	// If outreach tab is active but gets hidden, switch back to chat
-	$effect(() => {
-		if (activeTab === 'outreach' && !hasUserMessages()) {
-			activeTab = 'chat';
-		}
+$effect(() => {
+	if (activeTab === 'outreach' && !hasUserMessages()) {
+		activeTab = 'chat';
+	}
+});
+
+const isSimpleMode = $derived(viewModeValue === 'simple');
+
+// Initialize view mode from URL or localStorage (client only)
+$effect(() => {
+	const unsubscribe = viewModeStore.subscribe((mode) => {
+		viewModeValue = mode;
 	});
+	return () => unsubscribe();
+});
+
+$effect(() => {
+	if (!browser) return;
+	const modeParam = $page.url.searchParams.get('mode');
+	if (modeParam === 'simple' || modeParam === 'advanced') {
+		setViewMode(modeParam);
+	}
+});
+
+// Keep URL query in sync with current view mode (helps sharing links)
+$effect(() => {
+	if (!browser) return;
+	const modeParam = $page.url.searchParams.get('mode');
+	if (viewModeValue !== modeParam) {
+		const url = new URL($page.url);
+		url.searchParams.set('mode', viewModeValue);
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
+});
+
+function setViewModeWithUrl(mode: ViewMode) {
+	if (viewModeValue === mode) return;
+	setViewMode(mode);
+	if (browser) {
+		const url = new URL($page.url);
+		url.searchParams.set('mode', mode);
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
+}
 	let draft = $state('');
 	let collected = $state<Record<string, string | undefined>>({});
 	let followerRange = $state<{ min: number | null; max: number | null }>({ min: null, max: null });
@@ -91,7 +136,7 @@ const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
 	
 	// Influencer search form state (for embedded message)
 	let influencerSummary = $state('');
-	let searchFormTopN = $state(30);
+	let searchFormTopN = $state(10);
 	let searchFormMinFollowers = $state<number | null>(null);
 	let searchFormMaxFollowers = $state<number | null>(null);
 	let isSearchFormSubmitting = $state(false);
@@ -142,16 +187,19 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	let currentPollingPipelineId = $state<string | null>(null); // Track which pipeline ID we're currently polling
 	let manualRefreshInterval: ReturnType<typeof setInterval> | null = null; // Manual refresh interval for outreach tab
 	let previousProfileIds = $state<Set<string>>(new Set());
-	let selectedInfluencerIds = $state<Set<string>>(new Set());
-	let contactedInfluencerIds = $state<Set<string>>(new Set());
-	let showContacted = $state(false); // When false, show uncontacted; when true, show contacted
-	let outreachPanelOpen = $state(false);
-	let upgradePanelOpen = $state(false);
-	let searchLimitExceededOpen = $state(false);
-	let searchLimitError = $state<{ remaining?: number; requested?: number; limit?: number } | null>(null);
-	// Track when pipeline_id is set from API response to prevent Firestore listener from overwriting it
-	let lastApiSetPipelineId = $state<{ pipelineId: string; timestamp: number } | null>(null);
-	let unsubscribePipelineJob: (() => void) | null = null; // Firestore listener for pipeline job updates
+let selectedInfluencerIds = $state<Set<string>>(new Set());
+let contactedInfluencerIds = $state<Set<string>>(new Set());
+let showContacted = $state(false); // When false, show uncontacted; when true, show contacted
+let outreachPanelOpen = $state(false);
+let upgradePanelOpen = $state(false);
+let searchLimitExceededOpen = $state(false);
+let searchLimitError = $state<{ remaining?: number; requested?: number; limit?: number } | null>(null);
+// Track when pipeline_id is set from API response to prevent Firestore listener from overwriting it
+let lastApiSetPipelineId = $state<{ pipelineId: string; timestamp: number } | null>(null);
+let unsubscribePipelineJob: (() => void) | null = null; // Firestore listener for pipeline job updates
+
+// Track last route campaign to clear pipeline state on navigation
+let lastRouteCampaignId = $state<string | null>(null);
 	
 	// Track temporary pipeline ID from search API response (before Firestore sync)
 	let temporaryPipelineId = $state<string | null>(null);
@@ -263,8 +311,39 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		}
 	});
 
+	// Clear pipeline state when navigating to a different campaign (applies to both simple/advanced)
+	$effect(() => {
+		const currentId = routeCampaignId ?? null;
+		if (currentId !== lastRouteCampaignId) {
+			lastRouteCampaignId = currentId;
+			pipelineStatus = null;
+			pipelineError = null;
+			selectedInfluencerIds = new Set();
+			contactedInfluencerIds = new Set();
+			previousProfileIds = new Set();
+			currentPollingPipelineId = null;
+			lastSeenPipelineId = null;
+			lastApiSetPipelineId = null;
+			temporaryPipelineId = null;
+			pipelineCreationTimestamps.clear();
+			if (pipelinePollInterval) {
+				clearInterval(pipelinePollInterval);
+				pipelinePollInterval = null;
+			}
+			if (manualRefreshInterval) {
+				clearInterval(manualRefreshInterval);
+				manualRefreshInterval = null;
+			}
+			if (unsubscribePipelineJob) {
+				try { unsubscribePipelineJob(); } catch (error) { console.warn('[pipeline] cleanup listener on route change', error); }
+				unsubscribePipelineJob = null;
+			}
+		}
+	});
+
 	// Reload conversation when campaign ID changes (e.g., when switching between campaigns)
 	$effect(() => {
+		if (isSimpleMode) return;
 		const currentCampaignId = routeCampaignId;
 		if (currentCampaignId && activeTab === 'chat') {
 			// Only reload if campaign ID changed or we haven't loaded yet
@@ -283,6 +362,25 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				temporaryPipelineId = null;
 				// Clear pipeline creation timestamps
 				pipelineCreationTimestamps.clear();
+				// Reset pipeline and outreach state for the new campaign
+				pipelineStatus = null;
+				pipelineError = null;
+				selectedInfluencerIds = new Set();
+				contactedInfluencerIds = new Set();
+				previousProfileIds = new Set();
+				currentPollingPipelineId = null;
+				lastSeenPipelineId = null;
+				lastApiSetPipelineId = null;
+				unsubscribePipelineJob?.();
+				unsubscribePipelineJob = null;
+				if (pipelinePollInterval) {
+					clearInterval(pipelinePollInterval);
+					pipelinePollInterval = null;
+				}
+				if (manualRefreshInterval) {
+					clearInterval(manualRefreshInterval);
+					manualRefreshInterval = null;
+				}
 				// Load conversation for the new campaign
 				void loadConversation(currentCampaignId);
 			} else if (!hasLoadedConversation && campaign?.id) {
@@ -292,13 +390,39 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		}
 	});
 
-	onMount(() => {
-		if (!browser) return;
+		onMount(() => {
+			if (!browser) return;
+			
+			// Load search usage when component mounts
+			void loadSearchUsage();
+
+		// Reset pipeline/outreach state whenever route campaign changes before listeners rewire
+		const resetForCampaignChange = () => {
+			pipelineStatus = null;
+			pipelineError = null;
+			selectedInfluencerIds = new Set();
+			contactedInfluencerIds = new Set();
+			previousProfileIds = new Set();
+			currentPollingPipelineId = null;
+			lastSeenPipelineId = null;
+			lastApiSetPipelineId = null;
+			temporaryPipelineId = null;
+			pipelineCreationTimestamps.clear();
+			if (pipelinePollInterval) {
+				clearInterval(pipelinePollInterval);
+				pipelinePollInterval = null;
+			}
+			if (manualRefreshInterval) {
+				clearInterval(manualRefreshInterval);
+				manualRefreshInterval = null;
+			}
+			if (unsubscribePipelineJob) {
+				try { unsubscribePipelineJob(); } catch (error) { console.warn('[pipeline] cleanup listener on route change', error); }
+				unsubscribePipelineJob = null;
+			}
+		};
 		
-		// Load search usage when component mounts
-		void loadSearchUsage();
-		
-		// Set up real-time listener for campaign document to sync pipeline_id updates
+			// Set up real-time listener for campaign document to sync pipeline_id updates
 		let unsubscribeCampaign: (() => void) | null = null;
 		const setupCampaignListener = () => {
 			const currentUser = firebaseAuth.currentUser;
@@ -318,6 +442,8 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				campaignDocRef,
 				(snapshot) => {
 					if (!snapshot.exists()) return;
+					// If we navigated to a different campaign since this listener was created, ignore
+					if (campaignId !== routeCampaignId) return;
 					
 					const data = snapshot.data();
 					const updatedPipelineId = typeof data?.pipeline_id === 'string' ? data.pipeline_id : null;
@@ -644,6 +770,25 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		saveOutreachSelection();
 	}
 	
+	// Select all non-contacted influencers
+	function selectAllInfluencers() {
+		const profiles = pipelineStatus?.profiles ?? [];
+		const allIds = profiles
+			.filter(p => {
+				const id = p._id || getProfileId(p);
+				return !contactedInfluencerIds.has(id);
+			})
+			.map(p => p._id || getProfileId(p));
+		selectedInfluencerIds = new Set(allIds);
+		saveOutreachSelection();
+	}
+	
+	// Deselect all influencers
+	function deselectAllInfluencers() {
+		selectedInfluencerIds = new Set();
+		saveOutreachSelection();
+	}
+	
 	// Save selected influencer IDs to outreach state
 	async function saveOutreachSelection() {
 		if (!routeCampaignId) return;
@@ -759,19 +904,10 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	// Get count of selected influencers
 	const selectedCount = $derived(selectedInfluencerIds.size);
 
-	// Handle send outreach - opens the panel or upgrade panel for free users
+	// Handle send outreach - opens the panel, enforcing usage limits instead of plan gate
 	function handleSendOutreach() {
 		if (selectedCount === 0) return;
-		
-		// If user is on free plan, show upgrade panel instead
-		if (isFreePlan) {
-			openUpgradePanel(
-				"You've hit your outreach limit",
-				"Outreach capabilities are not available on the free plan. Choose a plan below to start sending outreach messages."
-			);
-			return;
-		}
-		
+		// If user is free plan, allow but rely on usage caps (10 emails)
 		outreachPanelOpen = true;
 	}
 	
@@ -1094,8 +1230,9 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		
 		// Poll at reduced frequency (or stop entirely if Firestore listener is active and working)
 		pipelinePollInterval = setInterval(async () => {
-			// Only poll if we're still on the outreach tab and this is still the current pipeline
-			if (activeTab === 'outreach' && currentPollingPipelineId === pipelineId) {
+			const pipelineContextActive = isSimpleMode || activeTab === 'outreach';
+			// Only poll if we're in a pipeline-aware context and this is still the current pipeline
+			if (pipelineContextActive && currentPollingPipelineId === pipelineId) {
 				// If Firestore listener is active, skip polling for status updates (only poll for profiles)
 				// Profiles are loaded from Storage via API, not Firestore
 				if (!unsubscribePipelineJob) {
@@ -1148,13 +1285,13 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 					}, pollInterval);
 				}
 			} else {
-				// Stop polling if user switched away from outreach tab or pipeline ID changed
-				console.log('[pipeline] Stopping polling due to tab change or pipeline ID mismatch:', {
+				// Stop polling if user left pipeline-aware contexts or pipeline ID changed
+				console.log('[pipeline] Stopping polling due to context change or pipeline ID mismatch:', {
 					event: 'pipeline_polling_stopped',
 					pipelineId,
 					activeTab,
 					currentPollingPipelineId,
-					reason: activeTab !== 'outreach' ? 'tab_changed' : 'pipeline_id_mismatch'
+					reason: !pipelineContextActive ? 'view_mode_or_tab_changed' : 'pipeline_id_mismatch'
 				});
 				if (pipelinePollInterval) {
 					clearInterval(pipelinePollInterval);
@@ -1191,11 +1328,13 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 			temporaryPipelineId
 		});
 		
-		// Clear existing polling when pipeline ID changes or tab changes away from outreach
-		if (pipelinePollInterval && (pipelineIdChanged || currentTab !== 'outreach')) {
+		const shouldTrackPipeline = isSimpleMode || currentTab === 'outreach';
+
+		// Clear existing polling when pipeline ID changes or we leave a pipeline-aware context
+		if (pipelinePollInterval && (pipelineIdChanged || !shouldTrackPipeline)) {
 			console.log('[campaign] Stopping pipeline polling:', {
 				event: 'pipeline_polling_stopped',
-				reason: pipelineIdChanged ? 'pipeline_id_changed' : 'tab_changed',
+				reason: pipelineIdChanged ? 'pipeline_id_changed' : 'context_changed',
 				previousPipelineId,
 				newPipelineId: pipelineId,
 				activeTab: currentTab
@@ -1206,9 +1345,18 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				currentPollingPipelineId = null;
 			}
 		}
+
+		// Reset stale pipeline UI state immediately when the pipeline target changes
+		if (pipelineIdChanged) {
+			pipelineStatus = null;
+			pipelineError = null;
+			selectedInfluencerIds = new Set();
+			contactedInfluencerIds = new Set();
+			previousProfileIds = new Set();
+		}
 		
-		// Start loading and polling if on outreach tab and pipeline exists
-		if (pipelineId && currentTab === 'outreach') {
+		// Start loading and polling if in a pipeline-aware context and pipeline exists
+		if (pipelineId && shouldTrackPipeline) {
 			const shouldStartPolling = !currentPollingPipelineId || currentPollingPipelineId !== pipelineId;
 			
 			console.log('[campaign] Starting pipeline loading/polling:', {
@@ -1226,7 +1374,7 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 			if (shouldStartPolling) {
 				startPipelinePolling(pipelineId);
 			}
-		} else if (!pipelineId && currentTab === 'outreach') {
+		} else if (!pipelineId && shouldTrackPipeline) {
 			console.log('[campaign] Pipeline ID not available on outreach tab:', {
 				event: 'pipeline_id_missing',
 				activeTab: currentTab,
@@ -1249,11 +1397,12 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		};
 	});
 	
-	// Manual refresh interval for outreach tab - refreshes data every 5 seconds
+	// Manual refresh interval for pipeline data - refreshes every 5 seconds
 	// Stops when pipeline is completed, error, or cancelled
 	$effect(() => {
 		const pipelineId = effectivePipelineId();
 		const currentTab = activeTab;
+		const shouldTrackPipeline = isSimpleMode || currentTab === 'outreach';
 		const pipelineStatusValue = pipelineStatus?.status;
 		
 		// Clear existing manual refresh interval
@@ -1267,8 +1416,8 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		                        pipelineStatusValue === 'error' || 
 		                        pipelineStatusValue === 'cancelled';
 		
-		// Start manual refresh if on outreach tab, pipeline exists, and not in terminal state
-		if (pipelineId && currentTab === 'outreach' && !isTerminalState) {
+		// Start manual refresh if in pipeline-aware context, pipeline exists, and not in terminal state
+		if (pipelineId && shouldTrackPipeline && !isTerminalState) {
 			console.log('[campaign] Starting manual refresh interval:', {
 				event: 'manual_refresh_started',
 				pipelineId,
@@ -1283,13 +1432,13 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				                  currentStatus === 'error' || 
 				                  currentStatus === 'cancelled';
 				
-				// Stop refreshing if pipeline is complete or user switched tabs
-				if (isTerminal || activeTab !== 'outreach' || effectivePipelineId() !== pipelineId) {
+				// Stop refreshing if pipeline is complete or user switched contexts
+				if (isTerminal || (!isSimpleMode && activeTab !== 'outreach') || effectivePipelineId() !== pipelineId) {
 					if (manualRefreshInterval) {
 						console.log('[campaign] Stopping manual refresh interval:', {
 							event: 'manual_refresh_stopped',
 							pipelineId,
-							reason: isTerminal ? 'pipeline_complete' : activeTab !== 'outreach' ? 'tab_changed' : 'pipeline_id_changed',
+							reason: isTerminal ? 'pipeline_complete' : 'context_changed',
 							pipelineStatus: currentStatus
 						});
 						clearInterval(manualRefreshInterval);
@@ -1576,7 +1725,12 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		if (event) {
 			event.preventDefault();
 		}
-		if (isSearchFormSubmitting || !influencerSummary.trim()) return;
+		if (isSearchFormSubmitting) return;
+
+		const description = (params?.business_description ?? influencerSummary).trim();
+		if (!description) return;
+		// Keep local summary in sync so downstream UI has text
+		influencerSummary = description;
 		
 		isSearchFormSubmitting = true;
 		try {
@@ -1587,7 +1741,7 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					business_description: params?.business_description ?? influencerSummary.trim(),
+					business_description: description,
 					top_n: params?.top_n ?? searchFormTopN,
 					min_followers: params?.min_followers ?? searchFormMinFollowers,
 					max_followers: params?.max_followers ?? searchFormMaxFollowers,
@@ -1732,6 +1886,181 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 		await handleSearchFormSubmit();
 	}
 	
+	// Store previous profiles for merging when "Find More" completes
+	let previousPipelineProfiles = $state<InfluencerProfile[]>([]);
+	let isFindMoreMode = $state(false);
+	
+	// Find More popup state
+	let findMorePopupOpen = $state(false);
+	let pendingExcludeProfileUrls = $state<string[]>([]);
+	const remainingInfluencerAllowance = $derived(() => Math.max(searchUsage?.remaining ?? 0, 0));
+	
+	// Get current influencer count for the popup
+	const currentInfluencerCount = $derived(() => pipelineStatus?.profiles?.length ?? 0);
+	
+	// Open the Find More popup (called by InfluencersTable)
+	function openFindMorePopup(excludeProfileUrls: string[]) {
+		if (remainingInfluencerAllowance() <= 0) {
+			openUpgradePanel('Upgrade to find more influencers', 'You have no influencer searches remaining. Upgrade to unlock more results.');
+			return;
+		}
+		pendingExcludeProfileUrls = excludeProfileUrls;
+		findMorePopupOpen = true;
+	}
+	
+	// Close the Find More popup
+	function closeFindMorePopup() {
+		findMorePopupOpen = false;
+		pendingExcludeProfileUrls = [];
+	}
+	
+	// Handle "Find More Influencers" confirmation from popup
+	async function handleFindMoreConfirm(additionalCount: number) {
+		if (isSearchFormSubmitting) return;
+		if (remainingInfluencerAllowance() <= 0) {
+			openUpgradePanel('Upgrade to find more influencers', 'You have no influencer searches remaining. Upgrade to unlock more results.');
+			return;
+		}
+		const allowedCount = Math.min(additionalCount, remainingInfluencerAllowance());
+		
+		// Close popup first
+		findMorePopupOpen = false;
+		
+		// Store current profiles for merging
+		previousPipelineProfiles = pipelineStatus?.profiles ?? [];
+		isFindMoreMode = true;
+		
+		const description = influencerSummary.trim();
+		if (!description) return;
+		
+		isSearchFormSubmitting = true;
+		try {
+			const currentCampaignId = campaign?.id ?? routeCampaignId ?? null;
+			
+			console.log('[campaign] Find More Influencers:', {
+				event: 'find_more_start',
+				additionalCount,
+				excludeCount: pendingExcludeProfileUrls.length,
+				campaignId: currentCampaignId
+			});
+			
+			const response = await fetch('/api/search/influencers', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					business_description: description,
+					top_n: allowedCount, // Clamp to remaining allowance
+					min_followers: searchFormMinFollowers,
+					max_followers: searchFormMaxFollowers,
+					campaign_id: currentCampaignId,
+					exclude_profile_urls: pendingExcludeProfileUrls
+				})
+			});
+			
+			let responseData;
+			try {
+				responseData = await response.json();
+			} catch (parseError) {
+				throw new Error(`Search failed: ${response.status} ${response.statusText}`);
+			}
+			
+			if (!response.ok) {
+				const errorInfo = responseData.error || responseData;
+				if (errorInfo.code === 'SEARCH_LIMIT_EXCEEDED' && errorInfo.details) {
+					searchLimitError = {
+						remaining: errorInfo.details.remaining ?? 0,
+						requested: errorInfo.details.requested ?? additionalCount,
+						limit: errorInfo.details.limit ?? 0
+					};
+					searchLimitExceededOpen = true;
+					isSearchFormSubmitting = false;
+					isFindMoreMode = false;
+					return;
+				}
+				throw new Error(errorInfo.message || `Search failed: ${response.status}`);
+			}
+			
+			const data = responseData.data ?? responseData;
+			
+			// Update local campaign with new pipeline_id
+			if (data.job_id) {
+				const baseCampaign = localCampaign ?? campaign;
+				if (baseCampaign) {
+					localCampaign = {
+						...baseCampaign,
+						pipeline_id: data.job_id,
+						updatedAt: Date.now()
+					};
+					lastApiSetPipelineId = {
+						pipelineId: data.job_id,
+						timestamp: Date.now()
+					};
+				}
+				
+				temporaryPipelineId = data.job_id;
+				
+				pipelineCreationTimestamps.set(data.job_id, {
+					createdAt: Date.now(),
+					attemptCount: 0
+				});
+				
+				activeTab = 'outreach';
+				
+				console.log('[campaign] Find More Influencers submitted:', {
+					event: 'find_more_submit_success',
+					pipelineId: data.job_id,
+					previousProfileCount: previousPipelineProfiles.length,
+					additionalCount,
+					excludedCount: pendingExcludeProfileUrls.length
+				});
+			}
+		} catch (error) {
+			console.error('Failed to find more influencers:', error);
+			isFindMoreMode = false;
+			if (!searchLimitExceededOpen) {
+				alert(error instanceof Error ? error.message : 'An unexpected error occurred');
+			}
+		} finally {
+			isSearchFormSubmitting = false;
+			pendingExcludeProfileUrls = [];
+		}
+	}
+	
+	// Merge new profiles with previous ones after "Find More" completes
+	$effect(() => {
+		if (isFindMoreMode && pipelineStatus?.status === 'completed' && pipelineStatus.profiles && pipelineStatus.profiles.length > 0) {
+			// Create a map of existing profile URLs to avoid duplicates
+			const existingUrls = new Set(previousPipelineProfiles.map(p => p.profile_url?.toLowerCase()).filter(Boolean));
+			
+			// Filter new profiles to only include ones not already in previous profiles
+			const newProfiles = pipelineStatus.profiles.filter(p => {
+				const url = p.profile_url?.toLowerCase();
+				return url && !existingUrls.has(url);
+			});
+			
+			// Merge previous and new profiles
+			const mergedProfiles = [...previousPipelineProfiles, ...newProfiles];
+			
+			console.log('[campaign] Find More Influencers - Merging profiles:', {
+				event: 'find_more_merge',
+				previousCount: previousPipelineProfiles.length,
+				newCount: newProfiles.length,
+				totalCount: mergedProfiles.length,
+				filteredDuplicates: pipelineStatus.profiles.length - newProfiles.length
+			});
+			
+			// Update the pipeline status with merged profiles
+			pipelineStatus = {
+				...pipelineStatus,
+				profiles: mergedProfiles
+			};
+			
+			// Reset find more mode
+			isFindMoreMode = false;
+			previousPipelineProfiles = [];
+		}
+	});
+	
 	// Track if page is fully loaded
 	// This should return true as soon as campaign is loaded and initial route hydration is complete,
 	// without waiting on chat or pipeline data
@@ -1757,6 +2086,30 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	<div 
 		class="flex h-full flex-col {browser ? 'transition-opacity duration-200' : ''} {browser && !isPageLoaded() ? 'opacity-0 pointer-events-none' : ''}"
 	>
+	{#if isSimpleMode}
+			<div class="flex-1 overflow-hidden">
+				<SimplePipelinePanel
+					campaignId={routeCampaignId ?? null}
+					{effectiveCampaign}
+					{pipelineStatus}
+					{pipelineError}
+				searchUsage={searchUsage}
+				influencerSummary={influencerSummary}
+				searchFormTopN={searchFormTopN}
+				searchFormMinFollowers={searchFormMinFollowers}
+				searchFormMaxFollowers={searchFormMaxFollowers}
+				isSearchFormSubmitting={isSearchFormSubmitting}
+				maxInfluencers={maxInfluencers()}
+				onSubmit={(params) => void handleSearchFormSubmit(undefined, params)}
+				onRerun={handleRerunPipeline}
+				onFindMore={openFindMorePopup}
+				onGoAdvanced={() => {
+					setViewModeWithUrl('advanced');
+					activeTab = 'outreach';
+				}}
+			/>
+		</div>
+	{:else}
 	<!-- Tab Navigation -->
 	<CampaignTabs
 		activeTab={activeTab}
@@ -1828,30 +2181,33 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 			/>
 			
 		<!-- Outreach Tab Panel -->
-		<OutreachTab
-			{effectiveCampaign}
-			{pipelineStatus}
+				<OutreachTab
+					{effectiveCampaign}
+					{pipelineStatus}
 			{selectedInfluencerIds}
 			{contactedInfluencerIds}
 			{showContacted}
 			{previousProfileIds}
 			campaignId={routeCampaignId ?? null}
 			pipelineError={pipelineError}
+			{isSearchFormSubmitting}
 			onToggleInfluencer={toggleInfluencerSelection}
 			onToggleContacted={() => showContacted = !showContacted}
 			onSendOutreach={handleSendOutreach}
+			onSelectAll={selectAllInfluencers}
+			onDeselectAll={deselectAllInfluencers}
+			onFindMore={openFindMorePopup}
 			onRefresh={async () => {
 				const pipelineId = effectivePipelineId();
 				if (pipelineId) {
-					await loadPipelineStatus(pipelineId);
-				}
-			}}
-		/>
-						</div>
-							</div>
-							</div>
-						</div>
-						
+						await loadPipelineStatus(pipelineId);
+					}
+				}}
+			/>
+				</div>
+			</div>
+		{/if}
+		
 <!-- Modals and Panels -->
 <!-- Outreach Panel -->
 <CampaignOutreachPanel 
@@ -1890,3 +2246,16 @@ let searchUsage = $state<{ count: number; limit: number; remaining: number; rese
 	onConfirm={handleRerunPipeline}
 	topN={searchFormTopN}
 />
+
+<!-- Find More Influencers Popup -->
+<FindMorePopup
+	open={findMorePopupOpen}
+	currentCount={currentInfluencerCount()}
+	maxRemaining={remainingInfluencerAllowance()}
+	isSearching={isSearchFormSubmitting}
+	onConfirm={handleFindMoreConfirm}
+	onCancel={closeFindMorePopup}
+/>
+
+</div>
+</div>

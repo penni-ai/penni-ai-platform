@@ -173,7 +173,7 @@ function reconnectGmail(connectionId: string) {
 		<div class="flex items-center justify-between mb-4">
 			<h2 class="text-base font-semibold text-gray-900">Gmail Mailboxes</h2>
 			<Button type="button" onclick={() => connectNewGmail()} class="px-4 py-1.5 text-sm">
-				Connect another Gmail
+				Connect Gmail
 			</Button>
 		</div>
 		
@@ -181,7 +181,7 @@ function reconnectGmail(connectionId: string) {
 			<div class="border border-dashed border-gray-300 rounded-md px-4 py-8 text-center text-sm text-gray-600">
 				<p>No Gmail mailboxes are connected yet.</p>
 				<Button type="button" class="px-4 py-1.5 text-sm mt-3" onclick={() => connectNewGmail()}>
-					Connect Gmail account
+					Connect Gmail
 				</Button>
 			</div>
 		{:else}
@@ -379,4 +379,3 @@ function reconnectGmail(connectionId: string) {
 		</div>
 	</div>
 {/if}
-

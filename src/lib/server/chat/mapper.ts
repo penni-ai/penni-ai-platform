@@ -9,7 +9,6 @@ export interface UIConversation {
 	collected: {
 		website?: string;
 		business_name?: string;
-		business_location?: string;
 		business_about?: string;
 		locations?: string;
 		platform?: string | string[];
@@ -41,7 +40,6 @@ export function mapConversationToUi(conversation: ConversationSnapshot): UIConve
 		collected: {
 			website: collected.website ?? undefined,
 			business_name: collected.business_name ?? undefined,
-			business_location: collected.business_location ?? undefined,
 			business_about: collected.business_about ?? undefined,
 			locations: collected.influencer_location ?? undefined,
 			platform: collected.platform ?? undefined,
@@ -55,4 +53,3 @@ export function mapConversationToUi(conversation: ConversationSnapshot): UIConve
 		},
 	};
 }
-

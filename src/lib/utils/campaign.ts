@@ -84,11 +84,9 @@ export function getPlatformLogo(platform: string | null | undefined): string {
 export function getPlatformColor(platform: string | null | undefined): string {
 	if (!platform) return 'text-gray-400';
 	const platformLower = platform.toLowerCase();
-	if (platformLower === 'instagram') {
-		return 'text-[#E4405F]';
-	}
-	if (platformLower === 'tiktok') {
-		return 'text-black';
+	// Show brand chips in green as requested
+	if (platformLower === 'instagram' || platformLower === 'tiktok') {
+		return 'text-green-700';
 	}
 	return 'text-gray-500';
 }
@@ -118,4 +116,3 @@ export function getPlatformLogos(platforms: string | string[] | null | undefined
 		color: getPlatformColor(platform)
 	}));
 }
-

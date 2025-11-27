@@ -46,7 +46,6 @@ def map_slots_to_collected(slots: Dict[str, Any]) -> CollectedData:
     return CollectedData(
         business_name=slots.get("business_name"),
         website=slots.get("website"),
-        business_location=slots.get("business_location"),
         influencer_location=slots.get("influencer_location"),
         min_followers=slots.get("min_followers"),
         max_followers=slots.get("max_followers"),

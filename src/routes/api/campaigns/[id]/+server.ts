@@ -69,7 +69,6 @@ export const PUT = handleApiRoute(async (event) => {
 		'title',
 		'website',
 		'business_name',
-		'business_location',
 		'businessSummary',
 		'locations',
 		'type_of_influencer',
@@ -96,7 +95,6 @@ export const PUT = handleApiRoute(async (event) => {
 		// Map field names to collected data structure
 		if ('website' in body) collectedUpdate.website = body.website;
 		if ('business_name' in body) collectedUpdate.business_name = body.business_name;
-		if ('business_location' in body) collectedUpdate.business_location = body.business_location;
 		if ('businessSummary' in body) collectedUpdate.business_about = body.businessSummary;
 		if ('locations' in body) collectedUpdate.influencer_location = body.locations;
 		if ('type_of_influencer' in body) collectedUpdate.type_of_influencer = body.type_of_influencer;

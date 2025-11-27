@@ -1,14 +1,15 @@
 <script lang="ts">
-	interface Props {
-		variant?: 'primary' | 'secondary' | 'outline';
-		size?: 'sm' | 'md' | 'lg';
-		href?: string;
-		onclick?: () => void;
-		type?: 'button' | 'submit' | 'reset';
-		class?: string;
-		children?: any;
-		disabled?: boolean;
-	}
+interface Props {
+	variant?: 'primary' | 'secondary' | 'outline';
+	size?: 'sm' | 'md' | 'lg';
+	href?: string;
+	onclick?: () => void;
+	type?: 'button' | 'submit' | 'reset';
+	class?: string;
+	children?: any;
+	disabled?: boolean;
+	fullWidth?: boolean;
+}
 
 	let {
 		variant = 'primary',
@@ -16,10 +17,11 @@
 		href,
 		onclick,
 		type = 'button',
-		class: className = '',
-		children,
-		disabled = false
-	}: Props = $props();
+	class: className = '',
+	children,
+	disabled = false,
+	fullWidth = false
+}: Props = $props();
 
 	const baseStyles = 'font-medium rounded-full transition-all duration-200 inline-block text-center';
 
@@ -35,11 +37,14 @@
 		lg: 'px-8 py-4 text-lg'
 	};
 
+	const widthStyles = fullWidth ? 'w-full justify-center inline-flex' : '';
+
 	const classes = $derived(
 		[
 			baseStyles,
 			variantStyles[variant],
 			sizeStyles[size],
+			widthStyles,
 			disabled ? 'opacity-60 pointer-events-none' : '',
 			className
 		]

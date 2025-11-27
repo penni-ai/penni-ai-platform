@@ -48,13 +48,13 @@ export function buildFeatureCapabilities(planKey: PlanKey | null | undefined): F
 	
 	if (planKey === 'free') {
 		return {
-			outreach: false, // Free plan has no outreach capabilities
+			outreach: true, // Free plan allows limited outreach
 			search: true,
 			csvExport: false,
-			connectedInboxes: 0,
+			connectedInboxes: 1,
 			maxActiveCampaigns: 1,
-			influencerSearchResults: 30,
-			monthlyOutreachEmails: 0,
+			influencerSearchResults: 10,
+			monthlyOutreachEmails: 10,
 			planKey: 'free',
 			updatedAt: now
 		};
@@ -119,9 +119,9 @@ export function buildFeatureCapabilities(planKey: PlanKey | null | undefined): F
 export function buildEntitlements(planKey: PlanKey | null | undefined): PlanEntitlements | undefined {
 	if (planKey === 'free') {
 		return {
-			maxProfiles: 30,
-			connectedInboxes: 0,
-			monthlyOutreachEmails: 0,
+			maxProfiles: 10,
+			connectedInboxes: 1,
+			monthlyOutreachEmails: 10,
 			maxActiveCampaigns: 1,
 			csvExportEnabled: false
 		};

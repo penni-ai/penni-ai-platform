@@ -230,10 +230,14 @@ export const GET = handleApiRoute(async (event) => {
 	}
 	
 	const data = doc.data() as PipelineJobDocument;
+	const createdAtRaw = data.created_at;
+	const createdAtValue = createdAtRaw && typeof createdAtRaw === 'object' && 'toMillis' in createdAtRaw && typeof (createdAtRaw as { toMillis?: () => number }).toMillis === 'function'
+		? (createdAtRaw as { toMillis: () => number }).toMillis()
+		: createdAtRaw;
 	console.log(`[API] Pipeline ${pipelineId} found. Document fields:`, {
 		uid: data.uid || 'null',
 		campaign_id: data.campaign_id || 'null',
-		created_at: data.created_at ? (typeof data.created_at === 'object' && 'toMillis' in data.created_at ? data.created_at.toMillis() : data.created_at) : 'null',
+		created_at: createdAtValue ?? 'null',
 		requesting_user_uid: user.uid,
 		request_id: event.locals.requestId
 	});

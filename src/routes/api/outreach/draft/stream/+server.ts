@@ -85,15 +85,12 @@ export const POST = handleApiRoute(async (event) => {
 				if (campaign.website) {
 					campaignContext.push(`Website: ${campaign.website}`);
 				}
-				if (campaign.businessSummary) {
-					campaignContext.push(`Business Description: ${campaign.businessSummary}`);
-				}
-				if (campaign.business_location) {
-					campaignContext.push(`Business Location: ${campaign.business_location}`);
-				}
-				if (campaign.type_of_influencer) {
-					campaignContext.push(`Type of Influencer: ${campaign.type_of_influencer}`);
-				}
+			if (campaign.businessSummary) {
+				campaignContext.push(`Business Description: ${campaign.businessSummary}`);
+			}
+			if (campaign.type_of_influencer) {
+				campaignContext.push(`Type of Influencer: ${campaign.type_of_influencer}`);
+			}
 				if (campaign.locations) {
 					campaignContext.push(`Target Locations: ${campaign.locations}`);
 				}
@@ -286,4 +283,3 @@ function chunkMessage(text: string): string[] {
 function wait(ms: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, ms));
 }
-

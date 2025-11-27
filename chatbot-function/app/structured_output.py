@@ -72,16 +72,14 @@ class VertexAICompatibleJsonSchema(GenerateJsonSchema):
 class CampaignDetails(BaseModel):
     """
     Call this tool ONLY when you have collected ALL required information.
-    
+
     INSTRUCTIONS:
     - If the user says they don't have a website, set website to 'N/A'.
-    - If the user says 'remote', set business_location to 'Remote'.
     - Infer campaign_title from the conversation context (e.g. 'Austin Coffee Launch').
     """
     
     business_name: str = Field(description="Name of the business")
     website: str = Field(description="Business website URL. Use 'N/A' if they don't have one.")
-    business_location: str = Field(description="City/Region of the business")
     influencer_location: str = Field(description="City/Region where influencers should be based")
     min_followers: int = Field(description="Minimum follower count (integer)")
     max_followers: int = Field(description="Maximum follower count (integer)")

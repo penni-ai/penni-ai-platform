@@ -156,6 +156,15 @@ export interface AddonRecord {
 	expiresAt: number | null;
 }
 
+// Pipeline run record for tracking multiple searches
+export interface PipelineRunRecord {
+	pipeline_id: string;
+	started_at: number;
+	completed_at?: number | null;
+	status: 'running' | 'completed' | 'error';
+	profiles_count?: number;
+}
+
 // Minimal campaign metadata - all detailed data is in subcollections
 export interface CampaignRecord {
 	id: string;
@@ -163,7 +172,9 @@ export interface CampaignRecord {
 	status: 'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error';
 	createdAt: number;
 	updatedAt: number;
-	pipeline_id?: string | null; // Pipeline job ID for influencer searches
+	pipeline_id?: string | null; // Current/latest pipeline job ID
+	pipeline_runs?: PipelineRunRecord[]; // History of all pipeline runs for this campaign
+	accumulated_profile_urls?: string[]; // All unique profile URLs found across all runs (for exclusion)
 }
 
 // Chat collected data structure
@@ -172,7 +183,6 @@ export type FieldStatus = 'not_collected' | 'collected' | 'confirmed';
 export interface ChatCollectedData {
 	website: string | null;
 	business_name: string | null;
-	business_location: string | null;
 	platform: string | null;
 	type_of_influencer: string | null;
 	min_followers: number | null;
@@ -183,7 +193,6 @@ export interface ChatCollectedData {
 		// Only explicit fields that require user confirmation have status tracking
 		website?: FieldStatus;
 		business_name?: FieldStatus;
-		business_location?: FieldStatus;
 		business_about?: FieldStatus;
 		influencer_location?: FieldStatus;
 		min_followers?: FieldStatus;

@@ -79,9 +79,6 @@ export const POST = handleApiRoute(async (event) => {
 		if (campaign.businessSummary) {
 			campaignContext.push(`Business Description: ${campaign.businessSummary}`);
 		}
-		if (campaign.business_location) {
-			campaignContext.push(`Business Location: ${campaign.business_location}`);
-		}
 		if (campaign.type_of_influencer) {
 			campaignContext.push(`Type of Influencer: ${campaign.type_of_influencer}`);
 		}
@@ -230,4 +227,3 @@ ${formatGuidance}:`;
 		});
 	}
 }, { component: 'outreach' });
-

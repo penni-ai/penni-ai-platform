@@ -75,7 +75,6 @@
 	// Email template state
 	let emailTemplate = $state('');
 	let templateLastSavedAt: number | null = $state(null);
-	let templateSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 	let templateSaving = $state(false);
 	let templateLoadedCampaignId: string | null = $state(null);
 	const templateKey = () => `simpleEmailTemplate:${campaignId ?? effectiveCampaign?.id ?? ''}`;
@@ -153,11 +152,6 @@
 		if (browser) {
 			window.location.href = '/my-account/gmail';
 		}
-	}
-	
-	function scheduleTemplateSave() {
-		if (templateSaveTimeout) clearTimeout(templateSaveTimeout);
-		templateSaveTimeout = setTimeout(() => void saveTemplate(), 400);
 	}
 	
 	// Check for unfilled placeholder fields like [Your Name], [Company], etc.
@@ -757,7 +751,6 @@
 					content={emailTemplate || defaultTemplate()}
 					onUpdate={(content) => {
 						emailTemplate = content;
-						scheduleTemplateSave();
 					}}
 				/>
 			</div>

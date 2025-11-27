@@ -75,7 +75,6 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
 
   let emailTemplate = $state('');
   let templateLastSavedAt: number | null = $state(null);
-  let templateSaveTimeout: ReturnType<typeof setTimeout> | null = null;
   let templateSaving = $state(false);
   let templateError: string | null = $state(null);
 let templateWarning: string | null = $state(null);
@@ -528,11 +527,6 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 
   function defaultTemplate() {
     return `<p>Hi {{influencer_name}},</p><p>We love your content and think you'd be a great fit for our campaign. Are you open to a quick collaboration chat?</p><p>Thanks!</p>`;
-  }
-
-  function scheduleTemplateSave() {
-    if (templateSaveTimeout) clearTimeout(templateSaveTimeout);
-    templateSaveTimeout = setTimeout(() => void saveTemplate(), 400);
   }
 
   // Check for unfilled placeholder fields like [Your Name], [Company], etc.
@@ -1210,7 +1204,6 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
           content={emailTemplate || defaultTemplate()}
           onUpdate={(content) => {
             emailTemplate = content;
-            scheduleTemplateSave();
           }}
         />
       </div>
@@ -1275,20 +1268,20 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   subtitle="Pick account type and link quickly without leaving this page."
   size="compact"
 >
-  <div class="p-4 flex flex-col gap-3 max-w-md">
-    <div class="space-y-2">
+  <div class="p-6 flex flex-col gap-4 w-full">
+    <div class="space-y-3 w-full">
       <p class="text-sm text-gray-700">Choose how you want to connect:</p>
-      <div class="space-y-2">
-        <label class="flex items-start gap-2 p-2 rounded-lg border text-sm cursor-pointer {connectAccountType === 'draft' ? 'border-rose-300 bg-rose-50' : 'border-gray-200 hover:border-gray-300'}">
-          <input type="radio" name="connectType" value="draft" bind:group={connectAccountType} class="mt-1 h-4 w-4 text-rose-500 focus:ring-rose-500" />
-          <div>
+      <div class="space-y-2 w-full">
+        <label class="flex items-start gap-3 p-3 rounded-lg border text-sm cursor-pointer w-full {connectAccountType === 'draft' ? 'border-rose-300 bg-rose-50' : 'border-gray-200 hover:border-gray-300'}">
+          <input type="radio" name="connectType" value="draft" bind:group={connectAccountType} class="mt-0.5 h-4 w-4 text-rose-500 focus:ring-rose-500" />
+          <div class="flex-1">
             <div class="font-medium text-gray-900">Draft only</div>
             <div class="text-xs text-gray-600">Creates drafts for review before sending.</div>
           </div>
         </label>
-        <label class="flex items-start gap-2 p-2 rounded-lg border text-sm cursor-pointer {connectAccountType === 'send' ? 'border-rose-300 bg-rose-50' : 'border-gray-200 hover:border-gray-300'}">
-          <input type="radio" name="connectType" value="send" bind:group={connectAccountType} class="mt-1 h-4 w-4 text-rose-500 focus:ring-rose-500" />
-          <div>
+        <label class="flex items-start gap-3 p-3 rounded-lg border text-sm cursor-pointer w-full {connectAccountType === 'send' ? 'border-rose-300 bg-rose-50' : 'border-gray-200 hover:border-gray-300'}">
+          <input type="radio" name="connectType" value="send" bind:group={connectAccountType} class="mt-0.5 h-4 w-4 text-rose-500 focus:ring-rose-500" />
+          <div class="flex-1">
             <div class="font-medium text-gray-900">Send & Draft</div>
             <div class="text-xs text-gray-600">Allows creating drafts and sending automatically.</div>
           </div>
@@ -1298,7 +1291,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     {#if gmailError}
       <p class="text-xs text-red-600">{gmailError}</p>
     {/if}
-    <div class="flex justify-end gap-2 pt-1">
+    <div class="flex justify-end gap-2 pt-2 border-t border-gray-100">
       <Button variant="secondary" size="sm" onclick={() => showConnectGmailPrompt = false}>Later</Button>
       <Button variant="primary" size="sm" onclick={() => {
         const type = connectAccountType || 'draft';

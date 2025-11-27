@@ -104,14 +104,14 @@ export function buildFeatureCapabilities(planKey: PlanKey | null | undefined): F
 	
 	// Default to free plan capabilities if plan key is invalid
 	return {
-		outreach: false,
+		outreach: true, // Free plan allows limited outreach
 		search: true,
 		csvExport: false,
-		connectedInboxes: 0,
+		connectedInboxes: 1,
 		maxActiveCampaigns: 1,
-		influencerSearchResults: 30,
-		monthlyOutreachEmails: 0,
-		planKey: null,
+		influencerSearchResults: 10,
+		monthlyOutreachEmails: 10,
+		planKey: 'free',
 		updatedAt: now
 	};
 }

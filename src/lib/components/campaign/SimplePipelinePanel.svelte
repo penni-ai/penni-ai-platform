@@ -565,11 +565,12 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
       localStorage.setItem(templateKey(), emailTemplate);
       templateLastSavedAt = Date.now();
       
-      // Show "Saved!" feedback briefly
+      // Show "Saved!" feedback briefly, then close the editor
       templateJustSaved = true;
       setTimeout(() => {
         templateJustSaved = false;
-      }, 2000);
+        showEmailPopup = false;
+      }, 500);
     } catch (error) {
       templateError = error instanceof Error ? error.message : 'Failed to save template';
     } finally {

@@ -15,7 +15,7 @@ export let size: 'default' | 'compact' = 'default';
 
 {#if open}
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-[10%] py-[5%]"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
 		on:click={onClose}
 		on:keydown={(event) => event.key === 'Escape' && onClose()}
 		role="button"
@@ -25,7 +25,7 @@ export let size: 'default' | 'compact' = 'default';
 	>
 		<div
 			class={`relative bg-white shadow-2xl rounded-2xl overflow-hidden flex flex-col ${
-				size === 'compact' ? 'max-w-xl w-full max-h-[85vh]' : 'h-full w-full'
+				size === 'compact' ? 'max-w-xl w-full max-h-[85vh] mx-auto' : 'h-full w-full max-w-[90vw] max-h-[90vh]'
 			}`}
 			on:click|stopPropagation
 			on:keydown={(event) => event.key === 'Escape' && onClose()}

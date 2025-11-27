@@ -2,7 +2,6 @@ import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core
 import { campaignDocRef } from '$lib/server/core';
 import { serializeCampaignRecord } from '$lib/server/campaigns';
 import { createDraftsViaGmail, sendEmailsViaGmail, getGmailConnection } from '$lib/server/gmail';
-import { canUseOutreach } from '$lib/server/billing';
 import { replaceTemplateVariables } from '$lib/server/outreach/email-templates';
 import { generateEmailFooter } from '$lib/server/outreach/email-footer';
 import { incrementOutreachUsage, getOutreachUsage } from '$lib/server/usage';
@@ -13,16 +12,7 @@ import { clearSelectionsAfterSend } from '$lib/server/outreach/clear-selections'
 export const POST = handleApiRoute(async (event) => {
 	const user = requireUser(event);
 	
-	// Check if user has outreach capabilities
-	const hasOutreach = await canUseOutreach(user.uid);
-	if (!hasOutreach) {
-		throw new ApiProblem({
-			status: 403,
-			code: 'OUTREACH_NOT_AVAILABLE',
-			message: 'Outreach capabilities are not available on your current plan.',
-			hint: 'Upgrade to Starter, Growth, or Event plan to access outreach features.'
-		});
-	}
+	// Note: Outreach is available on all plans (including free) with usage limits enforced below
 	
 	// Support both old format (influencerIds) and new format (recipients)
 	let body: { 

@@ -1,8 +1,12 @@
 import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core';
 import { incrementOutreachUsage } from '$lib/server/usage';
-import { outreachContactsCollectionRef } from '$lib/server/core/firestore';
+import {
+	contactsCollectionRef,
+	campaignProfilesCollectionRef
+} from '$lib/server/core/firestore';
 import type { OutreachContact } from '$lib/server/core/firestore';
 import { clearSelectionsAfterSend } from '$lib/server/outreach/clear-selections';
+import { FieldValue } from 'firebase-admin/firestore';
 
 /**
  * Track outreach messages sent via Instagram/TikTok
@@ -59,7 +63,8 @@ export const POST = handleApiRoute(async (event) => {
 	const methodsToRemove: Record<string, string[]> = {};
 	
 	if (body.campaignId && body.influencers && body.influencers.length > 0) {
-		const contactsRef = outreachContactsCollectionRef(user.uid, body.campaignId);
+		const contactsRef = contactsCollectionRef(user.uid, body.campaignId);
+		const profilesRef = campaignProfilesCollectionRef(user.uid, body.campaignId);
 		const now = Date.now();
 		
 		for (const influencer of body.influencers) {
@@ -94,6 +99,22 @@ export const POST = handleApiRoute(async (event) => {
 				}
 				
 				await contactsRef.doc(contactId).set(contact, { merge: true });
+				await profilesRef.doc(influencer.influencerId).set(
+					{
+						contact_status: {
+							[body.platform]: {
+								status: 'pending',
+								sentAt: now,
+								repliedAt: null,
+								openedAt: null,
+								errorMessage: null
+							}
+						},
+						last_seen_at: FieldValue.serverTimestamp(),
+						contactable: true
+					},
+					{ merge: true }
+				);
 				
 				// Track for clearing selections
 				const influencerKey = influencer.influencerId;
@@ -129,4 +150,3 @@ export const POST = handleApiRoute(async (event) => {
 		count: body.count
 	});
 }, { component: 'outreach' });
-

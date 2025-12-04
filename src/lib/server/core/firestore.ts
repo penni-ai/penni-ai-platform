@@ -57,6 +57,25 @@ export function campaignDocRef(uid: string, campaignId: string) {
 	return userDocRef(uid).collection('campaigns').doc(campaignId);
 }
 
+// Pipelines subcollection under a campaign
+export function pipelinesCollectionRef(uid: string, campaignId: string): CollectionReference {
+	return campaignDocRef(uid, campaignId).collection('pipelines');
+}
+
+export function pipelineDocRef(uid: string, campaignId: string, pipelineId: string): DocumentReference {
+	return pipelinesCollectionRef(uid, campaignId).doc(pipelineId);
+}
+
+// Per-pipeline profile references (lightweight edges to profiles)
+export function pipelineProfileRefsCollectionRef(uid: string, campaignId: string, pipelineId: string): CollectionReference {
+	return pipelineDocRef(uid, campaignId, pipelineId).collection('profile_refs');
+}
+
+// Aggregated profile index for a campaign
+export function campaignProfilesCollectionRef(uid: string, campaignId: string): CollectionReference {
+	return campaignDocRef(uid, campaignId).collection('profiles');
+}
+
 export function gmailConnectionsCollectionRef(uid: string): CollectionReference {
 	return userDocRef(uid).collection('gmailConnections');
 }
@@ -86,6 +105,11 @@ export function searchCollectionRef(uid: string, campaignId: string): Collection
 // Outreach contacts collection - stores contact objects for outgoing outreach
 export function outreachContactsCollectionRef(uid: string, campaignId: string): CollectionReference {
 	return campaignDocRef(uid, campaignId).collection('outreach_contacts');
+}
+
+// New unified contacts collection (multi-channel outreach state)
+export function contactsCollectionRef(uid: string, campaignId: string): CollectionReference {
+	return campaignDocRef(uid, campaignId).collection('contacts');
 }
 
 // Removed: searchUsageDocRef and outreachUsageDocRef
@@ -165,6 +189,39 @@ export interface PipelineRunRecord {
 	profiles_count?: number;
 }
 
+export interface PipelineDoc {
+	user_id: string;
+	campaign_id: string;
+	pipeline_id: string;
+	created_at: number;
+	started_at?: number | null;
+	completed_at?: number | null;
+	status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
+	params: {
+		business_description: string;
+		top_n: number;
+		min_followers: number | null;
+		max_followers: number | null;
+		platforms?: string[];
+		locations?: string[] | string | null;
+		exclude_profile_urls?: number; // count only
+	};
+	counts?: {
+		prelim_count?: number;
+		dedup_count?: number;
+		final_count?: number;
+		contactable_count?: number;
+	};
+	storage?: {
+		profiles_path?: string | null;
+		prelim_path?: string | null;
+		remaining_path?: string | null;
+	};
+	stage_meta?: Record<string, unknown>;
+	metrics?: Record<string, unknown>;
+	ingested?: boolean; // whether profiles were synced into campaign profile index
+}
+
 // Minimal campaign metadata - all detailed data is in subcollections
 export interface CampaignRecord {
 	id: string;
@@ -172,9 +229,10 @@ export interface CampaignRecord {
 	status: 'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error';
 	createdAt: number;
 	updatedAt: number;
-	pipeline_id?: string | null; // Current/latest pipeline job ID
-	pipeline_runs?: PipelineRunRecord[]; // History of all pipeline runs for this campaign
-	accumulated_profile_urls?: string[]; // All unique profile URLs found across all runs (for exclusion)
+	pipeline_id?: string | null; // Current/latest pipeline job ID (legacy)
+	active_pipeline_id?: string | null; // Current active run (new)
+	pipeline_runs?: PipelineRunRecord[]; // History of pipeline runs for this campaign
+	accumulated_profile_urls?: string[]; // Deprecated: use profiles collection
 }
 
 // Chat collected data structure
@@ -307,4 +365,48 @@ export interface OutreachContact {
 	senderConnectionId?: string | null; // Gmail connection ID used to send this message
 	draftId?: string | null; // Gmail draft ID if created as draft
 	contactMethods?: string[]; // Array of contact methods used (e.g., ['email', 'instagram']) - for tracking which methods were used per influencer
+}
+
+export interface ContactChannelStatus {
+	status: OutreachSendStatus;
+	sentAt?: number | null;
+	repliedAt?: number | null;
+	openedAt?: number | null;
+	errorMessage?: string | null;
+}
+
+export interface ContactDoc {
+	profile_id: string;
+	pipeline_id?: string | null;
+	platform: OutreachPlatform;
+	destination: string;
+	message: string;
+	sendStatus: OutreachSendStatus;
+	channels: Record<string, ContactChannelStatus>; // keyed by platform or method, e.g., email/instagram/tiktok
+	template_id?: string | null;
+	senderConnectionId?: string | null;
+	draftId?: string | null;
+	createdAt: number;
+	updatedAt: number;
+	sentAt?: number | null;
+	repliedAt?: number | null;
+	openedAt?: number | null;
+}
+
+export interface CampaignProfileDoc {
+	profile_url: string | null;
+	platform: string | null;
+	display_name: string | null;
+	followers: number | null;
+	bio?: string | null;
+	email_address?: string | null;
+	business_email?: string | null;
+	first_seen_at: number;
+	last_seen_at: number;
+	first_pipeline_id: string | null;
+	last_pipeline_id: string | null;
+	times_seen: number;
+	best_fit_score?: number | null;
+	contactable: boolean;
+	suppressed?: boolean;
 }

@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 import DashboardShell from '$lib/components/DashboardShell.svelte';
-import ViewModeMiniToggle from '$lib/components/ViewModeMiniToggle.svelte';
 	import OutreachUpgradePanel from '$lib/components/OutreachUpgradePanel.svelte';
 import { firebaseAuth, firebaseFirestore } from '$lib/firebase/client';
 import { ensureFirebaseAuthSession } from '$lib/firebase/auth-sync';
@@ -253,10 +252,8 @@ onMount(() => {
 </script>
 
 
-<DashboardShell campaigns={sidebarCampaigns()} activeCampaignId={activeCampaignId()} showToggleControls={false} onUpgrade={openUpgradePanel}>
-	<svelte:fragment slot="sidebar-controls">
-		<ViewModeMiniToggle />
-	</svelte:fragment>
+
+<DashboardShell campaigns={sidebarCampaigns()} activeCampaignId={activeCampaignId()} showToggleControls={true} onUpgrade={openUpgradePanel}>
 	{@render children()}
 </DashboardShell>
 

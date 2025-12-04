@@ -13,7 +13,7 @@ const db = getFirestoreInstance();
 // Request validation schema
 const pipelineStartSchema = z.object({
   business_description: z.string().min(1, 'business_description is required and must be non-empty'),
-  top_n: z.number().int().min(10).max(250).optional().default(30),
+  top_n: z.number().int().min(10).max(1000).optional().default(30),
   min_followers: z.number().int().min(0).optional(),
   max_followers: z.number().int().min(0).optional(),
   platform: z.enum(['instagram', 'tiktok']).optional(),
@@ -22,6 +22,8 @@ const pipelineStartSchema = z.object({
   request_id: z.string().uuid().optional(),
   // Profile URLs to exclude from search results (for "find more influencers" functionality)
   exclude_profile_urls: z.array(z.string()).optional(),
+  // Enable strict location matching - requires exact location match, penalizes unknown/different locations heavily
+  strict_location_matching: z.boolean().optional().default(false),
 });
 
 type PipelineStartRequest = z.infer<typeof pipelineStartSchema>;
@@ -184,6 +186,7 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
       platform: data.platform,
       request_id: requestId,
       exclude_profile_urls: data.exclude_profile_urls, // Pass through for "find more" functionality
+      strict_location_matching: data.strict_location_matching, // Pass through for strict location matching
     };
 
     // Check if we're in emulator mode (Pub/Sub not available)

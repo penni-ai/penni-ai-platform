@@ -105,6 +105,7 @@ export async function handlePipelineExecution(messageData: {
   platform?: string | null;
   request_id?: string;
   exclude_profile_urls?: string[] | null; // Profile URLs to exclude (for "find more" functionality)
+  strict_location_matching?: boolean; // Enable strict location matching in LLM scoring
 }): Promise<void> {
   const {
     job_id: jobId,
@@ -119,6 +120,7 @@ export async function handlePipelineExecution(messageData: {
     platform,
     request_id: requestId = `req_${Date.now()}`,
     exclude_profile_urls: excludeProfileUrls,
+    strict_location_matching: strictLocationMatching = false,
   } = messageData;
 
   // Initialize timing tracker
@@ -316,6 +318,7 @@ export async function handlePipelineExecution(messageData: {
       min_followers: minFollowers || null,
       max_followers: maxFollowers || null,
       platform: platform || null,
+      strict_location_matching: strictLocationMatching,
     });
 
     // Update job status to running
@@ -583,7 +586,8 @@ export async function handlePipelineExecution(messageData: {
             const analysisResults = await analyzeProfileFitBatch(
               normalizedProfiles,
               fullCampaignDescription,
-              20 // maxConcurrent
+              20, // maxConcurrent
+              strictLocationMatching // Pass strict location matching option
             );
 
             // Track LLM batch end

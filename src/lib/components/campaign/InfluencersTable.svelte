@@ -212,6 +212,65 @@
 	// Emoji pool for random selection
 	const emojis = ['✨', '🌟', '💫', '⭐', '🔥', '💯', '🎯', '🚀', '💪', '🎨', '🌈', '🌸', '🌺', '🌻', '🌷', '🌿', '🍀', '🌊', '☀️', '🌙', '⭐', '💎', '🎭', '🎪', '🎬', '📸', '📷', '🎥', '🎤', '🎧', '🎮', '🎯', '🏆', '🥇', '🥈', '🥉', '🏅', '🎖️', '🎗️', '🎟️'];
 
+	// CSV Export functionality
+	function escapeCSV(value: string | number | null | undefined): string {
+		if (value === null || value === undefined) return '';
+		const str = String(value);
+		// Escape quotes by doubling them and wrap in quotes if contains comma, quote, or newline
+		if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+			return `"${str.replace(/"/g, '""')}"`;
+		}
+		return str;
+	}
+
+	function exportToCSV() {
+		// Get all profiles (not just filtered ones)
+		const profilesToExport = profiles.filter(profile => {
+			const displayName = profile.display_name;
+			if (!displayName || typeof displayName !== 'string' || displayName.trim() === '' || displayName === 'N/A') {
+				return false;
+			}
+			return true;
+		});
+
+		if (profilesToExport.length === 0) {
+			alert('No profiles to export');
+			return;
+		}
+
+		// CSV headers
+		const headers = ['Name', 'Bio', 'Followers', 'Profile URL', 'Fit Score', 'Fit Score Rationale'];
+		
+		// Build CSV rows
+		const rows = profilesToExport.map(profile => {
+			const name = profile.display_name ?? '';
+			const bio = (profile.biography ?? profile.bio ?? '').replace(/\n/g, ' ').replace(/\r/g, '');
+			const followers = profile.followers ?? '';
+			const profileUrl = profile.profile_url ?? '';
+			const fitScore = profile.fit_score ?? '';
+			const fitRationale = (profile.fit_rationale ?? '').replace(/\n/g, ' ').replace(/\r/g, '');
+			
+			return [name, bio, followers, profileUrl, fitScore, fitRationale]
+				.map(escapeCSV)
+				.join(',');
+		});
+
+		// Combine headers and rows
+		const csvContent = [headers.join(','), ...rows].join('\n');
+		
+		// Create blob and download
+		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.setAttribute('href', url);
+		link.setAttribute('download', `influencers-export-${new Date().toISOString().split('T')[0]}.csv`);
+		link.style.visibility = 'hidden';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(url);
+	}
+
 	// Format bio to 1-3 lines with random emoji
 	function formatBio(bio: string): string {
 		if (!bio || bio === '—') return '—';
@@ -268,6 +327,19 @@
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
 					</svg>
 					{isSearching ? 'Searching...' : 'Find More Influencers'}
+				</button>
+			{/if}
+			{#if !isPreliminary && profiles.length > 0}
+				<button
+					type="button"
+					onclick={exportToCSV}
+					class="px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1.5"
+					title="Export influencers to CSV"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+					</svg>
+					Export CSV
 				</button>
 			{/if}
 			{#if profiles.length > 0}

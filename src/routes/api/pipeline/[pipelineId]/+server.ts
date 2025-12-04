@@ -1,6 +1,13 @@
 import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core';
-import { firestore } from '$lib/server/core';
+import {
+	campaignProfilesCollectionRef,
+	firestore,
+	pipelineDocRef,
+	pipelineProfileRefsCollectionRef
+} from '$lib/server/core';
 import { adminStorage } from '$lib/firebase/admin';
+import { getProfileId } from '$lib/utils/campaign';
+import { FieldValue } from 'firebase-admin/firestore';
 
 const PIPELINE_COLLECTION = 'pipeline_jobs';
 
@@ -65,6 +72,95 @@ interface PipelineJobDocument {
 		profiles_collected?: number;
 		profiles_analyzed?: number;
 	};
+}
+
+async function upsertPipelineDoc(options: {
+	uid: string;
+	campaignId: string;
+	pipelineId: string;
+	status: string;
+	counts?: { final?: number; prelim?: number; contactable?: number };
+	storage?: { profiles_path?: string | null; prelim_path?: string | null; remaining_path?: string | null };
+	stageMeta?: Record<string, unknown>;
+}) {
+	const { uid, campaignId, pipelineId, status, counts, storage, stageMeta } = options;
+	const docRef = pipelineDocRef(uid, campaignId, pipelineId);
+	await docRef.set(
+		{
+			status,
+			completed_at: Date.now(),
+			counts: {
+				final_count: counts?.final ?? FieldValue.delete(),
+				prelim_count: counts?.prelim ?? FieldValue.delete(),
+				contactable_count: counts?.contactable ?? FieldValue.delete()
+			},
+			storage: storage ?? FieldValue.delete(),
+			stage_meta: stageMeta ?? FieldValue.delete()
+		},
+		{ merge: true }
+	);
+}
+
+async function ingestProfiles(options: {
+	uid: string;
+	campaignId: string;
+	pipelineId: string;
+	profiles: any[];
+}) {
+	const { uid, campaignId, pipelineId, profiles } = options;
+	if (!profiles || profiles.length === 0) return;
+	const profileCol = campaignProfilesCollectionRef(uid, campaignId);
+	const refsCol = pipelineProfileRefsCollectionRef(uid, campaignId, pipelineId);
+	const chunks: any[][] = [];
+	for (let i = 0; i < profiles.length; i += 400) {
+		chunks.push(profiles.slice(i, i + 400));
+	}
+	for (const chunk of chunks) {
+		const batch = firestore.batch();
+		chunk.forEach((profile: any, index: number) => {
+			const profileId = getProfileId(profile);
+			const now = Date.now();
+			const contactable = Boolean(profile?.email_address || profile?.business_email);
+			const profileRef = profileCol.doc(profileId);
+			batch.set(
+				profileRef,
+				{
+					profile_url: profile.profile_url ?? null,
+					platform: profile.platform ?? null,
+					display_name: profile.display_name ?? null,
+					followers: typeof profile.followers === 'number' ? profile.followers : null,
+					bio: profile.bio ?? profile.biography ?? null,
+					email_address: profile.email_address ?? null,
+					business_email: profile.business_email ?? null,
+					first_seen_at: FieldValue.serverTimestamp(),
+					last_seen_at: now,
+					first_pipeline_id: pipelineId,
+					last_pipeline_id: pipelineId,
+					times_seen: FieldValue.increment(1),
+					best_fit_score: typeof profile.fit_score === 'number' ? profile.fit_score : FieldValue.delete(),
+					contactable
+				},
+				{ merge: true }
+			);
+
+			const refDoc = refsCol.doc(profileId);
+			batch.set(
+				refDoc,
+				{
+					profile_id: profileId,
+					fit_score: profile.fit_score ?? null,
+					rank: profile.rank ?? index,
+					contactable,
+					profile_url: profile.profile_url ?? null
+				},
+				{ merge: true }
+			);
+		});
+		await batch.commit();
+	}
+
+	// Mark pipeline ingested
+	await pipelineDocRef(uid, campaignId, pipelineId).set({ ingested: true }, { merge: true });
 }
 
 function timestampToMillis(value: unknown): number | null {
@@ -466,12 +562,54 @@ export const GET = handleApiRoute(async (event) => {
 			pipelineId,
 			request_id: requestId
 		});
-		remainingProfiles = await loadProfilesFromStorage(data.remaining_profiles_storage_path);
-		remainingProfiles.sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
-		console.log(`[API] Loaded ${remainingProfiles.length} remaining profiles for pipeline ${pipelineId}`, {
-			request_id: requestId
+	remainingProfiles = await loadProfilesFromStorage(data.remaining_profiles_storage_path);
+	remainingProfiles.sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
+	console.log(`[API] Loaded ${remainingProfiles.length} remaining profiles for pipeline ${pipelineId}`, {
+		request_id: requestId
+	});
+}
+
+// Persist pipeline snapshot and ingest profiles into new per-campaign index
+const campaignId = (data as any).campaign_id || null;
+if (campaignId) {
+	try {
+		await upsertPipelineDoc({
+			uid: user.uid,
+			campaignId,
+			pipelineId,
+			status: data.status,
+			counts: {
+				final: data.profiles_count ?? profiles.length ?? null,
+				prelim: preliminaryCandidates.length ?? null,
+				contactable: profiles.filter((p: any) => p?.email_address || p?.business_email).length
+			},
+			storage: {
+				profiles_path: data.profiles_storage_path ?? null,
+				prelim_path: data.candidates_storage_path ?? null,
+				remaining_path: data.remaining_profiles_storage_path ?? null
+			},
+			stageMeta: {
+				query_expansion: data.query_expansion ?? null,
+				weaviate_search: data.weaviate_search ?? null,
+				brightdata_collection: data.brightdata_collection ?? null,
+				llm_analysis: data.llm_analysis ?? null
+			}
 		});
+
+		const pipelineDocSnap = await pipelineDocRef(user.uid, campaignId, pipelineId).get();
+		const alreadyIngested = pipelineDocSnap.exists && pipelineDocSnap.get('ingested') === true;
+		if (!alreadyIngested && data.status === 'completed' && profiles.length > 0) {
+			await ingestProfiles({
+				uid: user.uid,
+				campaignId,
+				pipelineId,
+				profiles
+			});
+		}
+	} catch (error) {
+		console.warn('[API] Failed to persist pipeline snapshot/ingest profiles', { error, pipelineId, campaignId, request_id: requestId });
 	}
+}
 	
 	return apiOk({
 		pipeline_id: data.job_id,

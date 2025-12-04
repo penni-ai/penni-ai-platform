@@ -106,6 +106,7 @@ export type SearchParams = {
 	min_followers: number | null;
 	max_followers: number | null;
 	campaign_id: string | null;
+	strict_location_matching?: boolean;
 };
 
 export type SearchResult = {

@@ -33,6 +33,9 @@
 		onRerun
 	}: Props = $props();
 
+	// Local state for strict location matching toggle
+	let strictLocationMatching = $state(false);
+
 	function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		if (isSubmitting || !summary.trim() || topN < 30 || hasPipeline) return;
@@ -42,7 +45,8 @@
 			top_n: topN,
 			min_followers: minFollowers,
 			max_followers: maxFollowers,
-			campaign_id: null // Will be set by parent
+			campaign_id: null, // Will be set by parent
+			strict_location_matching: strictLocationMatching
 		});
 	}
 
@@ -53,7 +57,8 @@
 			top_n: topN,
 			min_followers: minFollowers,
 			max_followers: maxFollowers,
-			campaign_id: null
+			campaign_id: null,
+			strict_location_matching: strictLocationMatching
 		});
 	}
 </script>
@@ -86,6 +91,25 @@
 						onclick={(e) => e.stopPropagation()}
 						onkeydown={(e) => e.stopPropagation()}
 					/>
+				</div>
+				<!-- Strict Location Toggle -->
+				<div class="flex items-center gap-2 pb-0.5">
+					<button
+						type="button"
+						onclick={(e) => { e.stopPropagation(); strictLocationMatching = !strictLocationMatching; }}
+						disabled={isSubmitting}
+						class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-white/40 focus:ring-offset-2 focus:ring-offset-[#FF6F61] disabled:opacity-50 disabled:cursor-not-allowed {strictLocationMatching ? 'bg-white' : 'bg-white/30'}"
+						role="switch"
+						aria-checked={strictLocationMatching}
+						title="Strict Location: Only match influencers with verified locations"
+					>
+						<span
+							class="pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out {strictLocationMatching ? 'translate-x-5 bg-[#FF6F61]' : 'translate-x-0 bg-white'}"
+						></span>
+					</button>
+					<span class="text-xs font-medium text-white/90 whitespace-nowrap" title="Strict Location: Only match influencers with verified locations in the target area">
+						📍 Strict
+					</span>
 				</div>
 				<div class="flex items-end pb-0.5 gap-2">
 					{#if hasPipeline && onRerun}
@@ -215,6 +239,33 @@
 				</div>
 			</div>
 			
+			<!-- Strict Location Matching -->
+			<div class="flex items-start gap-3">
+				<button
+					type="button"
+					onclick={() => strictLocationMatching = !strictLocationMatching}
+					disabled={isSubmitting}
+					id="strict-location-toggle"
+					class="relative mt-0.5 inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed {strictLocationMatching ? 'bg-[#FF6F61]' : 'bg-gray-200'}"
+					role="switch"
+					aria-checked={strictLocationMatching}
+					aria-label="Toggle strict location matching"
+					aria-labelledby="strict-location-label"
+				>
+					<span
+						class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {strictLocationMatching ? 'translate-x-5' : 'translate-x-0'}"
+					></span>
+				</button>
+				<div class="flex-1">
+					<label id="strict-location-label" class="block text-sm font-medium text-gray-700" for="strict-location-toggle">
+						Strict Location Matching
+					</label>
+					<p class="mt-0.5 text-xs text-gray-500">
+						Only match influencers with verified locations in the target area. Influencers with unknown or unverified locations will be heavily penalized.
+					</p>
+				</div>
+			</div>
+			
 			<!-- Error Message -->
 			{#if error}
 				<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -240,4 +291,3 @@
 		</form>
 	</div>
 {/if}
-

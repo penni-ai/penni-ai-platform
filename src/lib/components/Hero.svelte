@@ -65,15 +65,13 @@
 								<p class="text-xs font-semibold text-gray-500 mb-2">Campaign</p>
 								<button onclick={async () => {
 									try {
-										const response = await fetch('/api/campaigns', { method: 'POST' });
-										if (!response.ok) throw new Error('Failed to create campaign');
-										const data = await response.json();
-										if (data.campaignId) {
-											// Force simple view for new campaigns
-											localStorage.setItem('campaignViewMode', 'simple');
-											window.location.href = `/campaign/${data.campaignId}?mode=simple`;
-										}
-									} catch (error) {
+						const response = await fetch('/api/campaigns', { method: 'POST' });
+						if (!response.ok) throw new Error('Failed to create campaign');
+						const data = await response.json();
+						if (data.campaignId) {
+							window.location.href = `/campaign/${data.campaignId}`;
+						}
+					} catch (error) {
 										console.error('Failed to create campaign', error);
 										alert('Failed to create campaign. Please try again.');
 									}

@@ -121,12 +121,58 @@ ${postsText || 'No posts available'}`;
 
 /**
  * Build fit analysis prompt
+ * @param strictLocationMatching - When true, uses much stricter location scoring that heavily penalizes unknown locations
  */
-export function buildFitAnalysisPrompt(profileText: string, businessDescription: string): string {
+export function buildFitAnalysisPrompt(profileText: string, businessDescription: string, strictLocationMatching: boolean = false): string {
+  // Build location scoring section based on strict mode
+  const locationScoringSection = strictLocationMatching
+    ? `1. LOCATION MATCHING (MOST IMPORTANT - WEIGHT: 70% of score) - STRICT MODE ENABLED:
+   ⚠️ STRICT LOCATION MATCHING IS ENABLED - Location requirements are NON-NEGOTIABLE.
+   - Determine the influencer's ACTUAL location from their bio, posts, captions, hashtags, and profile information.
+   - Look for: city names, neighborhoods, regions, landmarks, local references, location tags, "Based in", "📍", area codes, or local businesses mentioned.
+   - Compare this information against the "Influencer Location" requirement in the business description.
+   - STRICT Scoring for LOCATION (out of 7 points):
+     * If the influencer is BASED IN or PRIMARILY OPERATES IN the EXACT required location/city: 7 points.
+     * If the influencer is in a NEARBY/ADJACENT area (same metro region, within ~50 miles): 4 points.
+     * If the location is NOT SPECIFIED or cannot be determined: 1 point (HEAVILY PENALIZED - unknown location is almost as bad as wrong location).
+     * If the influencer is based in a COMPLETELY DIFFERENT area/city/country: 0 points.
+   - In STRICT MODE: An influencer with unknown location should score NO HIGHER than 4 total.
+   - In STRICT MODE: An influencer in the wrong location should score NO HIGHER than 3 total.
+   - Location is the ABSOLUTE DETERMINING FACTOR in strict mode.`
+    : `1. LOCATION MATCHING (MOST IMPORTANT - WEIGHT: 60% of score):
+   - Determine the influencer's ACTUAL location from their bio, posts, captions, hashtags, and profile information.
+   - Look for: city names, neighborhoods, regions, landmarks, local references, location tags, "Based in", "📍", area codes, or local businesses mentioned.
+   - Compare this information against the "Influencer Location" requirement in the business description.
+   - Scoring for LOCATION (out of 6 points):
+     * If the influencer is BASED IN or PRIMARILY OPERATES IN the required location/area: 6 points.
+     * If the location is NOT SPECIFIED or cannot be determined: 3 points.
+     * If the influencer is based in a COMPLETELY DIFFERENT area: 0 points (no location points).
+   - Location is the single most important factor in the entire score.`;
+
+  const scoringSummarySection = strictLocationMatching
+    ? `SCORING SUMMARY (STRICT LOCATION MODE):
+- Score 9-10: Excellent fit - EXACT location match AND content/type aligns perfectly
+- Score 7-8: Good fit - Location matches (exact or nearby metro), content/type mostly aligns
+- Score 5-6: Moderate fit - Location matches exactly but content/type is off
+- Score 3-4: Poor fit - Location is nearby but not exact, OR location unknown with perfect content match
+- Score 1-2: Very poor fit - Location unknown or wrong, regardless of content quality`
+    : `SCORING SUMMARY:
+- Score 9-10: Excellent fit - Location matches AND content/type aligns perfectly
+- Score 7-8: Good fit - Location matches, content/type mostly aligns
+- Score 5-6: Moderate fit - Location matches but content/type is off, OR content matches but location is not specified/cannot be determined
+- Score 3-4: Poor fit - Location mismatch/uncertain AND content/type mismatch
+- Score 1-2: Very poor fit - Multiple critical mismatches, or a business profile with penalties`;
+
+  const strictModeHeader = strictLocationMatching
+    ? `\n⚠️ STRICT LOCATION MATCHING MODE ENABLED ⚠️
+The business has requested STRICT location matching. Location verification is NON-NEGOTIABLE.
+Influencers with unverifiable locations must be scored LOW regardless of content quality.\n`
+    : '';
+
   return `═══════════════════════════════════════════════════════════════
 CAMPAIGN DETAILS (What the business is looking for):
 ═══════════════════════════════════════════════════════════════
-
+${strictModeHeader}
 ${businessDescription}
 
 ═══════════════════════════════════════════════════════════════
@@ -166,17 +212,9 @@ Then, evaluate this influencer's fit for the business requirements. Be critical,
 
 CRITICAL SCORING GUIDELINES - LOCATION IS THE TOP PRIORITY:
 
-1. LOCATION MATCHING (MOST IMPORTANT - WEIGHT: 60% of score):
-   - Determine the influencer's ACTUAL location from their bio, posts, captions, hashtags, and profile information.
-   - Look for: city names, neighborhoods, regions, landmarks, local references, location tags, "Based in", "📍", area codes, or local businesses mentioned.
-   - Compare this information against the "Influencer Location" requirement in the business description.
-   - Scoring for LOCATION (out of 6 points):
-     * If the influencer is BASED IN or PRIMARILY OPERATES IN the required location/area: 6 points.
-     * If the location is NOT SPECIFIED or cannot be determined: 3 points.
-     * If the influencer is based in a COMPLETELY DIFFERENT area: 0 points (no location points).
-   - Location is the single most important factor in the entire score.
+${locationScoringSection}
 
-2. CONTENT TYPE MATCHING, INDIVIDUALITY, AND BUSINESS PENALTY (WEIGHT: 20% of score):
+2. CONTENT TYPE MATCHING, INDIVIDUALITY, AND BUSINESS PENALTY (WEIGHT: ${strictLocationMatching ? '15%' : '20%'} of score):
    - Evaluate if the influencer is an INDIVIDUAL content creator, not a business, shop, agency, or brand account. Only individuals making original content should count as a true influencer.
    - Compare the influencer's primary content themes and style with the "Type of Influencer" requirements listed by the business.
    - Review bio, post captions, hashtags, and overall content themes.
@@ -185,25 +223,20 @@ CRITICAL SCORING GUIDELINES - LOCATION IS THE TOP PRIORITY:
    - Mismatch (content does not match requirements): 0 points.
    - If the profile appears to be a business, shop, agency, or brand (not an individual): Subtract 2 points from the total score (apply this penalty after adding the other components).
 
-3. BUSINESS-TO-INFLUENCER FIT, INCLUDING AUDIENCE AND BRAND ALIGNMENT (WEIGHT: 20% of score):
+3. BUSINESS-TO-INFLUENCER FIT, INCLUDING AUDIENCE AND BRAND ALIGNMENT (WEIGHT: ${strictLocationMatching ? '15%' : '20%'} of score):
    - Assess the match between the influencer and the key business requirements OUTSIDE of strict location or content type.
    - This includes the following aspect:
-     * OVERALL BUSINESS FIT & RELEVANCE: How well do the influencer's style, values, content, and audience align with the business and campaign goals? Give up to 2 points.
+     * OVERALL BUSINESS FIT & RELEVANCE: How well do the influencer's style, values, content, and audience align with the business and campaign goals? Give up to ${strictLocationMatching ? '1 point' : '2 points'}.
 
 
-SCORING SUMMARY:
-- Score 9-10: Excellent fit - Location matches AND content/type aligns perfectly
-- Score 7-8: Good fit - Location matches, content/type mostly aligns
-- Score 5-6: Moderate fit - Location matches but content/type is off, OR content matches but location is not specified/cannot be determined
-- Score 3-4: Poor fit - Location mismatch/uncertain AND content/type mismatch
-- Score 1-2: Very poor fit - Multiple critical mismatches, or a business profile with penalties
+${scoringSummarySection}
 
 RATIONALE GUIDELINES:
 - Provide exactly 1 sentence of reasoning for each of the following: (1) Location matching, (2) Content type/individuality, and (3) Overall business fit & relevance.
 - Each sentence should be concise and specific to that criterion, clearly stating the merit or issue for that point.
 - Do not combine these into a single sentence; the rationale should be exactly 3 sentences, one for each scoring criterion.
 - If points were subtracted because the profile appears to be a business, clearly state this in the content type/individuality sentence.
-- Even if location cannot be determined or is unknown, still provide a sentence about location.
+- Even if location cannot be determined or is unknown, still provide a sentence about location.${strictLocationMatching ? '\n- In STRICT MODE: If location cannot be verified, explicitly state this is a major penalty.' : ''}
 - Be objective and to the point.
 
 Return ONLY a strict JSON object with the following schema, no extra text:
@@ -213,13 +246,15 @@ Return ONLY a strict JSON object with the following schema, no extra text:
 
 /**
  * Analyze single profile for fit with business requirements
+ * @param strictLocationMatching - When true, uses stricter location scoring
  */
 export async function analyzeProfileFit(
   profile: BrightDataUnifiedProfile,
-  businessDescription: string
+  businessDescription: string,
+  strictLocationMatching: boolean = false
 ): Promise<{ fit_score: number; fit_rationale: string; fit_summary: string }> {
   const profileText = formatProfileForLLM(profile);
-  const prompt = buildFitAnalysisPrompt(profileText, businessDescription);
+  const prompt = buildFitAnalysisPrompt(profileText, businessDescription, strictLocationMatching);
   const model = getOpenAIModel();
   const client = getOpenAIClient();
 
@@ -311,11 +346,13 @@ export async function analyzeProfileFit(
 
 /**
  * Analyze multiple profiles concurrently with concurrency control
+ * @param strictLocationMatching - When true, uses stricter location scoring
  */
 export async function analyzeProfileFitBatch(
   profiles: BrightDataUnifiedProfile[],
   businessDescription: string,
-  maxConcurrent: number = 20
+  maxConcurrent: number = 20,
+  strictLocationMatching: boolean = false
 ): Promise<Array<{ fit_score: number; fit_rationale: string; fit_summary: string }>> {
   const concurrentLimit = maxConcurrent || getMaxConcurrentLLMAnalyses();
   const results: Array<{ fit_score: number; fit_rationale: string; fit_summary: string }> = [];
@@ -330,7 +367,7 @@ export async function analyzeProfileFitBatch(
         let lastError: Error | null = null;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
-            return await analyzeProfileFit(profile, businessDescription);
+            return await analyzeProfileFit(profile, businessDescription, strictLocationMatching);
           } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
             if (attempt < 2) {

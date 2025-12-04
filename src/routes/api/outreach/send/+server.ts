@@ -5,9 +5,14 @@ import { createDraftsViaGmail, sendEmailsViaGmail, getGmailConnection } from '$l
 import { replaceTemplateVariables } from '$lib/server/outreach/email-templates';
 import { generateEmailFooter } from '$lib/server/outreach/email-footer';
 import { incrementOutreachUsage, getOutreachUsage } from '$lib/server/usage';
-import { userDocRef, outreachContactsCollectionRef } from '$lib/server/core/firestore';
+import {
+	userDocRef,
+	contactsCollectionRef,
+	campaignProfilesCollectionRef
+} from '$lib/server/core/firestore';
 import type { UserEmailSettings, OutreachContact } from '$lib/server/core/firestore';
 import { clearSelectionsAfterSend } from '$lib/server/outreach/clear-selections';
+import { FieldValue } from 'firebase-admin/firestore';
 
 export const POST = handleApiRoute(async (event) => {
 	const user = requireUser(event);
@@ -207,7 +212,8 @@ export const POST = handleApiRoute(async (event) => {
 		
 		// Save outreach contacts to Firestore for tracking
 		if (body.campaignId && hasRecipients) {
-			const contactsRef = outreachContactsCollectionRef(user.uid, body.campaignId);
+		const contactsRef = contactsCollectionRef(user.uid, body.campaignId);
+		const profilesRef = campaignProfilesCollectionRef(user.uid, body.campaignId);
 			const now = Date.now();
 			
 			// Track which emails were successfully sent (for direct send) or created as drafts
@@ -291,6 +297,27 @@ export const POST = handleApiRoute(async (event) => {
 					}
 					
 					await contactsRef.doc(contactId).set(contact, { merge: true }); // Use merge to avoid overwriting if exists
+
+					// Update campaign profile contact status if profile exists
+					if (recipient.influencerId) {
+						const profileRef = profilesRef.doc(recipient.influencerId);
+						await profileRef.set(
+							{
+								contactable: true,
+								last_seen_at: FieldValue.serverTimestamp(),
+								contact_status: {
+									email: {
+										status: contact.sendStatus,
+										sentAt: wasSuccessful ? now : null,
+										repliedAt: null,
+										openedAt: null,
+										errorMessage: wasSuccessful ? null : 'send failed'
+									}
+								}
+							},
+							{ merge: true }
+						);
+					}
 					
 					// Track for clearing selections (only for successful sends/drafts)
 					if (shouldClearSelection && recipient.influencerId) {

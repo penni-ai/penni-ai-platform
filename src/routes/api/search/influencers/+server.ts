@@ -2,10 +2,17 @@ import { randomUUID } from 'crypto';
 import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { getSearchUsage, incrementSearchUsage } from '$lib/server/usage';
 import { getServiceAccountAccessToken, getCloudRunPipelineUrl } from '$lib/server/firebase';
-import { campaignDocRef, serverTimestamp, firestore } from '$lib/server/core';
+import {
+	campaignDocRef,
+	campaignProfilesCollectionRef,
+	pipelineDocRef,
+	serverTimestamp,
+	firestore
+} from '$lib/server/core';
 
 const PIPELINE_BIND_RETRY_DELAYS_MS = [0, 100, 500, 1000];
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const EXCLUSION_FETCH_LIMIT = 1000; // cap of URLs sent to pipeline service
 
 type ApiLogger = {
 	info: (message: string, meta?: Record<string, unknown>) => void;
@@ -43,16 +50,16 @@ async function bindCampaignPipelineId(options: {
 					// This handles rerunning pipelines - the new pipeline_id should replace the old one
 					tx.set(
 						campaignRef,
-						{ pipeline_id: pipelineId, updatedAt: serverTimestamp() },
+						{ pipeline_id: pipelineId, active_pipeline_id: pipelineId, updatedAt: serverTimestamp() },
 						{ merge: true }
 					);
 					return { status: 'updated' as const, existingPipelineId };
 				}
 				tx.set(
-					campaignRef,
-					{ pipeline_id: pipelineId, updatedAt: serverTimestamp() },
-					{ merge: true }
-				);
+				campaignRef,
+				{ pipeline_id: pipelineId, active_pipeline_id: pipelineId, updatedAt: serverTimestamp() },
+				{ merge: true }
+			);
 				return { status: 'updated' as const };
 			});
 			const elapsed = Date.now() - startedAt;
@@ -99,6 +106,63 @@ async function bindCampaignPipelineId(options: {
 	return { status: 'failed' as const, attempts: PIPELINE_BIND_RETRY_DELAYS_MS.length, campaign_binding_ms: elapsed };
 }
 
+async function buildExclusionList(uid: string, campaignId: string, limit = EXCLUSION_FETCH_LIMIT): Promise<string[]> {
+	try {
+		const snapshot = await campaignProfilesCollectionRef(uid, campaignId)
+			.orderBy('last_seen_at', 'desc')
+			.limit(limit)
+			.get();
+		return snapshot.docs
+			.map((doc) => doc.get('profile_url'))
+			.filter((url): url is string => typeof url === 'string' && url.trim().length > 0);
+	} catch (error) {
+		console.warn('[search] failed to build exclusion list', { error });
+		return [];
+	}
+}
+
+async function createPipelineDoc(options: {
+	uid: string;
+	campaignId: string;
+	pipelineId: string;
+	params: Record<string, unknown>;
+	status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
+	exclusionCount: number;
+	logger?: ApiLogger;
+}) {
+	const { uid, campaignId, pipelineId, params, status, exclusionCount, logger } = options;
+	const docRef = pipelineDocRef(uid, campaignId, pipelineId);
+	try {
+		await docRef.set(
+			{
+				user_id: uid,
+				campaign_id: campaignId,
+				pipeline_id: pipelineId,
+				created_at: Date.now(),
+				status,
+				params: {
+					business_description: params.business_description ?? null,
+					top_n: params.top_n ?? null,
+					min_followers: params.min_followers ?? null,
+					max_followers: params.max_followers ?? null,
+					platforms: params.platforms ?? null,
+					locations: params.locations ?? null,
+					exclude_profile_urls: exclusionCount
+				}
+			},
+			{ merge: true }
+		);
+		// Mark campaign active pipeline for quick lookup
+		await campaignDocRef(uid, campaignId).set(
+			{ active_pipeline_id: pipelineId, updatedAt: serverTimestamp() },
+			{ merge: true }
+		);
+		logger?.info('Pipeline doc created', { pipelineId, campaignId, exclusionCount });
+	} catch (error) {
+		logger?.warn('Failed to create pipeline doc', { pipelineId, campaignId, error });
+	}
+}
+
 export const POST = handleApiRoute(async (event) => {
 	assertSameOrigin(event);
 	const user = requireUser(event);
@@ -111,7 +175,7 @@ export const POST = handleApiRoute(async (event) => {
 		logger?.info('Search request received', { userId: user.uid, request_id: requestId });
 		
 		const body = await event.request.json();
-		const { business_description, top_n, min_followers, max_followers, campaign_id, exclude_profile_urls } = body;
+		const { business_description, top_n, min_followers, max_followers, campaign_id, exclude_profile_urls, strict_location_matching } = body;
 		
 		// Validate required fields
 		if (!business_description || typeof business_description !== 'string' || !business_description.trim()) {
@@ -225,6 +289,15 @@ export const POST = handleApiRoute(async (event) => {
 			});
 		}
 		
+		// Build exclusion list automatically when campaign provided and caller did not pass one
+		let exclusionUrls: string[] | undefined;
+		if (campaignId && (!exclude_profile_urls || !Array.isArray(exclude_profile_urls))) {
+			exclusionUrls = await buildExclusionList(user.uid, campaignId, EXCLUSION_FETCH_LIMIT);
+			logger?.info('Auto-built exclusion list', { size: exclusionUrls.length, request_id: requestId });
+		} else if (Array.isArray(exclude_profile_urls)) {
+			exclusionUrls = exclude_profile_urls.filter((url) => typeof url === 'string');
+		}
+
 		// Use Cloud Run pipeline service
 		// Note: Using service account authentication (no user ID token needed)
 		// User is already verified in hooks.server.ts via session cookie
@@ -253,8 +326,12 @@ export const POST = handleApiRoute(async (event) => {
 			requestBody.campaign_id = campaignId;
 		}
 		// Pass excluded profile URLs for "find more influencers" functionality
-		if (exclude_profile_urls && Array.isArray(exclude_profile_urls) && exclude_profile_urls.length > 0) {
-			requestBody.exclude_profile_urls = exclude_profile_urls;
+		if (exclusionUrls && exclusionUrls.length > 0) {
+			requestBody.exclude_profile_urls = exclusionUrls;
+		}
+		// Pass strict location matching option
+		if (strict_location_matching === true) {
+			requestBody.strict_location_matching = true;
 		}
 		
 		logger?.info('Calling Cloud Run pipeline service', {
@@ -342,6 +419,27 @@ export const POST = handleApiRoute(async (event) => {
 		}
 
 		const pipelineId = typeof functionResult.job_id === 'string' ? (functionResult.job_id as string) : undefined;
+
+		// Persist pipeline stub so we can support multiple runs and exclusions
+		if (campaignId && pipelineId) {
+			void createPipelineDoc({
+				uid: user.uid,
+				campaignId,
+				pipelineId,
+				status: 'pending',
+				params: {
+					business_description,
+					top_n: topN,
+					min_followers: minFollowers,
+					max_followers: maxFollowers,
+					platforms: undefined,
+					locations: undefined,
+					exclude_profile_urls: exclusionUrls?.length ?? 0
+				},
+				exclusionCount: exclusionUrls?.length ?? 0,
+				logger: pipelineLogger
+			});
+		}
 		
 		// For 202 Accepted, the pipeline is processing in background
 		// Return minimal info - frontend will poll for status

@@ -26,7 +26,6 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     onSubmit: (params: SearchParams) => void;
     onRerun?: () => void;
     onFindMore?: (excludeProfileUrls: string[]) => void; // For "Find More Influencers" functionality
-    onGoAdvanced: () => void;
     onSendAll?: () => void;
   }
 
@@ -45,7 +44,6 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     onSubmit,
     onRerun,
     onFindMore,
-    onGoAdvanced,
     onSendAll
   }: Props = $props();
 
@@ -60,7 +58,7 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
   let minFollowersLocal = $state<number | null>(10000);
   let maxFollowersLocal = $state<number | null>(500000);
   let topNLocal = $state(searchFormTopN || 10);
-  let notes = $state(influencerSummary || '');
+  let strictLocationMatching = $state(false);
 
   // Outreach + Gmail + template state (simple view)
   type GmailConnection = { id: string; email: string; primary?: boolean | null };
@@ -158,9 +156,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   let step = $state(0);
   const steps = [
     'Brand basics',
-    'Influencer targets',
-    'Audience & reach',
-    'Extras'
+    'Targets & reach'
   ];
   const isLastStep = $derived(step === steps.length - 1);
   const isFirstStep = $derived(step === 0);
@@ -426,9 +422,6 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     if (searchFormTopN !== null && searchFormTopN !== undefined) {
       topNLocal = searchFormTopN || 10;
     }
-    if (influencerSummary && !notes) {
-      notes = influencerSummary;
-    }
   });
 
   function buildDescription() {
@@ -451,7 +444,6 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
       }
     }
     if (ask.length) parts.push(`Looking for ${ask.join(' ')}`);
-    if (notes) parts.push(notes);
     return parts.join('. ').trim();
   }
 
@@ -463,7 +455,8 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
       top_n: topNLocal,
       min_followers: minFollowersLocal,
       max_followers: maxFollowersLocal,
-      campaign_id: effectiveCampaign?.id ?? null
+      campaign_id: effectiveCampaign?.id ?? null,
+      strict_location_matching: strictLocationMatching
     });
   }
 
@@ -804,132 +797,192 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   }
 </script>
 
-<div class="flex h-full flex-col bg-white border-l border-gray-200">
+<div style="display: flex; flex-direction: column; width: 100%; height: 100%; background: linear-gradient(145deg, #faf9f7 0%, #f5f3f0 50%, #f0eeeb 100%); position: relative; overflow: hidden;">
+  <!-- Subtle grid pattern -->
+  <div style="position: absolute; inset: 0; background-image: linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none;"></div>
+  
+  <!-- Soft gradient orbs for depth -->
+  <div style="position: absolute; top: -15%; right: -5%; width: 500px; height: 500px; background: radial-gradient(circle, rgba(255,111,97,0.08) 0%, transparent 70%); pointer-events: none; filter: blur(80px);"></div>
+  <div style="position: absolute; bottom: -20%; left: -10%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(147,112,219,0.06) 0%, transparent 70%); pointer-events: none; filter: blur(100px);"></div>
+  
   {#if !hasPipeline && !isSearchFormSubmitting}
-    <!-- Form mode: Centered card layout -->
-    <div class="flex-1 overflow-y-auto flex items-center justify-center px-4 py-6 sm:px-6 sm:py-10">
-      <div class="w-full max-w-2xl">
-        <div class="relative rounded-3xl bg-white shadow-lg border border-rose-100 px-5 py-6 sm:px-7 sm:py-8 space-y-6">
-          {#if searchUsage}
-            <div class="flex justify-end">
-              <span class="text-[11px] text-gray-500 bg-gray-50 px-2.5 py-1 rounded-full border border-gray-100">
-                {searchUsage.remaining}/{searchUsage.limit} left
-              </span>
-            </div>
-          {/if}
-
-          <div class="space-y-1 text-center">
-            <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Campaign search</h1>
-            <p class="text-sm text-gray-600">Quickly capture the essentials to launch an influencer search.</p>
+    <!-- Form mode: Full screen with glass effect -->
+    <div style="flex: 1; display: flex; flex-direction: column; width: 100%; height: 100%; padding: 32px; overflow-y: auto; position: relative; z-index: 1;">
+      <!-- Top bar with usage -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 11px; font-weight: 600; color: rgba(0,0,0,0.4); text-transform: uppercase; letter-spacing: 0.1em;">Step {step + 1} of {steps.length}</span>
+          <span style="font-size: 11px; color: rgba(0,0,0,0.2);">·</span>
+          <span style="font-size: 11px; color: #FF6F61; font-weight: 500;">{steps[step]}</span>
+        </div>
+        {#if searchUsage}
+          <div style="display: flex; align-items: center; gap: 6px; padding: 6px 14px; background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+            <span style="font-size: 11px; color: rgba(0,0,0,0.5);">Searches:</span>
+            <span style="font-size: 12px; font-weight: 600; color: #FF6F61;">{searchUsage.remaining}</span>
+            <span style="font-size: 11px; color: rgba(0,0,0,0.3);">/ {searchUsage.limit}</span>
           </div>
+        {/if}
+      </div>
 
-          <div class="flex items-center justify-center gap-2 text-xs text-gray-500">
-            {#each steps as label, index}
-              <div class={`h-2 w-8 rounded-full transition ${index === step ? 'bg-rose-400' : 'bg-gray-200'}`} title={label}></div>
-            {/each}
-          </div>
+      <!-- Progress bar -->
+      <div style="width: 100%; height: 3px; background: rgba(0,0,0,0.06); border-radius: 2px; margin-bottom: 48px; position: relative; overflow: hidden;">
+        <div style="height: 100%; background: linear-gradient(90deg, #FF6F61, #FF8A80); border-radius: 2px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: {((step + 1) / steps.length) * 100}%;"></div>
+      </div>
 
-          <form class="rounded-2xl border border-gray-100 bg-gray-50/60 p-5 shadow-inner" onsubmit={submitMinimal}>
-            {#if step === 0}
-              <div class="grid gap-4">
-                <div class="space-y-2">
-                  <label for="simple-brand" class="text-xs font-semibold text-gray-700">Brand / Company</label>
-                  <input id="simple-brand" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-2 focus:ring-rose-100" bind:value={brand} oninput={scheduleAutosave} placeholder="e.g., Dune Skincare" />
+      <!-- Main content area -->
+      <div style="flex: 1; display: flex; flex-direction: column; width: 100%;">
+        <form style="display: flex; flex-direction: column; flex: 1; width: 100%;" onsubmit={submitMinimal}>
+          {#if step === 0}
+            <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
+              <div style="margin-bottom: 16px;">
+                <h1 style="font-size: 38px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px 0; letter-spacing: -0.02em;">Tell us about your brand</h1>
+                <p style="font-size: 16px; color: rgba(0,0,0,0.5); margin: 0;">We'll use this to find the perfect creators for you.</p>
+              </div>
+              
+              <div style="display: flex; flex-direction: column; gap: 24px;">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <label for="simple-brand" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Brand / Company name</label>
+                  <input id="simple-brand" class="light-input" bind:value={brand} oninput={scheduleAutosave} placeholder="e.g., Dune Skincare" />
                 </div>
-                <div class="space-y-2">
-                  <label for="simple-about" class="text-xs font-semibold text-gray-700">Product / About</label>
-                  <textarea id="simple-about" rows="2" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-2 focus:ring-rose-100" bind:value={about} oninput={scheduleAutosave} placeholder="What you sell and why people love it"></textarea>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <label for="simple-about" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">What do you sell?</label>
+                  <textarea id="simple-about" rows="3" class="light-input" bind:value={about} oninput={scheduleAutosave} placeholder="Describe your product and what makes it special..."></textarea>
                 </div>
-                <div class="space-y-2">
-                  <label for="simple-website" class="text-xs font-semibold text-gray-700">Website (optional)</label>
-                  <input id="simple-website" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-2 focus:ring-rose-100" bind:value={website} oninput={scheduleAutosave} placeholder="https://" />
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <label for="simple-website" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Website <span style="color: rgba(0,0,0,0.3);">(optional)</span></label>
+                  <input id="simple-website" class="light-input" bind:value={website} oninput={scheduleAutosave} placeholder="https://yoursite.com" />
                 </div>
               </div>
-            {:else if step === 1}
-              <div class="grid gap-4">
-                <div class="space-y-2">
-                  <label for="simple-type" class="text-xs font-semibold text-gray-700">Influencer type</label>
-                  <input id="simple-type" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-2 focus:ring-rose-100" bind:value={influencerType} oninput={scheduleAutosave} placeholder="e.g., beauty reviewers" />
+            </div>
+          {:else}
+            <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
+              <div style="margin-bottom: 16px;">
+                <h1 style="font-size: 38px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px 0; letter-spacing: -0.02em;">Who are you looking for?</h1>
+                <p style="font-size: 16px; color: rgba(0,0,0,0.5); margin: 0;">Define the type of creators and the reach you need.</p>
+              </div>
+              
+              <div style="display: flex; flex-direction: column; gap: 24px;">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <label for="simple-type" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Creator niche or type</label>
+                  <input id="simple-type" class="light-input" bind:value={influencerType} oninput={scheduleAutosave} placeholder="e.g., beauty reviewers, fitness coaches, food bloggers" />
                 </div>
-                <div class="space-y-2">
-                  <label for="simple-platforms" class="text-xs font-semibold text-gray-700">Platforms</label>
-                  <div class="flex flex-wrap gap-2">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  <div id="platforms-label" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Platforms</div>
+                  <div style="display: flex; gap: 12px; flex-wrap: wrap;">
                     {#each platformOptions as option}
                       <button
                         type="button"
-                        class={`px-3 py-1.5 text-xs font-medium rounded-full border transition ${selectedPlatforms.includes(option) ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-gray-700 border-gray-200 hover:border-rose-200'}`}
+                        class="platform-btn"
+                        style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid {selectedPlatforms.includes(option) ? 'rgba(255,111,97,0.4)' : 'rgba(0,0,0,0.1)'}; background: {selectedPlatforms.includes(option) ? 'linear-gradient(135deg, rgba(255,111,97,0.12), rgba(255,138,128,0.08))' : 'rgba(255,255,255,0.7)'}; backdrop-filter: blur(10px); color: {selectedPlatforms.includes(option) ? '#e85a4f' : 'rgba(0,0,0,0.6)'}; cursor: pointer; transition: all 0.2s; box-shadow: {selectedPlatforms.includes(option) ? '0 2px 12px rgba(255,111,97,0.15)' : '0 2px 8px rgba(0,0,0,0.04)'};"
                         onclick={() => togglePlatform(option)}
+                        aria-labelledby="platforms-label"
                       >
-                        {option}
+                        {option === 'TikTok' ? '🎵' : '📸'} {option}
                       </button>
                     {/each}
                   </div>
                 </div>
-              </div>
-            {:else if step === 2}
-              <div class="grid gap-4">
-                <div class="space-y-2">
-                  <label for="simple-location" class="text-xs font-semibold text-gray-700">Audience location</label>
-                  <input id="simple-location" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-2 focus:ring-rose-100" bind:value={location} oninput={scheduleAutosave} placeholder="e.g., US & Canada" />
+
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <label for="simple-location" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Target location</label>
+                  <input id="simple-location" class="light-input" bind:value={location} oninput={scheduleAutosave} placeholder="e.g., US, Canada, UK" />
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                  <div class="space-y-2">
-                    <label for="simple-min" class="text-xs font-semibold text-gray-700">Min followers</label>
-                    <input id="simple-min" type="number" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-2 focus:ring-rose-100" bind:value={minFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="10,000" />
-                  </div>
-                  <div class="space-y-2">
-                    <label for="simple-max" class="text-xs font-semibold text-gray-700">Max followers</label>
-                    <input id="simple-max" type="number" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-2 focus:ring-rose-100" bind:value={maxFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="500,000" />
+
+                <div style="display: flex; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                  <button
+                    type="button"
+                    onclick={() => strictLocationMatching = !strictLocationMatching}
+                    id="simple-strict-location"
+                    style="position: relative; width: 48px; height: 26px; border-radius: 999px; border: none; cursor: pointer; transition: background 0.2s; background: {strictLocationMatching ? 'linear-gradient(90deg, #FF6F61, #FF8A80)' : 'rgba(0,0,0,0.15)'};"
+                    role="switch"
+                    aria-checked={strictLocationMatching}
+                    aria-label="Toggle strict location matching"
+                  >
+                    <span style="position: absolute; top: 3px; left: {strictLocationMatching ? '25px' : '3px'}; width: 20px; height: 20px; background: #ffffff; border-radius: 50%; transition: left 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.15);"></span>
+                  </button>
+                  <div style="flex: 1;">
+                    <label id="simple-strict-location-label" style="font-size: 14px; font-weight: 500; color: rgba(0,0,0,0.8);" for="simple-strict-location">Strict location matching</label>
+                    <p style="font-size: 12px; color: rgba(0,0,0,0.4); margin: 4px 0 0 0;">Only show creators with verified locations</p>
                   </div>
                 </div>
-              </div>
-            {:else}
-              <div class="grid gap-4">
-                <div class="space-y-2">
-                  <label for="simple-topn" class="text-xs font-semibold text-gray-700">Number of influencers</label>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                  <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label for="simple-min" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Min followers</label>
+                    <input id="simple-min" type="number" class="light-input" bind:value={minFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="10,000" />
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label for="simple-max" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Max followers</label>
+                    <input id="simple-max" type="number" class="light-input" bind:value={maxFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="500,000" />
+                  </div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <label for="simple-topn" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">How many creators do you want?</label>
                   <input
                     id="simple-topn"
                     type="number"
                     min="10"
                     max={maxInfluencers}
-                    class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-2 focus:ring-rose-100"
+                    class="light-input"
                     bind:value={topNLocal}
                     oninput={scheduleAutosave}
                   />
-                  <p class="text-[11px] text-gray-500">Min 10. Max {maxInfluencers}.</p>
-                </div>
-                <div class="space-y-2">
-                  <label for="simple-notes" class="text-xs font-semibold text-gray-700">Extra notes (optional)</label>
-                  <textarea id="simple-notes" rows="2" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-2 focus:ring-rose-100" bind:value={notes} oninput={scheduleAutosave} placeholder="Tone, exclusions, hashtags, niches"></textarea>
+                  <p style="font-size: 12px; color: rgba(0,0,0,0.4); margin: 4px 0 0 0;">Min 10, max {maxInfluencers} based on your plan</p>
                 </div>
               </div>
-            {/if}
-
-            <div class="mt-5 flex items-center justify-end gap-2">
-              <Button variant="secondary" size="sm" type="button" disabled={isFirstStep} onclick={prevStep}>Back</Button>
-              {#if isLastStep}
-                <Button variant="primary" size="sm" type="submit" disabled={isSearchFormSubmitting}>
-                  {#if isSearchFormSubmitting}
-                    Launching…
-                  {:else}
-                    Start search
-                  {/if}
-                </Button>
-              {:else}
-                <Button variant="primary" size="sm" type="button" onclick={nextStep}>Next</Button>
-              {/if}
             </div>
-          </form>
-        </div>
+          {/if}
+
+          <!-- Navigation buttons - sticky at bottom -->
+          <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 32px; margin-top: auto; border-top: 1px solid rgba(0,0,0,0.06);">
+            <button
+              type="button"
+              disabled={isFirstStep}
+              onclick={prevStep}
+              class="nav-btn-back-light"
+              style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); color: {isFirstStep ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor: {isFirstStep ? 'not-allowed' : 'pointer'}; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.04);"
+            >
+              ← Back
+            </button>
+            
+            {#if isLastStep}
+              <button
+                type="submit"
+                disabled={isSearchFormSubmitting}
+                class="nav-btn-primary-light"
+                style="padding: 16px 40px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: linear-gradient(135deg, #FF6F61 0%, #FF8A80 100%); color: #ffffff; cursor: {isSearchFormSubmitting ? 'not-allowed' : 'pointer'}; transition: all 0.2s; box-shadow: 0 4px 20px rgba(255,111,97,0.25); opacity: {isSearchFormSubmitting ? '0.7' : '1'};"
+              >
+                {#if isSearchFormSubmitting}
+                  <span style="display: inline-flex; align-items: center; gap: 8px;">
+                    <span style="width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
+                    Launching...
+                  </span>
+                {:else}
+                  Launch search →
+                {/if}
+              </button>
+            {:else}
+              <button
+                type="button"
+                onclick={nextStep}
+                class="nav-btn-primary-light"
+                style="padding: 16px 40px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: linear-gradient(135deg, #FF6F61 0%, #FF8A80 100%); color: #ffffff; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 20px rgba(255,111,97,0.25);"
+              >
+                Continue →
+              </button>
+            {/if}
+          </div>
+        </form>
       </div>
     </div>
   {:else}
-    <!-- Pipeline mode: Full-width layout -->
-    <div class="flex h-full flex-col overflow-hidden">
-      <div class="flex-1 overflow-y-auto px-8 py-6 min-h-0">
-          <div class="space-y-4 pt-2">
+    <!-- Pipeline mode: Full-width light layout with glass effect -->
+    <div style="display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden;">
+      <div style="flex: 1; overflow-y: auto; padding: 32px; min-height: 0;">
+          <div style="display: flex; flex-direction: column; gap: 24px;">
             {#if pipelineError}
-              <div class="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <div style="padding: 16px 20px; background: rgba(239,68,68,0.08); backdrop-filter: blur(10px); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; color: #dc2626; font-size: 14px;">
                 {pipelineError.message}
               </div>
             {/if}
@@ -957,42 +1010,42 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 <!-- Running/Preliminary: Show ghosty preview with cycling animation -->
                 {@const list = previewDisplayProfiles()}
                 {#if list.length > 0}
-                  <div class="space-y-3">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2">
-                        <p class="text-sm font-semibold text-gray-800">Preview</p>
-                        <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 border border-gray-200">
-                          <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                  <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                      <div style="display: flex; align-items: center; gap: 12px;">
+                        <p style="font-size: 16px; font-weight: 600; color: rgba(0,0,0,0.8); margin: 0;">Preview</p>
+                        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.5); box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                          <span style="width: 6px; height: 6px; background: #FF6F61; border-radius: 50%; animation: pulse 1.5s ease-in-out infinite;"></span>
                           Searching...
                         </span>
                       </div>
-                      <span class="text-[10px] text-gray-400">
-                        Showing {list.length} of {previewProfiles().length} candidates
+                      <span style="font-size: 11px; color: rgba(0,0,0,0.4);">
+                        {list.length} of {previewProfiles().length} candidates
                       </span>
                     </div>
                     <!-- Use keyed block to trigger full re-render on rotation -->
                     {#key previewRotationSeed}
-                      <div class="space-y-2 select-none pointer-events-none opacity-60">
+                      <div style="display: flex; flex-direction: column; gap: 8px; user-select: none; pointer-events: none; opacity: 0.65;">
                         {#each list as profile, i (profile?._id ?? profile?.profile_url ?? profile?.display_name ?? `preview-${i}`)}
                           <div 
-                            class="flex items-start justify-between gap-3 rounded-xl px-3 py-2 text-sm border border-dashed border-gray-200 bg-linear-to-r from-gray-50/80 to-white/60 text-gray-400"
+                            style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 1px dashed rgba(0,0,0,0.1); border-radius: 12px; background: rgba(255,255,255,0.5); backdrop-filter: blur(10px);"
                             in:fly={{ y: 15, duration: 400, delay: i * 40, opacity: 0 }}
                             out:fade={{ duration: 200 }}
                           >
-                            <div class="flex-1 min-w-0 space-y-1">
-                              <div class="flex items-center gap-2 min-w-0">
-                                <span class="font-semibold truncate text-gray-400">{profile?.display_name ?? profile?.profile_url ?? 'Profile'}</span>
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
+                              <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                                <span style="font-weight: 600; color: rgba(0,0,0,0.5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{profile?.display_name ?? profile?.profile_url ?? 'Profile'}</span>
                                 {#if profile?.platform}
-                                  <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border border-gray-200 text-gray-400">
+                                  <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px solid rgba(0,0,0,0.08); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.4); background: rgba(255,255,255,0.5);">
                                     {profile.platform === 'TikTok' ? '🎵' : '📸'} {profile.platform}
                                   </span>
                                 {/if}
                               </div>
                               {#if profile?.biography || profile?.bio}
-                                <p class="text-xs line-clamp-2 text-gray-300">{profile.biography ?? profile.bio}</p>
+                                <p style="font-size: 13px; color: rgba(0,0,0,0.35); margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{profile.biography ?? profile.bio}</p>
                               {/if}
                             </div>
-                            <div class="shrink-0 text-right text-xs text-gray-300">
+                            <div style="flex-shrink: 0; text-align: right; font-size: 13px; color: rgba(0,0,0,0.35);">
                               {#if profile?.followers}
                                 <div>{profile.followers.toLocaleString()} followers</div>
                               {/if}
@@ -1001,31 +1054,31 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                         {/each}
                       </div>
                     {/key}
-                    <p class="text-[11px] text-center text-gray-400 italic">
-                      These are preliminary matches. Final results may differ after analysis.
+                    <p style="font-size: 12px; text-align: center; color: rgba(0,0,0,0.35); font-style: italic; margin: 0;">
+                      Preliminary matches. Final results may differ after analysis.
                     </p>
                   </div>
                 {/if}
               {/if}
             {:else}
-              <p class="text-sm text-gray-600">Fetching pipeline status…</p>
+              <p style="font-size: 14px; color: rgba(0,0,0,0.5);">Fetching pipeline status…</p>
             {/if}
           </div>
         </div>
       
         <!-- Bottom Action Bar (sticky outside scroll) -->
         {#if isCompleted()}
-          <div class="border-t border-gray-200 bg-white shrink-0">
+          <div style="border-top: 1px solid rgba(0,0,0,0.06); background: rgba(255,255,255,0.8); flex-shrink: 0; backdrop-filter: blur(20px);">
             <!-- Selection row -->
-            <div class="px-8 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
-              <div class="flex items-center gap-4">
-                <span class="text-sm font-medium text-gray-900">
-                  {selectedCount} {selectedCount === 1 ? 'influencer' : 'influencers'} selected
+            <div style="padding: 16px 32px; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; justify-content: space-between;">
+              <div style="display: flex; align-items: center; gap: 20px;">
+                <span style="font-size: 14px; font-weight: 500; color: rgba(0,0,0,0.8);">
+                  {selectedCount} {selectedCount === 1 ? 'creator' : 'creators'} selected
                 </span>
                 {#if selectedCount === 0}
                   <button
                     type="button"
-                    class="text-xs font-medium text-[#FF6F61] hover:text-[#FF5A4A] transition-colors"
+                    class="select-link-btn-light select-all-light"
                     onclick={selectAllInfluencers}
                   >
                     Select all
@@ -1033,7 +1086,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 {:else}
                   <button
                     type="button"
-                    class="text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                    class="select-link-btn-light clear-selection-light"
                     onclick={deselectAllInfluencers}
                   >
                     Clear selection
@@ -1043,65 +1096,66 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
             </div>
             
             <!-- Status indicators & Action row -->
-            <div class="px-8 py-4 flex items-center gap-3">
+            <div style="padding: 20px 32px; display: flex; align-items: center; gap: 16px;">
               <!-- Step 1: Gmail status indicator -->
               <div 
-                class="flex items-center gap-2 px-4 py-2.5 rounded-lg cursor-pointer transition-colors {gmailConnected ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}"
+                style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 10px; cursor: pointer; transition: all 0.2s; background: {gmailConnected ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {gmailConnected ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'};"
                 onclick={goToMailboxSettings}
                 role="button"
                 tabindex="0"
                 onkeydown={(e) => e.key === 'Enter' && goToMailboxSettings()}
               >
-                <div class="flex items-center justify-center w-5 h-5 rounded-full {gmailConnected ? 'bg-green-500' : 'bg-red-500'} text-white text-xs font-bold">
+                <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {gmailConnected ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
                   {#if gmailConnected}
                     ✓
                   {:else}
                     1
                   {/if}
                 </div>
-                <div class="flex flex-col">
-                  <span class="text-xs font-medium {gmailConnected ? 'text-green-800' : 'text-red-800'}">
+                <div style="display: flex; flex-direction: column;">
+                  <span style="font-size: 12px; font-weight: 500; color: {gmailConnected ? '#16a34a' : '#dc2626'};">
                     {gmailConnected ? 'Email Selected' : 'Select Email'}
                   </span>
-                  <span class="text-[10px] {gmailConnected ? 'text-green-600' : 'text-red-600'}">
-                    {gmailConnected ? `${gmailConnections.length} inbox${gmailConnections.length !== 1 ? 'es' : ''} connected` : 'Click to connect'}
+                  <span style="font-size: 10px; color: {gmailConnected ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
+                    {gmailConnected ? `${gmailConnections.length} inbox${gmailConnections.length !== 1 ? 'es' : ''}` : 'Click to connect'}
                   </span>
                 </div>
               </div>
               
               <!-- Step 2: Template status indicator -->
               <div 
-                class="flex items-center gap-2 px-4 py-2.5 rounded-lg cursor-pointer transition-colors {templateSaved ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200 attention-pulse'}"
+                style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 10px; cursor: pointer; transition: all 0.2s; background: {templateSaved ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {templateSaved ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'};"
                 onclick={() => showEmailPopup = true}
                 role="button"
                 tabindex="0"
                 onkeydown={(e) => e.key === 'Enter' && (showEmailPopup = true)}
+                class={templateSaved ? '' : 'attention-pulse'}
               >
-                <div class="flex items-center justify-center w-5 h-5 rounded-full {templateSaved ? 'bg-green-500' : 'bg-red-500'} text-white text-xs font-bold">
+                <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {templateSaved ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
                   {#if templateSaved}
                     ✓
                   {:else}
                     2
                   {/if}
                 </div>
-                <div class="flex flex-col">
-                  <span class="text-xs font-medium {templateSaved ? 'text-green-800' : 'text-red-800'}">
+                <div style="display: flex; flex-direction: column;">
+                  <span style="font-size: 12px; font-weight: 500; color: {templateSaved ? '#16a34a' : '#dc2626'};">
                     {templateSaved ? 'Draft Complete' : 'Draft Incomplete'}
                   </span>
-                  <span class="text-[10px] {templateSaved ? 'text-green-600' : 'text-red-600'}">
+                  <span style="font-size: 10px; color: {templateSaved ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
                     {templateSaved ? 'Ready to send' : 'Click to write email'}
                   </span>
                 </div>
               </div>
               
-              <div class="flex-1"></div>
+              <div style="flex: 1;"></div>
               
               <!-- Status messages -->
               {#if draftStatus}
-                <span class="text-xs text-green-700">{draftStatus}</span>
+                <span style="font-size: 13px; color: #16a34a;">{draftStatus}</span>
               {/if}
               {#if draftError}
-                <span class="text-xs text-red-700">{draftError}</span>
+                <span style="font-size: 13px; color: #dc2626;">{draftError}</span>
               {/if}
               
               <!-- Action button -->
@@ -1109,7 +1163,8 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 type="button"
                 onclick={createGmailDrafts}
                 disabled={selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved}
-                class={`px-6 py-2.5 bg-[#FF6F61] text-white font-medium rounded-lg hover:bg-[#FF5A4A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${needsAttention() ? 'attention-pulse' : ''}`}
+                style="padding: 14px 32px; background: linear-gradient(135deg, #FF6F61 0%, #FF8A80 100%); color: white; font-size: 14px; font-weight: 600; border: none; border-radius: 10px; cursor: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? 'not-allowed' : 'pointer'}; opacity: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? '0.5' : '1'}; transition: all 0.2s; box-shadow: 0 4px 15px rgba(255,111,97,0.25);"
+                class={needsAttention() ? 'attention-pulse' : ''}
               >
                 {#if draftInFlight}
                   Creating drafts…
@@ -1118,7 +1173,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 {:else if !templateSaved}
                   Write draft first
                 {:else if selectedCount === 0}
-                  Select influencers
+                  Select creators
                 {:else}
                   Create {selectedCount} Gmail {selectedCount === 1 ? 'draft' : 'drafts'}
                 {/if}
@@ -1127,43 +1182,45 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
           </div>
         {:else if pipelineStatus?.status === 'running'}
           <!-- During search: show simplified prompt bar -->
-          <div class="border-t border-gray-200 bg-white px-8 py-4 shrink-0">
-            <div class="flex items-center gap-4">
+          <div style="border-top: 1px solid rgba(0,0,0,0.06); background: rgba(255,255,255,0.8); padding: 20px 32px; flex-shrink: 0; backdrop-filter: blur(20px);">
+            <div style="display: flex; align-items: center; gap: 16px;">
               <!-- Gmail status -->
               <button
                 type="button"
-                class={`flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-100 hover:bg-gray-100 transition-colors ${!gmailConnected ? 'attention-pulse' : ''}`}
+                style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.04);"
                 onclick={goToMailboxSettings}
+                class={!gmailConnected ? 'attention-pulse' : ''}
               >
                 {#if gmailConnected}
-                  <span class="h-2 w-2 rounded-full bg-green-500"></span>
-                  <span class="text-sm text-gray-700">{gmailConnections.length} inbox{gmailConnections.length !== 1 ? 'es' : ''} connected</span>
+                  <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span>
+                  <span style="font-size: 13px; color: rgba(0,0,0,0.6);">{gmailConnections.length} inbox{gmailConnections.length !== 1 ? 'es' : ''}</span>
                 {:else}
-                  <span class="h-2 w-2 rounded-full bg-gray-300"></span>
-                  <span class="text-sm text-[#FF6F61] font-medium">Connect Gmail</span>
+                  <span style="width: 8px; height: 8px; background: rgba(0,0,0,0.2); border-radius: 50%;"></span>
+                  <span style="font-size: 13px; color: #FF6F61; font-weight: 500;">Connect Gmail</span>
                 {/if}
               </button>
               
               <!-- Template status -->
               <button
                 type="button"
-                class={`flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-100 hover:bg-gray-100 transition-colors ${!templateSaved ? 'attention-pulse' : ''}`}
+                style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.04);"
                 onclick={() => showEmailPopup = true}
+                class={!templateSaved ? 'attention-pulse' : ''}
               >
                 {#if templateSaved}
-                  <span class="h-2 w-2 rounded-full bg-green-500"></span>
+                  <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span>
                 {:else}
-                  <span class="h-2 w-2 rounded-full bg-amber-400"></span>
+                  <span style="width: 8px; height: 8px; background: #f59e0b; border-radius: 50%;"></span>
                 {/if}
-                <span class="text-sm text-gray-700">{templateStatusText()}</span>
-                <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span style="font-size: 13px; color: rgba(0,0,0,0.6);">{templateStatusText()}</span>
+                <svg style="width: 14px; height: 14px; color: rgba(0,0,0,0.35);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                 </svg>
               </button>
               
-              <div class="flex-1"></div>
+              <div style="flex: 1;"></div>
               
-              <span class="text-sm text-gray-500">Draft your email while you wait...</span>
+              <span style="font-size: 13px; color: rgba(0,0,0,0.4);">Draft your email while you wait...</span>
             </div>
           </div>
         {/if}
@@ -1302,30 +1359,99 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 </SendOutreachPopupPanel>
 
 <style>
-  @keyframes fadeInUp {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 0.5;
-      transform: translateY(0);
-    }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
 
   @keyframes pulse-red {
     0% {
-      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+      box-shadow: 0 0 0 0 rgba(255, 111, 97, 0.5);
     }
     70% {
-      box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+      box-shadow: 0 0 0 10px rgba(255, 111, 97, 0);
     }
     100% {
-      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+      box-shadow: 0 0 0 0 rgba(255, 111, 97, 0);
     }
   }
 
   .attention-pulse {
-    animation: pulse-red 1s ease-out infinite;
+    animation: pulse-red 1.5s ease-out infinite;
+  }
+
+  /* Light mode input styling */
+  .light-input {
+    width: 100%;
+    padding: 16px 20px;
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 12px;
+    color: #1a1a1a;
+    font-size: 16px;
+    outline: none;
+    transition: all 0.2s;
+    resize: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+
+  .light-input::placeholder {
+    color: rgba(0,0,0,0.35);
+  }
+
+  .light-input:focus {
+    border-color: rgba(255,111,97,0.4);
+    background: rgba(255,255,255,0.9);
+    box-shadow: 0 2px 12px rgba(255,111,97,0.1);
+  }
+
+  /* Light mode navigation buttons */
+  .nav-btn-back-light:not(:disabled):hover {
+    border-color: rgba(0,0,0,0.2) !important;
+    background: rgba(255,255,255,0.9) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+  }
+
+  .nav-btn-primary-light:not(:disabled):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(255,111,97,0.35) !important;
+  }
+
+  /* Platform button hover */
+  .platform-btn:hover {
+    border-color: rgba(255,111,97,0.3) !important;
+    box-shadow: 0 4px 12px rgba(255,111,97,0.1) !important;
+  }
+
+  /* Light mode selection links */
+  .select-link-btn-light {
+    font-size: 13px;
+    font-weight: 500;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+
+  .select-link-btn-light.select-all-light {
+    color: #FF6F61;
+  }
+
+  .select-link-btn-light.select-all-light:hover {
+    color: #e85a4f;
+  }
+
+  .select-link-btn-light.clear-selection-light {
+    color: rgba(0,0,0,0.5);
+  }
+
+  .select-link-btn-light.clear-selection-light:hover {
+    color: rgba(0,0,0,0.7);
   }
 </style>

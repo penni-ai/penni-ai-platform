@@ -13,8 +13,8 @@ export let onUpgrade: (() => void) | undefined = undefined;
 </script>
 
 <div class="flex h-screen bg-white overflow-hidden">
-	{#if $sidebarState}
-		<aside class={`${sidebarWidthClass} bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden`}>
+	<aside class={`relative transition-all duration-300 ${$sidebarState ? sidebarWidthClass : 'w-0'} overflow-hidden`}>
+		<div class={`h-full bg-white border-r border-gray-200 flex flex-col overflow-hidden transition-transform duration-300 ${$sidebarState ? 'translate-x-0' : '-translate-x-full'}`}>
 			<div class="px-2 py-2 border-b border-gray-200 flex items-center justify-between shrink-0">
 				<slot name="sidebar-header">
 					<a href="/" aria-label="Penny home">
@@ -27,7 +27,7 @@ export let onUpgrade: (() => void) | undefined = undefined;
 						type="button"
 						class="p-2 hover:bg-gray-100 rounded-lg transition"
 						aria-label="Hide sidebar"
-						onclick={() => sidebarState.toggle()}
+						onclick={() => sidebarState.close()}
 					>
 						<svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M5 5v14" />
@@ -38,24 +38,25 @@ export let onUpgrade: (() => void) | undefined = undefined;
 				{/if}
 			</div>
 			<SidebarNavigation campaigns={campaigns} selectedCampaignId={activeCampaignId} onUpgrade={onUpgrade} />
-		</aside>
-	{/if}
+		</div>
+	</aside>
 
 	<svelte:element this={mainTag} class={mainClass}>
-		{#if showToggleControls && !$sidebarState}
-			<button
-				type="button"
-				class="absolute left-4 top-4 flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white shadow-sm transition hover:bg-gray-100"
-				onclick={() => sidebarState.toggle()}
-				aria-label="Show sidebar"
-			>
-				<svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M19 5v14" />
-					<path stroke-linecap="round" stroke-linejoin="round" d="M5 12h10" />
-					<path stroke-linecap="round" stroke-linejoin="round" d="M11 8l4 4-4 4" />
-				</svg>
-			</button>
-		{/if}
 		<slot />
 	</svelte:element>
 </div>
+
+{#if showToggleControls && !$sidebarState}
+	<button
+		type="button"
+		class="fixed left-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white shadow-sm transition hover:bg-gray-100"
+		onclick={() => sidebarState.open()}
+		aria-label="Show sidebar"
+	>
+		<svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M19 5v14" />
+			<path stroke-linecap="round" stroke-linejoin="round" d="M5 12h10" />
+			<path stroke-linecap="round" stroke-linejoin="round" d="M11 8l4 4-4 4" />
+		</svg>
+	</button>
+{/if}

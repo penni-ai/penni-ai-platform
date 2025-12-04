@@ -1,9 +1,9 @@
 <script lang="ts">
-	import Button from '$lib/components/Button.svelte';
-	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
-	import { getPlatformLogo, getPlatformColor, normalizePlatforms } from '$lib/utils/campaign';
-	import { setViewMode } from '$lib/stores/viewMode';
+import Button from '$lib/components/Button.svelte';
+import { goto } from '$app/navigation';
+import { onMount } from 'svelte';
+import { sidebarState } from '$lib/stores/sidebar';
+import { getPlatformLogo, getPlatformColor, normalizePlatforms } from '$lib/utils/campaign';
 
 	type NavItem = {
 		label: string;
@@ -331,8 +331,9 @@ $effect(() => {
 					}
 					const data = await response.json();
 					if (data.campaignId) {
-						setViewMode('simple');
-						await goto(`/campaign/${data.campaignId}?mode=simple`);
+						await goto(`/campaign/${data.campaignId}`);
+						// Auto-close sidebar drawer for focus
+						sidebarState.close();
 					}
 				} catch (error) {
 					console.error('Failed to create campaign', error);

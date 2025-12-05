@@ -30,6 +30,7 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     onRerun?: () => void;
     onFindMore?: (excludeProfileUrls: string[]) => void; // For "Find More Influencers" functionality
     onSendAll?: () => void;
+    onReopenWebsitePrefill?: () => void; // For reopening website prefill popup
   }
 
   let {
@@ -49,7 +50,8 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     onSubmit,
     onRerun,
     onFindMore,
-    onSendAll
+    onSendAll,
+    onReopenWebsitePrefill
   }: Props = $props();
 
   // Derived: Check if user has premium features (growth or event plan)
@@ -69,7 +71,70 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
   let minFollowersLocal = $state<number | null>(10000);
   let maxFollowersLocal = $state<number | null>(500000);
   let topNLocal = $state(searchFormTopN || 10);
-  let strictLocationMatching = $state(false);
+  let strictLocationMatching = $state(true);
+  let hasAutoAdvanced = $state(false); // Track if we've auto-advanced from website prefill
+
+  // Non-linear slider position (0-100)
+  let sliderPosition = $state(0);
+
+  // Calculate effective max for the slider (respects remaining count)
+  const effectiveMaxInfluencers = $derived(() => {
+    return Math.min(searchUsage?.remaining ?? maxInfluencers, maxInfluencers);
+  });
+
+  // Convert slider position (0-100) to topN value (10 to effectiveMax)
+  // First half (0-50) maps to 10-100
+  // Second half (50-100) maps to 100-effectiveMax
+  function positionToTopN(position: number): number {
+    const max = effectiveMaxInfluencers();
+
+    if (position <= 50) {
+      // First half: 10-100
+      return Math.round(10 + (position / 50) * 90);
+    } else {
+      // Second half: 100-max
+      const remaining = max - 100;
+      return Math.round(100 + ((position - 50) / 50) * remaining);
+    }
+  }
+
+  // Convert topN value to slider position (0-100)
+  function topNToPosition(topN: number): number {
+    const max = effectiveMaxInfluencers();
+
+    if (topN <= 100) {
+      // First half: 10-100 maps to 0-50
+      return ((topN - 10) / 90) * 50;
+    } else {
+      // Second half: 100-max maps to 50-100
+      const remaining = max - 100;
+      if (remaining <= 0) return 50;
+      return 50 + ((topN - 100) / remaining) * 50;
+    }
+  }
+
+  // Initialize slider position from topNLocal and ensure topNLocal doesn't exceed max
+  $effect(() => {
+    const max = effectiveMaxInfluencers();
+    // Cap topNLocal at the effective max
+    if (topNLocal > max) {
+      topNLocal = max;
+    }
+    // Update slider position to match topNLocal
+    sliderPosition = topNToPosition(topNLocal);
+  });
+
+  // Update topNLocal when slider position changes
+  function handleSliderChange(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const position = Number(target.value);
+    sliderPosition = position;
+    const newValue = positionToTopN(position);
+    const max = effectiveMaxInfluencers();
+    // Ensure we don't exceed the max
+    topNLocal = Math.min(newValue, max);
+    scheduleAutosave();
+  }
 
   // Apply prefilled data when provided
   $effect(() => {
@@ -78,6 +143,12 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
       if (prefilledData.website) website = prefilledData.website;
       if (prefilledData.about) about = prefilledData.about;
       if (prefilledData.influencerType) influencerType = prefilledData.influencerType;
+
+      // Auto-advance to step 1 when website is provided (only once)
+      if (prefilledData.website && step === 0 && !hasAutoAdvanced) {
+        step = 1;
+        hasAutoAdvanced = true;
+      }
     }
   });
 
@@ -251,14 +322,14 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     };
   });
 
-  // Preview profiles for preliminary (ghosty) display - show random 10, rotating every 5s
+  // Preview profiles for preliminary (ghosty) display - show random 6, rotating every 5s
   const previewDisplayProfiles = $derived((): InfluencerProfile[] => {
     const candidates = previewProfiles();
-    if (candidates.length <= 10) return candidates;
+    if (candidates.length <= 6) return candidates;
     // Use campaign ID + rotation seed for shuffling
     const baseSeed = (campaignId ?? effectiveCampaign?.id ?? 'default').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
     const seed = baseSeed + previewRotationSeed * 12345; // Multiply to get more variation
-    return shuffleArray(candidates, seed).slice(0, 10);
+    return shuffleArray(candidates, seed).slice(0, 6);
   });
   
   // For completed results, use the full profiles list
@@ -637,7 +708,11 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 
   function handleConnectInbox() {
     if (browser) {
-      window.location.href = '/api/auth/gmail/connect';
+      const id = campaignId ?? effectiveCampaign?.id;
+      const url = id
+        ? `/api/auth/gmail/connect?returnCampaignId=${encodeURIComponent(id)}`
+        : '/api/auth/gmail/connect';
+      window.location.href = url;
     }
   }
 
@@ -957,7 +1032,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-location" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Target location</label>
+                  <label for="simple-location" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Location of Influencers</label>
                   <input id="simple-location" class="light-input" bind:value={location} oninput={scheduleAutosave} placeholder="e.g., US, Canada, UK" />
                 </div>
 
@@ -969,18 +1044,19 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                   <input
                     id="simple-topn"
                     type="range"
-                    min="10"
-                    max={Math.min(searchUsage?.remaining ?? maxInfluencers, maxInfluencers)}
+                    min="0"
+                    max="100"
+                    step="1"
                     class="slider"
-                    bind:value={topNLocal}
-                    oninput={scheduleAutosave}
-                    style="width: 100%; height: 6px; border-radius: 999px; background: linear-gradient(to right, #FF6F61 0%, #FF6F61 {((topNLocal - 10) / (Math.min(searchUsage?.remaining ?? maxInfluencers, maxInfluencers) - 10)) * 100}%, rgba(0,0,0,0.08) {((topNLocal - 10) / (Math.min(searchUsage?.remaining ?? maxInfluencers, maxInfluencers) - 10)) * 100}%, rgba(0,0,0,0.08) 100%); outline: none; -webkit-appearance: none; appearance: none; cursor: pointer;"
+                    value={sliderPosition}
+                    oninput={handleSliderChange}
+                    style="width: 100%; height: 6px; border-radius: 999px; background: linear-gradient(to right, #FF6F61 0%, #FF6F61 {sliderPosition}%, rgba(0,0,0,0.08) {sliderPosition}%, rgba(0,0,0,0.08) 100%); outline: none; -webkit-appearance: none; appearance: none; cursor: pointer;"
                   />
                   <div style="display: flex; justify-content: space-between; align-items: center;">
                     <p style="font-size: 11px; color: rgba(0,0,0,0.4); margin: 0;">Min: 10</p>
                     <p style="font-size: 11px; color: rgba(0,0,0,0.4); margin: 0;">
                       {#if searchUsage?.remaining !== undefined}
-                        Max: {Math.min(searchUsage.remaining, maxInfluencers)} {searchUsage.remaining < maxInfluencers ? '(remaining searches)' : '(per-search limit)'}
+                        Max: {effectiveMaxInfluencers()} {searchUsage.remaining < maxInfluencers ? '(remaining searches)' : '(per-search limit)'}
                       {:else}
                         Max: {maxInfluencers} (per-search limit)
                       {/if}
@@ -1068,15 +1144,25 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 
           <!-- Navigation buttons - sticky at bottom -->
           <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 32px; margin-top: auto; border-top: 1px solid rgba(0,0,0,0.06);">
-            <button
-              type="button"
-              disabled={isFirstStep}
-              onclick={prevStep}
-              class="nav-btn-back-light"
-              style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); color: {isFirstStep ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor: {isFirstStep ? 'not-allowed' : 'pointer'}; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.04);"
-            >
-              ← Back
-            </button>
+            {#if isFirstStep}
+              <button
+                type="button"
+                onclick={() => onReopenWebsitePrefill?.()}
+                class="nav-btn-back-light"
+                style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); color: rgba(0,0,0,0.5); cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.04);"
+              >
+                I have a website
+              </button>
+            {:else}
+              <button
+                type="button"
+                onclick={prevStep}
+                class="nav-btn-back-light"
+                style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); color: rgba(0,0,0,0.6); cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.04);"
+              >
+                ← Back
+              </button>
+            {/if}
             
             {#if isLastStep}
               <button
@@ -1142,30 +1228,34 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 </div>
                 <!-- Use keyed block to trigger full re-render on rotation -->
                 {#key previewRotationSeed}
-                  <div style="display: flex; flex-direction: column; gap: 8px; user-select: none; pointer-events: none; opacity: 0.65;">
+                  <div style="display: flex; flex-direction: column; gap: 10px; user-select: none; pointer-events: none;">
                     {#each list as profile, i (profile?._id ?? profile?.profile_url ?? profile?.display_name ?? `preview-${i}`)}
                       <div
-                        style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 1px dashed rgba(0,0,0,0.1); border-radius: 12px; background: rgba(255,255,255,0.5); backdrop-filter: blur(10px);"
-                        in:fly={{ y: 15, duration: 400, delay: i * 40, opacity: 0 }}
-                        out:fade={{ duration: 200 }}
+                        class="ghosty-card"
+                        style="--delay: {i * 80}ms;"
+                        in:fly={{ y: 20, duration: 500, delay: i * 80, opacity: 0 }}
+                        out:fade={{ duration: 250 }}
                       >
-                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
-                          <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
-                            <span style="font-weight: 600; color: rgba(0,0,0,0.5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{profile?.display_name ?? profile?.profile_url ?? 'Profile'}</span>
-                            {#if profile?.platform}
-                              <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px solid rgba(0,0,0,0.08); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.4); background: rgba(255,255,255,0.5);">
-                                {profile.platform === 'TikTok' ? '🎵' : '📸'} {profile.platform}
-                              </span>
+                        <div class="ghosty-shimmer"></div>
+                        <div style="position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
+                          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
+                            <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                              <span style="font-weight: 600; color: rgba(0,0,0,0.45); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{profile?.display_name ?? profile?.profile_url ?? 'Profile'}</span>
+                              {#if profile?.platform}
+                                <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px solid rgba(0,0,0,0.06); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.35); background: rgba(255,255,255,0.4);">
+                                  {profile.platform === 'TikTok' ? '🎵' : '📸'} {profile.platform}
+                                </span>
+                              {/if}
+                            </div>
+                            {#if profile?.biography || profile?.bio}
+                              <p style="font-size: 13px; color: rgba(0,0,0,0.3); margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{profile.biography ?? profile.bio}</p>
                             {/if}
                           </div>
-                          {#if profile?.biography || profile?.bio}
-                            <p style="font-size: 13px; color: rgba(0,0,0,0.35); margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{profile.biography ?? profile.bio}</p>
-                          {/if}
-                        </div>
-                        <div style="flex-shrink: 0; text-align: right; font-size: 13px; color: rgba(0,0,0,0.35);">
-                          {#if profile?.followers}
-                            <div>{profile.followers.toLocaleString()} followers</div>
-                          {/if}
+                          <div style="flex-shrink: 0; text-align: right; font-size: 13px; color: rgba(0,0,0,0.3);">
+                            {#if profile?.followers}
+                              <div>{profile.followers.toLocaleString()} followers</div>
+                            {/if}
+                          </div>
                         </div>
                       </div>
                     {/each}
@@ -1199,6 +1289,9 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
             onFindMore={handleFindMore}
           />
         </div>
+      {:else if pipelineStatus?.status === 'running'}
+        <!-- Spacer to push bottom bar down when pipeline is running -->
+        <div style="flex: 1;"></div>
       {/if}
       
         <!-- Bottom Action Bar (sticky outside scroll) -->
@@ -1494,7 +1587,12 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     {#if gmailError}<p class="text-xs text-red-600">{gmailError}</p>{/if}
     <div class="flex justify-end gap-2 pt-2 border-t border-gray-100">
       <Button variant="secondary" size="sm" onclick={() => showConnectGmailPrompt = false}>Later</Button>
-      <Button variant="primary" size="sm" onclick={() => window.location.href = `/api/auth/gmail/connect?accountType=${connectAccountType || 'draft'}`}>Connect</Button>
+      <Button variant="primary" size="sm" onclick={() => {
+        const id = campaignId ?? effectiveCampaign?.id;
+        const params = new URLSearchParams({ accountType: connectAccountType || 'draft' });
+        if (id) params.set('returnCampaignId', id);
+        window.location.href = `/api/auth/gmail/connect?${params.toString()}`;
+      }}>Connect</Button>
     </div>
   </div>
 </SendOutreachPopupPanel>
@@ -1702,5 +1800,84 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   .chat-bubble-small::after {
     border-width: 6px 6px 0 6px;
     left: 20px;
+  }
+
+  /* Ghosty preview cards */
+  .ghosty-card {
+    position: relative;
+    padding: 18px 22px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.4);
+    border: 1.5px dashed rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+    opacity: 0;
+    animation: ghosty-fade-in 0.6s ease-out forwards;
+    animation-delay: var(--delay);
+  }
+
+  @keyframes ghosty-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .ghosty-shimmer {
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.3) 50%,
+      transparent 100%
+    );
+    animation: shimmer 2.5s infinite;
+    animation-delay: var(--delay);
+    pointer-events: none;
+  }
+
+  @keyframes shimmer {
+    0% {
+      left: -100%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+
+  .ghosty-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    padding: 1.5px;
+    background: linear-gradient(
+      135deg,
+      rgba(255, 111, 97, 0.1),
+      rgba(147, 112, 219, 0.05)
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    animation: ghosty-pulse 3s ease-in-out infinite;
+    animation-delay: calc(var(--delay) + 0.5s);
+  }
+
+  @keyframes ghosty-pulse {
+    0%, 100% {
+      opacity: 0;
+    }
+    50% {
+      opacity: 0.6;
+    }
   }
 </style>

@@ -1,4 +1,4 @@
-import { redirect } from '@sveltejs/kit';
+import { redirect, isRedirect } from '@sveltejs/kit';
 import { handleApiRoute } from '$lib/server/core';
 import { requireUser } from '$lib/server/core';
 import { ApiProblem } from '$lib/server/core';
@@ -25,7 +25,7 @@ export const GET = handleApiRoute(async (event) => {
 	
 	// Verify state parameter (CSRF protection)
 	const storedState = event.cookies.get('gmail_oauth_state');
-	let statePayload: { csrf: string; connectionId?: string | null; makePrimary?: boolean; accountType?: 'draft' | 'send' } | null = null;
+	let statePayload: { csrf: string; connectionId?: string | null; makePrimary?: boolean; accountType?: 'draft' | 'send'; returnCampaignId?: string | null } | null = null;
 	if (storedState) {
 		try {
 			statePayload = JSON.parse(storedState);
@@ -50,10 +50,17 @@ export const GET = handleApiRoute(async (event) => {
 			makePrimary: statePayload.makePrimary,
 			accountType: statePayload.accountType || 'send'
 		});
-		
-		// Redirect to success page or back to outreach panel
-		throw redirect(302, '/my-account/gmail?gmail_connected=1');
+
+		// Redirect back to campaign if returnCampaignId was provided, otherwise to settings
+		const redirectUrl = statePayload.returnCampaignId
+			? `/campaign/${statePayload.returnCampaignId}?gmail_connected=1`
+			: '/my-account/gmail?gmail_connected=1';
+		throw redirect(302, redirectUrl);
 	} catch (error) {
+		// Re-throw redirects - they're not actual errors
+		if (isRedirect(error)) {
+			throw error;
+		}
 		const errorMessage = error instanceof Error ? error.message : 'Failed to connect Gmail';
 		throw redirect(302, `/my-account/gmail?gmail_error=token_exchange&message=${encodeURIComponent(errorMessage)}`);
 	}

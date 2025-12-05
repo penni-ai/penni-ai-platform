@@ -9,10 +9,11 @@ export const GET = handleApiRoute(async (event) => {
 	const connectionId = event.url.searchParams.get('connectionId');
 	const makePrimary = event.url.searchParams.get('makePrimary') === '1';
 	const accountType = (event.url.searchParams.get('accountType') || 'send') as 'draft' | 'send';
+	const returnCampaignId = event.url.searchParams.get('returnCampaignId');
 
 	// Generate state parameter for CSRF protection
 	const state = randomBytes(32).toString('hex');
-	const statePayload = JSON.stringify({ csrf: state, connectionId, makePrimary, accountType });
+	const statePayload = JSON.stringify({ csrf: state, connectionId, makePrimary, accountType, returnCampaignId });
 
 	// Store state in session/cookie for verification in callback
 	event.cookies.set('gmail_oauth_state', statePayload, {

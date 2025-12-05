@@ -85,6 +85,7 @@ let pendingExcludeProfileUrls = $state<string[]>([]);
 let isFindMoreMode = $state(false);
 let previousPipelineProfiles = $state<InfluencerProfile[]>([]);
 let websitePrefillPopupOpen = $state(false); // Will be set to true for new campaigns
+let websitePrefillSkipped = $state(false); // Track if user explicitly skipped the popup
 let prefilledData = $state<{ brand?: string; website?: string; about?: string; influencerType?: string } | null>(null);
 
 // Derived helpers
@@ -633,6 +634,7 @@ async function handleWebsitePrefill(websiteUrl: string) {
 
 function handleSkipWebsitePrefill() {
   websitePrefillPopupOpen = false;
+  websitePrefillSkipped = true; // Prevent popup from reopening
 }
 
 function openFindMorePopup(excludeProfileUrls: string[]) {
@@ -738,8 +740,8 @@ $effect(() => {
     const hasBrandInfo = effectiveCampaign.business_name || effectiveCampaign.website;
     const hasSearched = effectiveCampaign.pipeline_id;
 
-    // Only show popup if campaign has no brand info and hasn't been searched yet
-    if (!hasBrandInfo && !hasSearched && !websitePrefillPopupOpen && !prefilledData) {
+    // Only show popup if campaign has no brand info, hasn't been searched yet, and user hasn't skipped it
+    if (!hasBrandInfo && !hasSearched && !websitePrefillPopupOpen && !prefilledData && !websitePrefillSkipped) {
       websitePrefillPopupOpen = true;
     }
   }
@@ -770,6 +772,10 @@ $effect(() => {
       {prefilledData}
       onSubmit={(params) => void handleSearchFormSubmit(undefined, params)}
       onFindMore={openFindMorePopup}
+      onReopenWebsitePrefill={() => {
+        websitePrefillSkipped = false;
+        websitePrefillPopupOpen = true;
+      }}
     />
   </div>
 

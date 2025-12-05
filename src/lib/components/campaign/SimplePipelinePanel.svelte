@@ -649,17 +649,19 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     templateError = null;
     templateWarning = null;
     templateJustSaved = false;
-    
+
     try {
-      // Check for unfilled placeholders
+      // Check for unfilled placeholders - block save if found
       const unfilled = checkUnfilledPlaceholders(emailTemplate);
       if (unfilled.length > 0) {
-        templateWarning = `Unfilled fields: ${unfilled.join(', ')}`;
+        templateError = `Please fill in: ${unfilled.join(', ')}`;
+        templateSaving = false;
+        return;
       }
-      
+
       localStorage.setItem(templateKey(), emailTemplate);
       templateLastSavedAt = Date.now();
-      
+
       // Show "Saved!" feedback briefly, then close the editor
       templateJustSaved = true;
       setTimeout(() => {
@@ -820,8 +822,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
       }
       if (buffer.trim()) parseBuffer();
 
-      await saveTemplate();
-      templateLastSavedAt = Date.now();
+      // Don't auto-save - let user review and save manually
     } catch (error) {
       quickDraftError = error instanceof Error ? error.message : 'Failed to quick draft';
     } finally {
@@ -1790,7 +1791,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     font-weight: 500;
     white-space: nowrap;
     box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
-    z-index: 100;
+    z-index: 40;
     animation: bounce-in 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55), float 2s ease-in-out 0.5s infinite;
   }
 

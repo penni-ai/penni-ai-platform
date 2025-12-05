@@ -1215,9 +1215,9 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
       {#if pipelineStatus && !isCompleted()}
         <!-- Running/Preliminary: Show ghosty preview with cycling animation -->
         <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px 32px 32px;">
-          {@const isPreliminary = isPreliminaryPreview()}
-          {@const list = previewDisplayProfiles()}
-          {#if list.length > 0}
+          {#if previewDisplayProfiles().length > 0}
+            {@const isPreliminary = isPreliminaryPreview()}
+            {@const list = previewDisplayProfiles()}
             <div style="display: flex; flex-direction: column; gap: 16px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                   <div style="display: flex; align-items: center; gap: 12px;">

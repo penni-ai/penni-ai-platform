@@ -432,33 +432,29 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     }
   });
 
-  // Auto prompt once per pipeline when Weaviate search completes and category analysis starts
+  // REMOVED: Auto prompt popups are disabled - chat bubbles in bottom bar handle this
+  // Keep the effects but don't show popups - the showDraftPrompt and showConnectGmailPrompt
+  // are now only triggered manually via button clicks
   $effect(() => {
+    // Track pipeline changes but don't auto-show popups
     const pipelineId = effectiveCampaign?.pipeline_id ?? null;
-    if (shouldAutoPromptEmail() && pipelineId && autoPromptedPipelineId !== pipelineId) {
+    if (pipelineId && autoPromptedPipelineId !== pipelineId) {
       autoPromptedPipelineId = pipelineId;
-      showDraftPrompt = true;
+      // showDraftPrompt = true; // Disabled - chat bubbles handle this
     }
     if (pipelineStatus?.status === 'completed' || pipelineStatus?.status === 'error') {
       showDraftPrompt = false;
     }
   });
 
-  // Prompt Gmail connect when pipeline starts or category analysis begins
+  // Track Gmail state but don't auto-show popup - chat bubbles handle this
   $effect(() => {
     const pipelineId = effectiveCampaign?.pipeline_id ?? 'session-pipeline';
-    const running = pipelineStatus?.status === 'running';
-    const categoryRunning = pipelineStatus?.stages?.llm_analysis?.status === 'running';
 
     // Reset prompt tracking when pipeline changes
     if (pipelineId !== lastPipelineId) {
       lastPipelineId = pipelineId;
       promptedGmailPipelineId = null;
-    }
-
-    if (!gmailConnected && pipelineId && (running || categoryRunning) && promptedGmailPipelineId !== pipelineId) {
-      promptedGmailPipelineId = pipelineId;
-      showConnectGmailPrompt = true;
     }
 
     // Hide prompt once a mailbox is connected
@@ -1197,23 +1193,32 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   {:else}
     <!-- Pipeline mode: Full-width light layout with glass effect -->
     <div style="display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden;">
-      <div style="flex-shrink: 0; padding: 32px 32px 0 32px;">
-        {#if pipelineError}
-          <div style="padding: 16px 20px; background: rgba(239,68,68,0.08); backdrop-filter: blur(10px); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; color: #dc2626; font-size: 14px; margin-bottom: 24px;">
-            {pipelineError.message}
-          </div>
-        {/if}
-        {#if pipelineStatus}
+      {#if !pipelineStatus}
+        <!-- Loading state: Show centered animated loading indicator -->
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;">
+          <div class="loading-spinner"></div>
+          <p style="font-size: 16px; font-weight: 500; color: rgba(0,0,0,0.5); margin: 0;">Loading</p>
+        </div>
+      {:else}
+        <div style="flex-shrink: 0; padding: 32px 32px 0 32px;">
+          {#if pipelineError}
+            <div style="padding: 16px 20px; background: rgba(239,68,68,0.08); backdrop-filter: blur(10px); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; color: #dc2626; font-size: 14px; margin-bottom: 24px;">
+              {pipelineError.message}
+            </div>
+          {/if}
           <div style="margin-bottom: 24px;">
             <PipelineStatusComponent status={pipelineStatus} />
           </div>
-          {@const isPreliminary = isPreliminaryPreview()}
+        </div>
+      {/if}
 
-          {#if !isCompleted()}
-            <!-- Running/Preliminary: Show ghosty preview with cycling animation -->
-            {@const list = previewDisplayProfiles()}
-            {#if list.length > 0}
-              <div style="display: flex; flex-direction: column; gap: 16px;">
+      {#if pipelineStatus && !isCompleted()}
+        <!-- Running/Preliminary: Show ghosty preview with cycling animation -->
+        <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px 32px 32px;">
+          {@const isPreliminary = isPreliminaryPreview()}
+          {@const list = previewDisplayProfiles()}
+          {#if list.length > 0}
+            <div style="display: flex; flex-direction: column; gap: 16px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                   <div style="display: flex; align-items: center; gap: 12px;">
                     <p style="font-size: 16px; font-weight: 600; color: rgba(0,0,0,0.8); margin: 0;">Preview</p>
@@ -1264,15 +1269,12 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 <p style="font-size: 12px; text-align: center; color: rgba(0,0,0,0.35); font-style: italic; margin: 0;">
                   Preliminary matches. Final results may differ after analysis.
                 </p>
-              </div>
-            {/if}
+            </div>
           {/if}
-        {:else}
-          <p style="font-size: 14px; color: rgba(0,0,0,0.5);">Fetching pipeline status…</p>
-        {/if}
-      </div>
+        </div>
+      {/if}
 
-      {#if isCompleted()}
+      {#if pipelineStatus && isCompleted()}
         <!-- Scrollable influencer table -->
         <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px;">
           <InfluencersTable
@@ -1289,14 +1291,11 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
             onFindMore={handleFindMore}
           />
         </div>
-      {:else if pipelineStatus?.status === 'running'}
-        <!-- Spacer to push bottom bar down when pipeline is running -->
-        <div style="flex: 1;"></div>
       {/if}
-      
+
         <!-- Bottom Action Bar (sticky outside scroll) -->
-        {#if isCompleted()}
-          <div style="border-top: 1px solid rgba(0,0,0,0.08); background: white; flex-shrink: 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.05);">
+        {#if pipelineStatus && isCompleted()}
+          <div style="border-top: 1px solid rgba(0,0,0,0.08); background: white; flex-shrink: 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); margin-top: auto;">
             <!-- Selection row -->
             <div style="padding: 16px 32px; border-bottom: 1px solid rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: space-between;">
               <div style="display: flex; align-items: center; gap: 20px;">
@@ -1437,11 +1436,17 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
               </div>
             </div>
           </div>
-        {:else if pipelineStatus?.status === 'running'}
-          <!-- During search: show simplified prompt bar -->
-          <div style="border-top: 1px solid rgba(0,0,0,0.08); background: white; padding: 20px 32px; flex-shrink: 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.05);">
+        {:else if pipelineStatus?.status === 'running' || !pipelineStatus}
+          <!-- During search or loading: show simplified prompt bar -->
+          <div style="border-top: 1px solid rgba(0,0,0,0.08); background: white; padding: 20px 32px; flex-shrink: 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); margin-top: auto;">
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
-              <span style="font-size: 13px; color: rgba(0,0,0,0.4);">Draft your email while you wait...</span>
+              <span style="font-size: 13px; color: rgba(0,0,0,0.4);">
+                {#if !pipelineStatus}
+                  Prepare your outreach while we load...
+                {:else}
+                  Draft your email while you wait...
+                {/if}
+              </span>
 
               <div style="display: flex; align-items: center; gap: 16px;">
                 <!-- Gmail status -->
@@ -1632,6 +1637,16 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 
   .attention-pulse {
     animation: pulse-red 1.5s ease-out infinite;
+  }
+
+  /* Loading spinner */
+  .loading-spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid rgba(255,111,97,0.2);
+    border-top-color: #FF6F61;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 
   /* Light mode input styling */

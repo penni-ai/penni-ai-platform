@@ -621,7 +621,6 @@
 
 	/* Table Container */
 	.table-container {
-		overflow-x: auto;
 		border-radius: 12px;
 		border: 1px solid rgba(0, 0, 0, 0.08);
 		background: white;

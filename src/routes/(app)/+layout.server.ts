@@ -3,6 +3,7 @@ import { serializeCampaignSnapshot, type SerializedCampaign } from '$lib/server/
 import { userDocRef } from '$lib/server/core';
 import type { LayoutServerLoad } from './$types';
 import type { UserStripeState } from '$lib/server/core';
+import { getUserFeatureCapabilities } from '$lib/server/billing/feature-capabilities';
 
 const SIDEBAR_CAMPAIGN_LIMIT = 25;
 
@@ -38,21 +39,26 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		locals.logger?.warn('Failed to load sidebar campaigns', { error });
 	}
 
-	// Get user's current plan
+	// Get user's current plan and feature capabilities
 	let currentPlan = null;
+	let capabilities = null;
 	try {
 		const userSnap = await userDocRef(user.uid).get();
 		const userData = userSnap.data() as UserStripeState | undefined;
 		currentPlan = userData?.currentPlan ?? null;
+
+		// Fetch feature capabilities
+		capabilities = await getUserFeatureCapabilities(user.uid);
 	} catch (error) {
-		locals.logger?.warn('Failed to load user plan', { error });
+		locals.logger?.warn('Failed to load user plan and capabilities', { error });
 	}
 
 	return {
 		user: {
 			uid: user.uid,
 			email: user.email ?? null,
-			currentPlan
+			currentPlan,
+			capabilities
 		},
 		campaigns
 	};

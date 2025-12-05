@@ -274,33 +274,82 @@
 	// Format bio to 1-3 lines with random emoji
 	function formatBio(bio: string): string {
 		if (!bio || bio === '—') return '—';
-		
+
 		// Split by common delimiters and filter empty lines
 		const lines = bio
 			.split(/[\.\n\|]/)
 			.map(line => line.trim())
 			.filter(line => line.length > 0)
 			.slice(0, 3); // Take first 3 meaningful lines
-		
+
 		if (lines.length === 0) return '—';
-		
+
 		// Select a random emoji based on bio content (deterministic per bio)
 		const bioHash = bio.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
 		const emojiIndex = bioHash % emojis.length;
 		const emoji = emojis[emojiIndex];
-		
+
 		// Join lines and add emoji at the start
 		return `${emoji} ${lines.join(' • ')}`;
+	}
+
+	// Select All functionality
+	const allSelectableProfiles = $derived(() => {
+		return filteredProfiles().filter(profile => {
+			const profileId = profile._id || getProfileId(profile);
+			const isContacted = contactedIds.has(profileId);
+			const isSelectable = (status === 'completed' || status === 'running' || status === 'pending') && !isContacted;
+			return isSelectable && !isPreliminary;
+		});
+	});
+
+	const allSelected = $derived(() => {
+		const selectable = allSelectableProfiles();
+		if (selectable.length === 0) return false;
+		return selectable.every(profile => {
+			const profileId = profile._id || getProfileId(profile);
+			return selectedIds.has(profileId);
+		});
+	});
+
+	const someSelected = $derived(() => {
+		const selectable = allSelectableProfiles();
+		if (selectable.length === 0) return false;
+		return selectable.some(profile => {
+			const profileId = profile._id || getProfileId(profile);
+			return selectedIds.has(profileId);
+		}) && !allSelected();
+	});
+
+	function handleSelectAll() {
+		const selectable = allSelectableProfiles();
+		if (allSelected()) {
+			// Deselect all
+			selectable.forEach(profile => {
+				const profileId = profile._id || getProfileId(profile);
+				if (selectedIds.has(profileId)) {
+					onToggleSelection(profileId);
+				}
+			});
+		} else {
+			// Select all
+			selectable.forEach(profile => {
+				const profileId = profile._id || getProfileId(profile);
+				if (!selectedIds.has(profileId)) {
+					onToggleSelection(profileId);
+				}
+			});
+		}
 	}
 </script>
 
 <div>
-<div class="border-b border-gray-200 px-6 py-4">
+<div class="pb-4 mb-4">
 	<div class="flex items-center justify-between">
-		<h3 class="text-lg font-semibold text-gray-900">
+		<h3 class="text-xl font-bold text-gray-900">
 			Campaign Influencers
 			{#if filteredProfiles().length > 0}
-				<span class="text-base font-normal text-gray-500">
+				<span class="text-base font-medium text-[#FF6F61]">
 					{#if isPreliminary}
 						({filteredProfiles().length} preview of {allFilteredProfiles().length})
 					{:else}
@@ -375,12 +424,39 @@
 			{/if}
 			<div class={isPreliminary ? "max-h-[600px] overflow-hidden" : ""}>
 			<table class="w-full table-fixed">
-				<thead class="border-b border-gray-200 bg-gray-50">
+				<thead class="bg-[#FFE5DC]">
 					<tr>
-						<th class="w-[200px] px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-						<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Bio</th>
-						<th class="w-[120px] px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Followers</th>
-						<th class="w-[120px] px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fit Score</th>
+						<th class="px-6 py-3" colspan="2">
+							{#if !isPreliminary && allSelectableProfiles().length > 0}
+								<button
+									type="button"
+									onclick={handleSelectAll}
+									class="flex items-center gap-2 group"
+								>
+									<div class="flex items-center justify-center w-5 h-5 rounded-full border-2 transition-all {
+										allSelected() ? 'bg-[#FF6F61] border-[#FF6F61]' :
+										someSelected() ? 'bg-[#FF6F61]/50 border-[#FF6F61]' :
+										'border-gray-300 group-hover:border-[#FF6F61]'
+									}">
+										{#if allSelected()}
+											<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+											</svg>
+										{:else if someSelected()}
+											<div class="w-2 h-0.5 bg-white rounded"></div>
+										{/if}
+									</div>
+									<span class="text-xs font-semibold uppercase tracking-wide text-gray-800 group-hover:text-[#FF6F61] transition-colors">
+										Select All
+									</span>
+								</button>
+							{:else}
+								<span class="text-xs font-semibold uppercase tracking-wide text-gray-800">Name</span>
+							{/if}
+						</th>
+						<th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-800">Bio</th>
+						<th class="w-[120px] px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-800">Followers</th>
+						<th class="w-[120px] px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-800">Fit Score</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200 bg-white">
@@ -399,12 +475,12 @@
 						{@const isAnalyzed = hasFitScore}
 						{@const shouldBlurBio = isPreliminary && !hasRealBio && !isAnalyzed}
 						{@const shouldBlurFollowers = isPreliminary && !hasRealFollowers && !isAnalyzed}
-						<tr 
+						<tr
 							class="transition-all duration-300 {
 								isContacted ? 'bg-green-50 hover:bg-green-100 cursor-not-allowed opacity-75' :
-								isSelected ? 'bg-[#FFF1ED] hover:bg-[#FFE5DC] cursor-pointer' : 
-								isSelectable ? 'hover:bg-gray-50 cursor-pointer' : 
-								'hover:bg-gray-50'
+								isSelected ? 'bg-gradient-to-r from-[#FFE5DC] to-[#FFF1ED] hover:from-[#FFD4C4] hover:to-[#FFE5DC] cursor-pointer border-l-4 border-[#FF6F61] shadow-sm' :
+								isSelectable ? 'hover:bg-gray-50 cursor-pointer border-l-4 border-transparent' :
+								'hover:bg-gray-50 border-l-4 border-transparent'
 							}"
 							onclick={() => {
 								if (isSelectable && !isPreliminary) {
@@ -414,6 +490,19 @@
 							in:fly={{ y: isPreliminary ? -10 : -20, duration: isPreliminary ? 300 : 400, opacity: 0 }}
 							out:fade={{ duration: isPreliminary ? 250 : 0 }}
 						>
+							<td class="w-[60px] px-6 py-4">
+								<div class="flex items-center justify-center">
+									{#if isSelected}
+										<div class="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-[#FF6F61] text-white">
+											<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+											</svg>
+										</div>
+									{:else if isSelectable}
+										<div class="shrink-0 flex items-center justify-center w-5 h-5 rounded-full border-2 border-gray-300 hover:border-[#FF6F61] transition-colors"></div>
+									{/if}
+								</div>
+							</td>
 							<td class="w-[200px] whitespace-nowrap px-6 py-4">
 								<div class="flex items-center gap-3 min-w-0">
 									<div class="shrink-0 flex flex-col items-center gap-1">

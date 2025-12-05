@@ -11,6 +11,8 @@
 				<a href="/" class="text-gray-700 hover:text-black transition-colors">Home</a>
 				<a href="/how-it-works" class="text-gray-700 hover:text-black transition-colors">How it works</a>
 				<a href="/pricing" class="text-gray-700 hover:text-black transition-colors">Pricing</a>
+				<a href="/privacy" class="text-gray-700 hover:text-black transition-colors">Privacy</a>
+				<a href="/terms" class="text-gray-700 hover:text-black transition-colors">Terms</a>
 				<a href="/sign-up" class="text-gray-700 hover:text-black transition-colors">Sign up</a>
 			</nav>
 		</div>

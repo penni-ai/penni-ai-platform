@@ -7,6 +7,7 @@ import OutreachUpgradePanel from '$lib/components/OutreachUpgradePanel.svelte';
 import SearchLimitExceededPanel from '$lib/components/SearchLimitExceededPanel.svelte';
 import CampaignLoadingCover from '$lib/components/campaign/CampaignLoadingCover.svelte';
 import FindMorePopup from '$lib/components/campaign/FindMorePopup.svelte';
+import WebsitePrefillPopup from '$lib/components/campaign/WebsitePrefillPopup.svelte';
 import type { PageData } from './$types';
 import { firebaseFirestore, firebaseAuth } from '$lib/firebase/client';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -83,6 +84,8 @@ let findMorePopupOpen = $state(false);
 let pendingExcludeProfileUrls = $state<string[]>([]);
 let isFindMoreMode = $state(false);
 let previousPipelineProfiles = $state<InfluencerProfile[]>([]);
+let websitePrefillPopupOpen = $state(false); // Will be set to true for new campaigns
+let prefilledData = $state<{ brand?: string; website?: string; about?: string; influencerType?: string } | null>(null);
 
 // Derived helpers
 const effectiveCampaign = $derived(localCampaign ?? campaign ?? null);
@@ -94,7 +97,8 @@ function effectivePipelineId() {
 }
 
 function maxInfluencers() {
-  return currentPlanKey === 'free' || currentPlanKey === null ? 10 : 50;
+  // Absolute max per search is 1000, but can be limited by remaining searches
+  return 1000;
 }
 
 $effect(() => {
@@ -597,6 +601,40 @@ function closeUpgradePanel() {
   upgradePanelDescription = undefined;
 }
 
+async function handleWebsitePrefill(websiteUrl: string) {
+  try {
+    const response = await fetch('/api/campaigns/prefill-from-website', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ websiteUrl })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.message || 'Failed to analyze website');
+    }
+
+    const data = await response.json();
+    prefilledData = {
+      brand: data.brand || '',
+      website: data.website || '',
+      about: data.about || '',
+      influencerType: data.influencerType || ''
+    };
+
+    websitePrefillPopupOpen = false;
+  } catch (error) {
+    console.error('Website prefill error:', error);
+    throw error;
+  }
+}
+
+function handleSkipWebsitePrefill() {
+  websitePrefillPopupOpen = false;
+}
+
 function openFindMorePopup(excludeProfileUrls: string[]) {
   pendingExcludeProfileUrls = excludeProfileUrls;
   findMorePopupOpen = true;
@@ -693,6 +731,19 @@ $effect(() => {
     void loadConversation(currentCampaignId);
   }
 });
+
+// Show website prefill popup for new campaigns (ones without brand/about data)
+$effect(() => {
+  if (effectiveCampaign && browser) {
+    const hasBrandInfo = effectiveCampaign.business_name || effectiveCampaign.website;
+    const hasSearched = effectiveCampaign.pipeline_id;
+
+    // Only show popup if campaign has no brand info and hasn't been searched yet
+    if (!hasBrandInfo && !hasSearched && !websitePrefillPopupOpen && !prefilledData) {
+      websitePrefillPopupOpen = true;
+    }
+  }
+});
 </script>
 
 <svelte:head>
@@ -715,6 +766,8 @@ $effect(() => {
       searchFormMaxFollowers={searchFormMaxFollowers}
       {isSearchFormSubmitting}
       maxInfluencers={maxInfluencers()}
+      user={data.user}
+      {prefilledData}
       onSubmit={(params) => void handleSearchFormSubmit(undefined, params)}
       onFindMore={openFindMorePopup}
     />
@@ -747,5 +800,11 @@ $effect(() => {
     isSearching={isSearchFormSubmitting}
     onConfirm={handleFindMoreConfirm}
     onCancel={closeFindMorePopup}
+  />
+
+  <WebsitePrefillPopup
+    open={websitePrefillPopupOpen}
+    onSubmit={handleWebsitePrefill}
+    onSkip={handleSkipWebsitePrefill}
   />
 </div>

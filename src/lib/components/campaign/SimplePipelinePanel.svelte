@@ -7,6 +7,7 @@ import InfluencersTable from './InfluencersTable.svelte';
 import SendOutreachPopupPanel from '$lib/components/outreach/SendOutreachPopupPanel.svelte';
 import EmailDraftPrompt from './EmailDraftPrompt.svelte';
 import EmailEditor from '$lib/components/EmailEditor.svelte';
+import InboxManagementPopup from './InboxManagementPopup.svelte';
 import { getProfileId } from '$lib/utils/campaign';
 import type { PipelineStatus, SearchParams, SearchUsage, InfluencerProfile } from '$lib/types/campaign';
 import type { SerializedCampaign } from '$lib/server/campaigns';
@@ -23,6 +24,8 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     searchFormMaxFollowers: number | null;
     isSearchFormSubmitting: boolean;
     maxInfluencers: number;
+    user?: { uid: string; email: string | null; currentPlan: any; capabilities: any } | null;
+    prefilledData?: { brand?: string; website?: string; about?: string; influencerType?: string } | null;
     onSubmit: (params: SearchParams) => void;
     onRerun?: () => void;
     onFindMore?: (excludeProfileUrls: string[]) => void; // For "Find More Influencers" functionality
@@ -41,24 +44,42 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     isSearchFormSubmitting,
     maxInfluencers,
     campaignId,
+    user = null,
+    prefilledData = null,
     onSubmit,
     onRerun,
     onFindMore,
     onSendAll
   }: Props = $props();
 
+  // Derived: Check if user has premium features (growth or event plan)
+  const isPremiumUser = $derived(() => {
+    const planKey = user?.currentPlan?.planKey ?? user?.capabilities?.planKey ?? null;
+    return planKey === 'growth' || planKey === 'event';
+  });
+
   let brand = $state('');
   let website = $state('');
   let about = $state('');
   let influencerType = $state('');
-  let platforms = $state('instagram, tiktok');
-  let selectedPlatforms = $state<string[]>(['instagram', 'tiktok']);
-  let location = $state('');
+  let platforms = $state('Instagram, TikTok');
+  let selectedPlatforms = $state<string[]>(['Instagram', 'TikTok']);
+  let location = $state('US');
 
   let minFollowersLocal = $state<number | null>(10000);
   let maxFollowersLocal = $state<number | null>(500000);
   let topNLocal = $state(searchFormTopN || 10);
   let strictLocationMatching = $state(false);
+
+  // Apply prefilled data when provided
+  $effect(() => {
+    if (prefilledData) {
+      if (prefilledData.brand) brand = prefilledData.brand;
+      if (prefilledData.website) website = prefilledData.website;
+      if (prefilledData.about) about = prefilledData.about;
+      if (prefilledData.influencerType) influencerType = prefilledData.influencerType;
+    }
+  });
 
   // Outreach + Gmail + template state (simple view)
   type GmailConnection = { id: string; email: string; primary?: boolean | null };
@@ -70,6 +91,7 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
   let promptedGmailPipelineId: string | null = $state(null);
   const gmailConnected = $derived(gmailConnections.length > 0);
   const primaryGmail = $derived(() => gmailConnections.find((c) => c.primary) ?? gmailConnections[0] ?? null);
+  let inboxPopupOpen = $state(false);
 
   let emailTemplate = $state('');
   let templateLastSavedAt: number | null = $state(null);
@@ -156,7 +178,8 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   let step = $state(0);
   const steps = [
     'Brand basics',
-    'Targets & reach'
+    'Targets & reach',
+    'Premium features'
   ];
   const isLastStep = $derived(step === steps.length - 1);
   const isFirstStep = $derived(step === 0);
@@ -286,8 +309,17 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
       ? value
       : typeof value === 'string'
         ? value.split(',').map((p) => p.trim())
-        : ['instagram', 'tiktok'];
-    const list = normalized.filter(Boolean);
+        : ['Instagram', 'TikTok'];  // Default to capitalized versions
+
+    // Capitalize platform names to match UI options
+    const capitalized = normalized.map(p => {
+      const lower = p.toLowerCase();
+      if (lower === 'instagram') return 'Instagram';
+      if (lower === 'tiktok') return 'TikTok';
+      return p;
+    });
+
+    const list = capitalized.filter(Boolean);
     selectedPlatforms = Array.from(new Set(list));
     platforms = selectedPlatforms.join(', ');
   }
@@ -297,12 +329,21 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   // Keep selectedPlatforms in sync with freeform platforms string (initial load)
   $effect(() => {
     if (!platforms) {
-      selectedPlatforms = ['instagram', 'tiktok'];
-      platforms = 'instagram, tiktok';
+      selectedPlatforms = ['Instagram', 'TikTok'];
+      platforms = 'Instagram, TikTok';
       return;
     }
     const fromString = platforms.split(',').map((p) => p.trim()).filter(Boolean);
-    selectedPlatforms = Array.from(new Set(fromString));
+
+    // Capitalize platform names to match UI options
+    const capitalized = fromString.map(p => {
+      const lower = p.toLowerCase();
+      if (lower === 'instagram') return 'Instagram';
+      if (lower === 'tiktok') return 'TikTok';
+      return p;
+    });
+
+    selectedPlatforms = Array.from(new Set(capitalized));
   });
 
   // Load saved template (per campaign) from localStorage
@@ -594,6 +635,52 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     }
   }
 
+  function handleConnectInbox() {
+    if (browser) {
+      window.location.href = '/api/auth/gmail/connect';
+    }
+  }
+
+  async function handleDisconnectInbox(connectionId: string) {
+    try {
+      const response = await fetch('/api/auth/gmail/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to disconnect inbox');
+      }
+
+      // Refresh Gmail connections after disconnect
+      await refreshGmailStatus();
+    } catch (error) {
+      console.error('Error disconnecting inbox:', error);
+      throw error;
+    }
+  }
+
+  async function handleSetPrimary(connectionId: string) {
+    try {
+      const response = await fetch('/api/auth/gmail/primary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to set primary inbox');
+      }
+
+      // Refresh Gmail connections after setting primary
+      await refreshGmailStatus();
+    } catch (error) {
+      console.error('Error setting primary inbox:', error);
+      throw error;
+    }
+  }
+
   async function quickDraftEmail() {
     if (isQuickDrafting) return;
     isQuickDrafting = true;
@@ -797,14 +884,16 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   }
 </script>
 
-<div style="display: flex; flex-direction: column; width: 100%; height: 100%; background: linear-gradient(145deg, #faf9f7 0%, #f5f3f0 50%, #f0eeeb 100%); position: relative; overflow: hidden;">
-  <!-- Subtle grid pattern -->
-  <div style="position: absolute; inset: 0; background-image: linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none;"></div>
-  
-  <!-- Soft gradient orbs for depth -->
-  <div style="position: absolute; top: -15%; right: -5%; width: 500px; height: 500px; background: radial-gradient(circle, rgba(255,111,97,0.08) 0%, transparent 70%); pointer-events: none; filter: blur(80px);"></div>
-  <div style="position: absolute; bottom: -20%; left: -10%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(147,112,219,0.06) 0%, transparent 70%); pointer-events: none; filter: blur(100px);"></div>
-  
+<div style="display: flex; flex-direction: column; width: 100%; height: 100%; background: {hasPipeline && isCompleted() ? '#ffffff' : 'linear-gradient(145deg, #faf9f7 0%, #f5f3f0 50%, #f0eeeb 100%)'}; position: relative; overflow: hidden;">
+  <!-- Subtle grid pattern (only show for form and preliminary) -->
+  {#if !hasPipeline || !isCompleted()}
+    <div style="position: absolute; inset: 0; background-image: linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none;"></div>
+
+    <!-- Soft gradient orbs for depth -->
+    <div style="position: absolute; top: -15%; right: -5%; width: 500px; height: 500px; background: radial-gradient(circle, rgba(255,111,97,0.08) 0%, transparent 70%); pointer-events: none; filter: blur(80px);"></div>
+    <div style="position: absolute; bottom: -20%; left: -10%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(147,112,219,0.06) 0%, transparent 70%); pointer-events: none; filter: blur(100px);"></div>
+  {/if}
+
   {#if !hasPipeline && !isSearchFormSubmitting}
     <!-- Form mode: Full screen with glass effect -->
     <div style="flex: 1; display: flex; flex-direction: column; width: 100%; height: 100%; padding: 32px; overflow-y: auto; position: relative; z-index: 1;">
@@ -815,7 +904,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
           <span style="font-size: 11px; color: rgba(0,0,0,0.2);">·</span>
           <span style="font-size: 11px; color: #FF6F61; font-weight: 500;">{steps[step]}</span>
         </div>
-        {#if searchUsage}
+        {#if searchUsage && searchUsage.limit !== undefined && searchUsage.remaining !== undefined}
           <div style="display: flex; align-items: center; gap: 6px; padding: 6px 14px; background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
             <span style="font-size: 11px; color: rgba(0,0,0,0.5);">Searches:</span>
             <span style="font-size: 12px; font-weight: 600; color: #FF6F61;">{searchUsage.remaining}</span>
@@ -854,18 +943,78 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 </div>
               </div>
             </div>
-          {:else}
+          {:else if step === 1}
             <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
               <div style="margin-bottom: 16px;">
                 <h1 style="font-size: 38px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px 0; letter-spacing: -0.02em;">Who are you looking for?</h1>
-                <p style="font-size: 16px; color: rgba(0,0,0,0.5); margin: 0;">Define the type of creators and the reach you need.</p>
+                <p style="font-size: 16px; color: rgba(0,0,0,0.5); margin: 0;">Define the type of creators you need.</p>
               </div>
-              
+
               <div style="display: flex; flex-direction: column; gap: 24px;">
                 <div style="display: flex; flex-direction: column; gap: 8px;">
                   <label for="simple-type" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Creator niche or type</label>
                   <input id="simple-type" class="light-input" bind:value={influencerType} oninput={scheduleAutosave} placeholder="e.g., beauty reviewers, fitness coaches, food bloggers" />
                 </div>
+
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <label for="simple-location" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Target location</label>
+                  <input id="simple-location" class="light-input" bind:value={location} oninput={scheduleAutosave} placeholder="e.g., US, Canada, UK" />
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label for="simple-topn" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">How many creators do you want?</label>
+                    <span style="font-size: 16px; font-weight: 600; color: #FF6F61;">{topNLocal}</span>
+                  </div>
+                  <input
+                    id="simple-topn"
+                    type="range"
+                    min="10"
+                    max={Math.min(searchUsage?.remaining ?? maxInfluencers, maxInfluencers)}
+                    class="slider"
+                    bind:value={topNLocal}
+                    oninput={scheduleAutosave}
+                    style="width: 100%; height: 6px; border-radius: 999px; background: linear-gradient(to right, #FF6F61 0%, #FF6F61 {((topNLocal - 10) / (Math.min(searchUsage?.remaining ?? maxInfluencers, maxInfluencers) - 10)) * 100}%, rgba(0,0,0,0.08) {((topNLocal - 10) / (Math.min(searchUsage?.remaining ?? maxInfluencers, maxInfluencers) - 10)) * 100}%, rgba(0,0,0,0.08) 100%); outline: none; -webkit-appearance: none; appearance: none; cursor: pointer;"
+                  />
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <p style="font-size: 11px; color: rgba(0,0,0,0.4); margin: 0;">Min: 10</p>
+                    <p style="font-size: 11px; color: rgba(0,0,0,0.4); margin: 0;">
+                      {#if searchUsage?.remaining !== undefined}
+                        Max: {Math.min(searchUsage.remaining, maxInfluencers)} {searchUsage.remaining < maxInfluencers ? '(remaining searches)' : '(per-search limit)'}
+                      {:else}
+                        Max: {maxInfluencers} (per-search limit)
+                      {/if}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {:else}
+            <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
+              <div style="margin-bottom: 16px;">
+                <h1 style="font-size: 38px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px 0; letter-spacing: -0.02em;">Premium features</h1>
+                <p style="font-size: 16px; color: rgba(0,0,0,0.5); margin: 0;">Fine-tune your search with advanced filters.</p>
+              </div>
+
+              {#if !isPremiumUser()}
+                <div style="padding: 20px 24px; background: linear-gradient(135deg, rgba(255,111,97,0.08), rgba(255,138,128,0.05)); border: 1px solid rgba(255,111,97,0.2); border-radius: 12px; box-shadow: 0 2px 12px rgba(255,111,97,0.1);">
+                  <div style="display: flex; align-items: flex-start; gap: 16px;">
+                    <div style="font-size: 24px; line-height: 1;">✨</div>
+                    <div style="flex: 1;">
+                      <h3 style="font-size: 16px; font-weight: 600; color: #e85a4f; margin: 0 0 8px 0;">Upgrade to unlock Premium Features</h3>
+                      <p style="font-size: 14px; color: rgba(0,0,0,0.6); margin: 0 0 16px 0;">Get access to advanced platform selection, custom follower ranges, and strict location matching to find the perfect influencers for your campaign.</p>
+                      <a
+                        href="/pricing"
+                        style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; font-size: 14px; font-weight: 600; border-radius: 8px; background: linear-gradient(135deg, #FF6F61, #FF8A80); color: white; text-decoration: none; transition: all 0.2s; box-shadow: 0 4px 16px rgba(255,111,97,0.25);"
+                      >
+                        View Plans →
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+
+              <div style="display: flex; flex-direction: column; gap: 24px;">
                 <div style="display: flex; flex-direction: column; gap: 12px;">
                   <div id="platforms-label" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Platforms</div>
                   <div style="display: flex; gap: 12px; flex-wrap: wrap;">
@@ -873,7 +1022,8 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                       <button
                         type="button"
                         class="platform-btn"
-                        style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid {selectedPlatforms.includes(option) ? 'rgba(255,111,97,0.4)' : 'rgba(0,0,0,0.1)'}; background: {selectedPlatforms.includes(option) ? 'linear-gradient(135deg, rgba(255,111,97,0.12), rgba(255,138,128,0.08))' : 'rgba(255,255,255,0.7)'}; backdrop-filter: blur(10px); color: {selectedPlatforms.includes(option) ? '#e85a4f' : 'rgba(0,0,0,0.6)'}; cursor: pointer; transition: all 0.2s; box-shadow: {selectedPlatforms.includes(option) ? '0 2px 12px rgba(255,111,97,0.15)' : '0 2px 8px rgba(0,0,0,0.04)'};"
+                        disabled={!isPremiumUser()}
+                        style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid {selectedPlatforms.includes(option) ? 'rgba(255,111,97,0.4)' : 'rgba(0,0,0,0.1)'}; background: {selectedPlatforms.includes(option) ? 'linear-gradient(135deg, rgba(255,111,97,0.12), rgba(255,138,128,0.08))' : 'rgba(255,255,255,0.7)'}; backdrop-filter: blur(10px); color: {selectedPlatforms.includes(option) ? '#e85a4f' : 'rgba(0,0,0,0.6)'}; cursor: {isPremiumUser() ? 'pointer' : 'not-allowed'}; opacity: {isPremiumUser() ? '1' : '0.5'}; transition: all 0.2s; box-shadow: {selectedPlatforms.includes(option) ? '0 2px 12px rgba(255,111,97,0.15)' : '0 2px 8px rgba(0,0,0,0.04)'};"
                         onclick={() => togglePlatform(option)}
                         aria-labelledby="platforms-label"
                       >
@@ -883,17 +1033,24 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                   </div>
                 </div>
 
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-location" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Target location</label>
-                  <input id="simple-location" class="light-input" bind:value={location} oninput={scheduleAutosave} placeholder="e.g., US, Canada, UK" />
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                  <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label for="simple-min" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Min followers</label>
+                    <input id="simple-min" type="number" class="light-input" bind:value={minFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="10,000" disabled={!isPremiumUser()} style="opacity: {isPremiumUser() ? '1' : '0.5'}; cursor: {isPremiumUser() ? 'text' : 'not-allowed'};" />
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label for="simple-max" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Max followers</label>
+                    <input id="simple-max" type="number" class="light-input" bind:value={maxFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="500,000" disabled={!isPremiumUser()} style="opacity: {isPremiumUser() ? '1' : '0.5'}; cursor: {isPremiumUser() ? 'text' : 'not-allowed'};" />
+                  </div>
                 </div>
 
-                <div style="display: flex; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                <div style="display: flex; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); opacity: {isPremiumUser() ? '1' : '0.5'};">
                   <button
                     type="button"
+                    disabled={!isPremiumUser()}
                     onclick={() => strictLocationMatching = !strictLocationMatching}
                     id="simple-strict-location"
-                    style="position: relative; width: 48px; height: 26px; border-radius: 999px; border: none; cursor: pointer; transition: background 0.2s; background: {strictLocationMatching ? 'linear-gradient(90deg, #FF6F61, #FF8A80)' : 'rgba(0,0,0,0.15)'};"
+                    style="position: relative; width: 48px; height: 26px; border-radius: 999px; border: none; cursor: {isPremiumUser() ? 'pointer' : 'not-allowed'}; transition: background 0.2s; background: {strictLocationMatching ? 'linear-gradient(90deg, #FF6F61, #FF8A80)' : 'rgba(0,0,0,0.15)'};"
                     role="switch"
                     aria-checked={strictLocationMatching}
                     aria-label="Toggle strict location matching"
@@ -904,31 +1061,6 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                     <label id="simple-strict-location-label" style="font-size: 14px; font-weight: 500; color: rgba(0,0,0,0.8);" for="simple-strict-location">Strict location matching</label>
                     <p style="font-size: 12px; color: rgba(0,0,0,0.4); margin: 4px 0 0 0;">Only show creators with verified locations</p>
                   </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                  <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label for="simple-min" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Min followers</label>
-                    <input id="simple-min" type="number" class="light-input" bind:value={minFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="10,000" />
-                  </div>
-                  <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label for="simple-max" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Max followers</label>
-                    <input id="simple-max" type="number" class="light-input" bind:value={maxFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="500,000" />
-                  </div>
-                </div>
-
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-topn" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">How many creators do you want?</label>
-                  <input
-                    id="simple-topn"
-                    type="number"
-                    min="10"
-                    max={maxInfluencers}
-                    class="light-input"
-                    bind:value={topNLocal}
-                    oninput={scheduleAutosave}
-                  />
-                  <p style="font-size: 12px; color: rgba(0,0,0,0.4); margin: 4px 0 0 0;">Min 10, max {maxInfluencers} based on your plan</p>
                 </div>
               </div>
             </div>
@@ -979,102 +1111,107 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   {:else}
     <!-- Pipeline mode: Full-width light layout with glass effect -->
     <div style="display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden;">
-      <div style="flex: 1; overflow-y: auto; padding: 32px; min-height: 0;">
-          <div style="display: flex; flex-direction: column; gap: 24px;">
-            {#if pipelineError}
-              <div style="padding: 16px 20px; background: rgba(239,68,68,0.08); backdrop-filter: blur(10px); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; color: #dc2626; font-size: 14px;">
-                {pipelineError.message}
+      <div style="flex-shrink: 0; padding: 32px 32px 0 32px;">
+        {#if pipelineError}
+          <div style="padding: 16px 20px; background: rgba(239,68,68,0.08); backdrop-filter: blur(10px); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; color: #dc2626; font-size: 14px; margin-bottom: 24px;">
+            {pipelineError.message}
+          </div>
+        {/if}
+        {#if pipelineStatus}
+          <div style="margin-bottom: 24px;">
+            <PipelineStatusComponent status={pipelineStatus} />
+          </div>
+          {@const isPreliminary = isPreliminaryPreview()}
+
+          {#if !isCompleted()}
+            <!-- Running/Preliminary: Show ghosty preview with cycling animation -->
+            {@const list = previewDisplayProfiles()}
+            {#if list.length > 0}
+              <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <p style="font-size: 16px; font-weight: 600; color: rgba(0,0,0,0.8); margin: 0;">Preview</p>
+                    <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.5); box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                      <span style="width: 6px; height: 6px; background: #FF6F61; border-radius: 50%; animation: pulse 1.5s ease-in-out infinite;"></span>
+                      Searching...
+                    </span>
+                  </div>
+                  <span style="font-size: 11px; color: rgba(0,0,0,0.4);">
+                    {list.length} of {previewProfiles().length} candidates
+                  </span>
+                </div>
+                <!-- Use keyed block to trigger full re-render on rotation -->
+                {#key previewRotationSeed}
+                  <div style="display: flex; flex-direction: column; gap: 8px; user-select: none; pointer-events: none; opacity: 0.65;">
+                    {#each list as profile, i (profile?._id ?? profile?.profile_url ?? profile?.display_name ?? `preview-${i}`)}
+                      <div
+                        style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 1px dashed rgba(0,0,0,0.1); border-radius: 12px; background: rgba(255,255,255,0.5); backdrop-filter: blur(10px);"
+                        in:fly={{ y: 15, duration: 400, delay: i * 40, opacity: 0 }}
+                        out:fade={{ duration: 200 }}
+                      >
+                        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
+                          <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                            <span style="font-weight: 600; color: rgba(0,0,0,0.5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{profile?.display_name ?? profile?.profile_url ?? 'Profile'}</span>
+                            {#if profile?.platform}
+                              <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px solid rgba(0,0,0,0.08); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.4); background: rgba(255,255,255,0.5);">
+                                {profile.platform === 'TikTok' ? '🎵' : '📸'} {profile.platform}
+                              </span>
+                            {/if}
+                          </div>
+                          {#if profile?.biography || profile?.bio}
+                            <p style="font-size: 13px; color: rgba(0,0,0,0.35); margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{profile.biography ?? profile.bio}</p>
+                          {/if}
+                        </div>
+                        <div style="flex-shrink: 0; text-align: right; font-size: 13px; color: rgba(0,0,0,0.35);">
+                          {#if profile?.followers}
+                            <div>{profile.followers.toLocaleString()} followers</div>
+                          {/if}
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {/key}
+                <p style="font-size: 12px; text-align: center; color: rgba(0,0,0,0.35); font-style: italic; margin: 0;">
+                  Preliminary matches. Final results may differ after analysis.
+                </p>
               </div>
             {/if}
-            {#if pipelineStatus}
-              <PipelineStatusComponent status={pipelineStatus} />
-              {@const isPreliminary = isPreliminaryPreview()}
-              {@const completed = isCompleted()}
-              
-              {#if completed}
-                <!-- Completed: Show full InfluencersTable -->
-                <InfluencersTable
-                  profiles={allProfiles()}
-                  selectedIds={selectedInfluencerIds}
-                  contactedIds={contactedInfluencerIds}
-                  {showContacted}
-                  status={pipelineStatus.status}
-                  isPreliminary={false}
-                  {previousProfileIds}
-                  isSearching={isSearchFormSubmitting}
-                  onToggleSelection={toggleInfluencerSelection}
-                  onToggleContacted={() => showContacted = !showContacted}
-                  onFindMore={handleFindMore}
-                />
-              {:else}
-                <!-- Running/Preliminary: Show ghosty preview with cycling animation -->
-                {@const list = previewDisplayProfiles()}
-                {#if list.length > 0}
-                  <div style="display: flex; flex-direction: column; gap: 16px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                      <div style="display: flex; align-items: center; gap: 12px;">
-                        <p style="font-size: 16px; font-weight: 600; color: rgba(0,0,0,0.8); margin: 0;">Preview</p>
-                        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.5); box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
-                          <span style="width: 6px; height: 6px; background: #FF6F61; border-radius: 50%; animation: pulse 1.5s ease-in-out infinite;"></span>
-                          Searching...
-                        </span>
-                      </div>
-                      <span style="font-size: 11px; color: rgba(0,0,0,0.4);">
-                        {list.length} of {previewProfiles().length} candidates
-                      </span>
-                    </div>
-                    <!-- Use keyed block to trigger full re-render on rotation -->
-                    {#key previewRotationSeed}
-                      <div style="display: flex; flex-direction: column; gap: 8px; user-select: none; pointer-events: none; opacity: 0.65;">
-                        {#each list as profile, i (profile?._id ?? profile?.profile_url ?? profile?.display_name ?? `preview-${i}`)}
-                          <div 
-                            style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 1px dashed rgba(0,0,0,0.1); border-radius: 12px; background: rgba(255,255,255,0.5); backdrop-filter: blur(10px);"
-                            in:fly={{ y: 15, duration: 400, delay: i * 40, opacity: 0 }}
-                            out:fade={{ duration: 200 }}
-                          >
-                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
-                              <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
-                                <span style="font-weight: 600; color: rgba(0,0,0,0.5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{profile?.display_name ?? profile?.profile_url ?? 'Profile'}</span>
-                                {#if profile?.platform}
-                                  <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px solid rgba(0,0,0,0.08); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.4); background: rgba(255,255,255,0.5);">
-                                    {profile.platform === 'TikTok' ? '🎵' : '📸'} {profile.platform}
-                                  </span>
-                                {/if}
-                              </div>
-                              {#if profile?.biography || profile?.bio}
-                                <p style="font-size: 13px; color: rgba(0,0,0,0.35); margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{profile.biography ?? profile.bio}</p>
-                              {/if}
-                            </div>
-                            <div style="flex-shrink: 0; text-align: right; font-size: 13px; color: rgba(0,0,0,0.35);">
-                              {#if profile?.followers}
-                                <div>{profile.followers.toLocaleString()} followers</div>
-                              {/if}
-                            </div>
-                          </div>
-                        {/each}
-                      </div>
-                    {/key}
-                    <p style="font-size: 12px; text-align: center; color: rgba(0,0,0,0.35); font-style: italic; margin: 0;">
-                      Preliminary matches. Final results may differ after analysis.
-                    </p>
-                  </div>
-                {/if}
-              {/if}
-            {:else}
-              <p style="font-size: 14px; color: rgba(0,0,0,0.5);">Fetching pipeline status…</p>
-            {/if}
-          </div>
+          {/if}
+        {:else}
+          <p style="font-size: 14px; color: rgba(0,0,0,0.5);">Fetching pipeline status…</p>
+        {/if}
+      </div>
+
+      {#if isCompleted()}
+        <!-- Scrollable influencer table -->
+        <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px;">
+          <InfluencersTable
+            profiles={allProfiles()}
+            selectedIds={selectedInfluencerIds}
+            contactedIds={contactedInfluencerIds}
+            {showContacted}
+            status={pipelineStatus?.status ?? 'pending'}
+            isPreliminary={false}
+            {previousProfileIds}
+            isSearching={isSearchFormSubmitting}
+            onToggleSelection={toggleInfluencerSelection}
+            onToggleContacted={() => showContacted = !showContacted}
+            onFindMore={handleFindMore}
+          />
         </div>
+      {/if}
       
         <!-- Bottom Action Bar (sticky outside scroll) -->
         {#if isCompleted()}
-          <div style="border-top: 1px solid rgba(0,0,0,0.06); background: rgba(255,255,255,0.8); flex-shrink: 0; backdrop-filter: blur(20px);">
+          <div style="border-top: 1px solid rgba(0,0,0,0.08); background: white; flex-shrink: 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.05);">
             <!-- Selection row -->
-            <div style="padding: 16px 32px; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; justify-content: space-between;">
+            <div style="padding: 16px 32px; border-bottom: 1px solid rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: space-between;">
               <div style="display: flex; align-items: center; gap: 20px;">
-                <span style="font-size: 14px; font-weight: 500; color: rgba(0,0,0,0.8);">
-                  {selectedCount} {selectedCount === 1 ? 'creator' : 'creators'} selected
-                </span>
+                <div style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: linear-gradient(135deg, #FF6F61, #FF8A80); border-radius: 8px;">
+                  <span style="font-size: 14px; font-weight: 600; color: white;">
+                    {selectedCount} {selectedCount === 1 ? 'creator' : 'creators'} selected
+                  </span>
+                </div>
                 {#if selectedCount === 0}
                   <button
                     type="button"
@@ -1096,131 +1233,169 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
             </div>
             
             <!-- Status indicators & Action row -->
-            <div style="padding: 20px 32px; display: flex; align-items: center; gap: 16px;">
+            <div style="padding: 20px 32px; display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
               <!-- Step 1: Gmail status indicator -->
-              <div 
-                style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 10px; cursor: pointer; transition: all 0.2s; background: {gmailConnected ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {gmailConnected ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'};"
-                onclick={goToMailboxSettings}
-                role="button"
-                tabindex="0"
-                onkeydown={(e) => e.key === 'Enter' && goToMailboxSettings()}
-              >
-                <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {gmailConnected ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
-                  {#if gmailConnected}
-                    ✓
-                  {:else}
-                    1
-                  {/if}
+              <div style="position: relative;">
+                <div
+                  style="display: flex; align-items: center; gap: 8px; padding: 13px 32px; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: {gmailConnected ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {gmailConnected ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}; min-width: 224px;"
+                  onclick={() => inboxPopupOpen = true}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && (inboxPopupOpen = true)}
+                >
+                  <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {gmailConnected ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
+                    {#if gmailConnected}
+                      ✓
+                    {:else}
+                      1
+                    {/if}
+                  </div>
+                  <div style="display: flex; flex-direction: column;">
+                    <span style="font-size: 12px; font-weight: 500; color: {gmailConnected ? '#16a34a' : '#dc2626'};">
+                      {gmailConnected ? 'Email Selected' : 'Select Email'}
+                    </span>
+                    <span style="font-size: 10px; color: {gmailConnected ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
+                      {gmailConnected ? `${gmailConnections.length} inbox${gmailConnections.length !== 1 ? 'es' : ''}` : 'Click to connect'}
+                    </span>
+                  </div>
                 </div>
-                <div style="display: flex; flex-direction: column;">
-                  <span style="font-size: 12px; font-weight: 500; color: {gmailConnected ? '#16a34a' : '#dc2626'};">
-                    {gmailConnected ? 'Email Selected' : 'Select Email'}
-                  </span>
-                  <span style="font-size: 10px; color: {gmailConnected ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
-                    {gmailConnected ? `${gmailConnections.length} inbox${gmailConnections.length !== 1 ? 'es' : ''}` : 'Click to connect'}
-                  </span>
-                </div>
-              </div>
-              
-              <!-- Step 2: Template status indicator -->
-              <div 
-                style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 10px; cursor: pointer; transition: all 0.2s; background: {templateSaved ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {templateSaved ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'};"
-                onclick={() => showEmailPopup = true}
-                role="button"
-                tabindex="0"
-                onkeydown={(e) => e.key === 'Enter' && (showEmailPopup = true)}
-                class={templateSaved ? '' : 'attention-pulse'}
-              >
-                <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {templateSaved ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
-                  {#if templateSaved}
-                    ✓
-                  {:else}
-                    2
-                  {/if}
-                </div>
-                <div style="display: flex; flex-direction: column;">
-                  <span style="font-size: 12px; font-weight: 500; color: {templateSaved ? '#16a34a' : '#dc2626'};">
-                    {templateSaved ? 'Draft Complete' : 'Draft Incomplete'}
-                  </span>
-                  <span style="font-size: 10px; color: {templateSaved ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
-                    {templateSaved ? 'Ready to send' : 'Click to write email'}
-                  </span>
-                </div>
-              </div>
-              
-              <div style="flex: 1;"></div>
-              
-              <!-- Status messages -->
-              {#if draftStatus}
-                <span style="font-size: 13px; color: #16a34a;">{draftStatus}</span>
-              {/if}
-              {#if draftError}
-                <span style="font-size: 13px; color: #dc2626;">{draftError}</span>
-              {/if}
-              
-              <!-- Action button -->
-              <button
-                type="button"
-                onclick={createGmailDrafts}
-                disabled={selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved}
-                style="padding: 14px 32px; background: linear-gradient(135deg, #FF6F61 0%, #FF8A80 100%); color: white; font-size: 14px; font-weight: 600; border: none; border-radius: 10px; cursor: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? 'not-allowed' : 'pointer'}; opacity: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? '0.5' : '1'}; transition: all 0.2s; box-shadow: 0 4px 15px rgba(255,111,97,0.25);"
-                class={needsAttention() ? 'attention-pulse' : ''}
-              >
-                {#if draftInFlight}
-                  Creating drafts…
-                {:else if !gmailConnected}
-                  Connect Gmail first
-                {:else if !templateSaved}
-                  Write draft first
-                {:else if selectedCount === 0}
-                  Select creators
-                {:else}
-                  Create {selectedCount} Gmail {selectedCount === 1 ? 'draft' : 'drafts'}
+                {#if !gmailConnected}
+                  <div class="chat-bubble">
+                    Connect your Gmail! 📧
+                  </div>
                 {/if}
-              </button>
+              </div>
+
+              <!-- Step 2: Template status indicator -->
+              <div style="position: relative;">
+                <div
+                  style="display: flex; align-items: center; gap: 8px; padding: 13px 32px; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: {templateSaved ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {templateSaved ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}; min-width: 224px;"
+                  onclick={() => showEmailPopup = true}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && (showEmailPopup = true)}
+                  class={templateSaved ? '' : 'attention-pulse'}
+                >
+                  <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {templateSaved ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
+                    {#if templateSaved}
+                      ✓
+                    {:else}
+                      2
+                    {/if}
+                  </div>
+                  <div style="display: flex; flex-direction: column;">
+                    <span style="font-size: 12px; font-weight: 500; color: {templateSaved ? '#16a34a' : '#dc2626'};">
+                      {templateSaved ? 'Draft Complete' : 'Draft Incomplete'}
+                    </span>
+                    <span style="font-size: 10px; color: {templateSaved ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
+                      {templateSaved ? 'Ready to send' : 'Click to write email'}
+                    </span>
+                  </div>
+                </div>
+                {#if !templateSaved}
+                  <div class="chat-bubble">
+                    Write your email template! ✍️
+                  </div>
+                {/if}
+              </div>
+
+              <!-- Step 3: Send outreach -->
+              <div style="position: relative;">
+                <div
+                  style="display: flex; align-items: center; gap: 8px; padding: 13px 32px; border-radius: 8px; cursor: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? 'not-allowed' : 'pointer'}; transition: all 0.2s; background: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}; min-width: 224px; opacity: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? '0.5' : '1'};"
+                  onclick={selectedCount > 0 && !draftInFlight && gmailConnected && templateSaved ? createGmailDrafts : null}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && selectedCount > 0 && !draftInFlight && gmailConnected && templateSaved && createGmailDrafts()}
+                  class={(selectedCount === 0 || !gmailConnected || !templateSaved) && !draftInFlight ? 'attention-pulse' : ''}
+                >
+                  <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
+                    {#if gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight}
+                      ✓
+                    {:else}
+                      3
+                    {/if}
+                  </div>
+                  <div style="display: flex; flex-direction: column;">
+                    <span style="font-size: 12px; font-weight: 500; color: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? '#16a34a' : '#dc2626'};">
+                      {#if draftInFlight}
+                        Sending…
+                      {:else if gmailConnected && templateSaved && selectedCount > 0}
+                        Ready to Send
+                      {:else}
+                        Send Outreach
+                      {/if}
+                    </span>
+                    <span style="font-size: 10px; color: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
+                      {#if draftInFlight}
+                        Processing…
+                      {:else if !gmailConnected}
+                        Connect Gmail first
+                      {:else if !templateSaved}
+                        Write template first
+                      {:else if selectedCount === 0}
+                        Select creators
+                      {:else}
+                        Click to send ({selectedCount})
+                      {/if}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         {:else if pipelineStatus?.status === 'running'}
           <!-- During search: show simplified prompt bar -->
-          <div style="border-top: 1px solid rgba(0,0,0,0.06); background: rgba(255,255,255,0.8); padding: 20px 32px; flex-shrink: 0; backdrop-filter: blur(20px);">
-            <div style="display: flex; align-items: center; gap: 16px;">
-              <!-- Gmail status -->
-              <button
-                type="button"
-                style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.04);"
-                onclick={goToMailboxSettings}
-                class={!gmailConnected ? 'attention-pulse' : ''}
-              >
-                {#if gmailConnected}
-                  <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span>
-                  <span style="font-size: 13px; color: rgba(0,0,0,0.6);">{gmailConnections.length} inbox{gmailConnections.length !== 1 ? 'es' : ''}</span>
-                {:else}
-                  <span style="width: 8px; height: 8px; background: rgba(0,0,0,0.2); border-radius: 50%;"></span>
-                  <span style="font-size: 13px; color: #FF6F61; font-weight: 500;">Connect Gmail</span>
-                {/if}
-              </button>
-              
-              <!-- Template status -->
-              <button
-                type="button"
-                style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.04);"
-                onclick={() => showEmailPopup = true}
-                class={!templateSaved ? 'attention-pulse' : ''}
-              >
-                {#if templateSaved}
-                  <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span>
-                {:else}
-                  <span style="width: 8px; height: 8px; background: #f59e0b; border-radius: 50%;"></span>
-                {/if}
-                <span style="font-size: 13px; color: rgba(0,0,0,0.6);">{templateStatusText()}</span>
-                <svg style="width: 14px; height: 14px; color: rgba(0,0,0,0.35);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </button>
-              
-              <div style="flex: 1;"></div>
-              
+          <div style="border-top: 1px solid rgba(0,0,0,0.08); background: white; padding: 20px 32px; flex-shrink: 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.05);">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
               <span style="font-size: 13px; color: rgba(0,0,0,0.4);">Draft your email while you wait...</span>
+
+              <div style="display: flex; align-items: center; gap: 16px;">
+                <!-- Gmail status -->
+                <div style="position: relative;">
+                  <button
+                    type="button"
+                    style="display: flex; align-items: center; gap: 6px; padding: 11px 26px; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.04); min-width: 160px;"
+                    onclick={() => inboxPopupOpen = true}
+                    class={!gmailConnected ? 'attention-pulse' : ''}
+                  >
+                    {#if gmailConnected}
+                      <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span>
+                      <span style="font-size: 13px; color: rgba(0,0,0,0.6);">{gmailConnections.length} inbox{gmailConnections.length !== 1 ? 'es' : ''}</span>
+                    {:else}
+                      <span style="width: 8px; height: 8px; background: rgba(0,0,0,0.2); border-radius: 50%;"></span>
+                      <span style="font-size: 13px; color: #FF6F61; font-weight: 500;">Connect Gmail</span>
+                    {/if}
+                  </button>
+                  {#if !gmailConnected}
+                    <div class="chat-bubble chat-bubble-small">
+                      Connect your Gmail! 📧
+                    </div>
+                  {/if}
+                </div>
+
+                <!-- Template status -->
+                <div style="position: relative;">
+                  <button
+                    type="button"
+                    style="display: flex; align-items: center; gap: 6px; padding: 11px 26px; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.04); min-width: 160px;"
+                    onclick={() => showEmailPopup = true}
+                    class={!templateSaved ? 'attention-pulse' : ''}
+                  >
+                    {#if templateSaved}
+                      <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span>
+                    {:else}
+                      <span style="width: 8px; height: 8px; background: #f59e0b; border-radius: 50%;"></span>
+                    {/if}
+                    <span style="font-size: 13px; color: rgba(0,0,0,0.6);">{templateStatusText()}</span>
+                  </button>
+                  {#if !templateSaved}
+                    <div class="chat-bubble chat-bubble-small">
+                      Write your email! ✍️
+                    </div>
+                  {/if}
+                </div>
+              </div>
             </div>
           </div>
         {/if}
@@ -1228,75 +1403,56 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     {/if}
 </div>
 
-<!-- Email setup popup -->
 <SendOutreachPopupPanel
   open={showEmailPopup}
   onClose={() => showEmailPopup = false}
-  title="Set up email outreach"
-  subtitle="Draft your email and get it ready to send"
+  title="Email Template"
+  subtitle=""
 >
   <div class="h-full flex flex-col">
-    <div class="flex-1 min-h-0 flex flex-col p-6 gap-3">
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div class="space-y-1">
-          <p class="text-sm font-semibold text-gray-900">Email template</p>
-          <p class="text-xs text-gray-600">Use Penni Quick Draft or edit manually.</p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <Button
-            variant="primary"
-            size="sm"
-            onclick={quickDraftEmail}
-            disabled={isQuickDrafting}
-          >
-            {isQuickDrafting ? 'Drafting…' : 'Penni Quick Draft'}
-          </Button>
-        </div>
+    <div class="flex-1 min-h-0 flex flex-col p-4 gap-2">
+      <div class="flex items-center justify-between">
+        <Button variant="primary" size="sm" onclick={quickDraftEmail} disabled={isQuickDrafting}>
+          {isQuickDrafting ? 'Drafting…' : 'Penni Quick Draft'}
+        </Button>
+        <span class="text-xs text-gray-600">{templateStatusText()}</span>
       </div>
       {#if quickDraftError}
         <p class="text-xs text-red-700">{quickDraftError}</p>
       {/if}
-      <div class="flex-1 min-h-[260px] rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div class="flex-1 min-h-[200px] rounded-lg border border-gray-200 bg-white overflow-hidden">
         <EmailEditor
           content={emailTemplate || defaultTemplate()}
-          onUpdate={(content) => {
-            emailTemplate = content;
-          }}
+          onUpdate={(content) => { emailTemplate = content; }}
         />
       </div>
-      <div class="flex items-center justify-between mt-2 text-xs text-gray-600">
-        <span>Status: {templateStatusText()}</span>
-        <div class="flex items-center gap-3">
-          {#if templateWarning}
-            <span class="text-amber-600">⚠️ {templateWarning}</span>
-          {/if}
-          {#if templateError}
-            <span class="text-red-600">{templateError}</span>
-          {/if}
+      {#if templateWarning || templateError}
+        <div class="text-xs">
+          {#if templateWarning}<span class="text-amber-600">⚠️ {templateWarning}</span>{/if}
+          {#if templateError}<span class="text-red-600">{templateError}</span>{/if}
         </div>
-      </div>
+      {/if}
     </div>
-    <div class="border-t border-gray-200 px-6 py-4 flex justify-end">
-      <Button variant="secondary" size="sm" onclick={() => void saveTemplate()} disabled={templateSaving}>Save template</Button>
+    <div class="border-t border-gray-200 px-4 py-3 flex justify-end">
+      <Button variant="secondary" size="sm" onclick={() => void saveTemplate()} disabled={templateSaving}>Save</Button>
     </div>
   </div>
 </SendOutreachPopupPanel>
 
-<!-- Preview popup -->
 <SendOutreachPopupPanel
   open={previewPopupOpen}
   onClose={() => previewPopupOpen = false}
-  title="Preview Gmail draft"
-  subtitle={previewRecipient() ? `For ${previewRecipient()?.display_name ?? 'influencer'}` : 'Add a template to preview'}
+  title="Preview"
+  subtitle={previewRecipient()?.display_name ?? ''}
 >
   <div class="h-full flex flex-col max-w-lg">
     <div class="flex-1 overflow-y-auto px-4 py-3">
       {#if previewRecipient()}
-        <div class="prose prose-sm max-w-none border border-gray-200 rounded-xl bg-white p-4 shadow-sm">
+        <div class="prose prose-sm max-w-none border border-gray-200 rounded-lg bg-white p-4">
           {@html previewHtml()}
         </div>
       {:else}
-        <p class="text-sm text-gray-600">No recipients yet. Start a search to preview.</p>
+        <p class="text-sm text-gray-600">No recipients yet.</p>
       {/if}
     </div>
     <div class="border-t border-gray-200 px-4 py-3 flex justify-end">
@@ -1305,58 +1461,53 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   </div>
 </SendOutreachPopupPanel>
 
-<!-- Email draft prompt (shown after category analysis completes) -->
 <EmailDraftPrompt
   open={showDraftPrompt}
-  onConfirm={() => {
-    showDraftPrompt = false;
-    showEmailPopup = true;
-  }}
-  onDismiss={() => {
-    showDraftPrompt = false;
-  }}
+  onConfirm={() => { showDraftPrompt = false; showEmailPopup = true; }}
+  onDismiss={() => { showDraftPrompt = false; }}
 />
 
-<!-- Connect Gmail prompt (when pipeline kicks off) -->
 <SendOutreachPopupPanel
   open={showConnectGmailPrompt && !gmailConnected}
   onClose={() => showConnectGmailPrompt = false}
-  title="Connect Gmail to send outreach"
-  subtitle="Pick account type and link quickly without leaving this page."
+  title="Connect Gmail"
+  subtitle=""
   size="compact"
 >
-  <div class="p-6 flex flex-col gap-4 w-full">
-    <div class="space-y-3 w-full">
-      <p class="text-sm text-gray-700">Choose how you want to connect:</p>
-      <div class="space-y-2 w-full">
-        <label class="flex items-start gap-3 p-3 rounded-lg border text-sm cursor-pointer w-full {connectAccountType === 'draft' ? 'border-rose-300 bg-rose-50' : 'border-gray-200 hover:border-gray-300'}">
-          <input type="radio" name="connectType" value="draft" bind:group={connectAccountType} class="mt-0.5 h-4 w-4 text-rose-500 focus:ring-rose-500" />
-          <div class="flex-1">
-            <div class="font-medium text-gray-900">Draft only</div>
-            <div class="text-xs text-gray-600">Creates drafts for review before sending.</div>
-          </div>
-        </label>
-        <label class="flex items-start gap-3 p-3 rounded-lg border text-sm cursor-pointer w-full {connectAccountType === 'send' ? 'border-rose-300 bg-rose-50' : 'border-gray-200 hover:border-gray-300'}">
-          <input type="radio" name="connectType" value="send" bind:group={connectAccountType} class="mt-0.5 h-4 w-4 text-rose-500 focus:ring-rose-500" />
-          <div class="flex-1">
-            <div class="font-medium text-gray-900">Send & Draft</div>
-            <div class="text-xs text-gray-600">Allows creating drafts and sending automatically.</div>
-          </div>
-        </label>
-      </div>
+  <div class="p-4 flex flex-col gap-3 w-full">
+    <div class="space-y-2 w-full">
+      <label class="flex items-start gap-2 p-2 rounded-lg border text-sm cursor-pointer {connectAccountType === 'draft' ? 'border-rose-300 bg-rose-50' : 'border-gray-200'}">
+        <input type="radio" name="connectType" value="draft" bind:group={connectAccountType} class="mt-0.5 h-4 w-4 text-rose-500" />
+        <div class="flex-1">
+          <div class="font-medium text-gray-900">Draft only</div>
+          <div class="text-xs text-gray-600">Creates drafts for review.</div>
+        </div>
+      </label>
+      <label class="flex items-start gap-2 p-2 rounded-lg border text-sm cursor-pointer {connectAccountType === 'send' ? 'border-rose-300 bg-rose-50' : 'border-gray-200'}">
+        <input type="radio" name="connectType" value="send" bind:group={connectAccountType} class="mt-0.5 h-4 w-4 text-rose-500" />
+        <div class="flex-1">
+          <div class="font-medium text-gray-900">Send & Draft</div>
+          <div class="text-xs text-gray-600">Creates drafts and sends automatically.</div>
+        </div>
+      </label>
     </div>
-    {#if gmailError}
-      <p class="text-xs text-red-600">{gmailError}</p>
-    {/if}
+    {#if gmailError}<p class="text-xs text-red-600">{gmailError}</p>{/if}
     <div class="flex justify-end gap-2 pt-2 border-t border-gray-100">
       <Button variant="secondary" size="sm" onclick={() => showConnectGmailPrompt = false}>Later</Button>
-      <Button variant="primary" size="sm" onclick={() => {
-        const type = connectAccountType || 'draft';
-        window.location.href = `/api/auth/gmail/connect?accountType=${type}`;
-      }}>Connect Gmail</Button>
+      <Button variant="primary" size="sm" onclick={() => window.location.href = `/api/auth/gmail/connect?accountType=${connectAccountType || 'draft'}`}>Connect</Button>
     </div>
   </div>
 </SendOutreachPopupPanel>
+
+
+<InboxManagementPopup
+  open={inboxPopupOpen}
+  connections={gmailConnections}
+  onClose={() => inboxPopupOpen = false}
+  onConnect={handleConnectInbox}
+  onDisconnect={handleDisconnectInbox}
+  onSetPrimary={handleSetPrimary}
+/>
 
 <style>
   @keyframes spin {
@@ -1453,5 +1604,103 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 
   .select-link-btn-light.clear-selection-light:hover {
     color: rgba(0,0,0,0.7);
+  }
+
+  /* Slider thumb styling */
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #FF6F61;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(255,111,97,0.3);
+    transition: all 0.2s;
+  }
+
+  .slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(255,111,97,0.4);
+  }
+
+  .slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #FF6F61;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 8px rgba(255,111,97,0.3);
+    transition: all 0.2s;
+  }
+
+  .slider::-moz-range-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(255,111,97,0.4);
+  }
+
+  /* Chat bubble prompts */
+  @keyframes bounce-in {
+    0% {
+      opacity: 0;
+      transform: translateY(10px) scale(0.8);
+    }
+    60% {
+      opacity: 1;
+      transform: translateY(-5px) scale(1.05);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+
+  .chat-bubble {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 0;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+    z-index: 100;
+    animation: bounce-in 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55), float 2s ease-in-out 0.5s infinite;
+  }
+
+  .chat-bubble::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 24px;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 8px 8px 0 8px;
+    border-color: #dc2626 transparent transparent transparent;
+  }
+
+  .chat-bubble-small {
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 10px;
+  }
+
+  .chat-bubble-small::after {
+    border-width: 6px 6px 0 6px;
+    left: 20px;
   }
 </style>

@@ -14,6 +14,12 @@ import {
   getBrightDataBaseUrl,
   triggerCollection,
 } from './brightdata-internal.js';
+import {
+  getCachedProfilesBatch,
+  setCachedProfilesBatch,
+  detectPlatformFromUrl,
+  extractProfileUrl,
+} from './brightdata-cache.js';
 
 /**
  * Download results from a single snapshot
@@ -194,7 +200,20 @@ async function processBatchAsReady(
     }
     
     console.log(`[Streaming] Batch ${batch_index + 1} downloaded ${profiles.length} profiles`);
-    
+
+    // Cache the newly downloaded profiles
+    if (profiles.length > 0) {
+      const profilesToCache = profiles.map(profile => ({
+        url: extractProfileUrl(profile, platform),
+        platform,
+        data: profile,
+      }));
+      // Cache async without blocking
+      setCachedProfilesBatch(profilesToCache).catch(err => {
+        console.warn(`[Streaming] Failed to cache profiles for batch ${batch_index + 1}:`, err);
+      });
+    }
+
     // Call callback with raw profiles (normalization and LLM will happen in callback)
     if (onBatchComplete) {
       await onBatchComplete({
@@ -232,22 +251,78 @@ export async function processBatchedCollectionStreaming(
   completedBatches: number;
   failedBatches: number;
   totalProfiles: number;
+  cacheHits: number;
 }> {
   const batchSize = config.batchSize || 20;
   const maxConcurrentBatches = config.maxConcurrentBatches || 10;
   const pollingInterval = config.pollingInterval || 10;
   const maxWaitTime = config.maxWaitTime || 3600;
-  
+
   const apiKey = getBrightDataApiKey();
   const baseUrl = getBrightDataBaseUrl();
-  
+
   console.log(`[Streaming] Starting streaming batch processing: ${urls.length} profiles, batch size: ${batchSize}`);
-  
-  // Step 1: Group URLs by platform and create batches
+
+  // Step 0: Check cache for all URLs
+  console.log(`[Streaming] Checking cache for ${urls.length} profiles...`);
+  const cachedProfiles = await getCachedProfilesBatch(urls);
+  const cachedUrls = new Set(cachedProfiles.keys());
+  const uncachedUrls = urls.filter(url => !cachedUrls.has(url));
+
+  console.log(`[Streaming] Cache: ${cachedProfiles.size} hits, ${uncachedUrls.length} misses`);
+
+  let totalProfiles = 0;
+  let completedBatches = 0;
+  let failedBatches = 0;
+
+  // Process cached profiles immediately via callback
+  if (cachedProfiles.size > 0 && onBatchComplete) {
+    // Group cached profiles by platform
+    const cachedByPlatform = new Map<BrightDataPlatform, BrightDataProfile[]>();
+
+    for (const [url, profile] of cachedProfiles) {
+      const platform = detectPlatformFromUrl(url);
+      if (!cachedByPlatform.has(platform)) {
+        cachedByPlatform.set(platform, []);
+      }
+      cachedByPlatform.get(platform)!.push(profile);
+    }
+
+    // Create synthetic batch results for cached profiles
+    let cachedBatchIndex = 0;
+    for (const [platform, profiles] of cachedByPlatform) {
+      await onBatchComplete({
+        batchIndex: cachedBatchIndex++,
+        platform,
+        snapshotId: 'cached',
+        profiles,
+        normalizedProfiles: [],
+        analyzedProfiles: [],
+      });
+      totalProfiles += profiles.length;
+      completedBatches++;
+    }
+
+    console.log(`[Streaming] Processed ${cachedProfiles.size} cached profiles`);
+  }
+
+  // If all profiles were cached, return early
+  if (uncachedUrls.length === 0) {
+    console.log(`[Streaming] All profiles served from cache!`);
+    return {
+      totalBatches: completedBatches,
+      completedBatches,
+      failedBatches: 0,
+      totalProfiles,
+      cacheHits: cachedProfiles.size,
+    };
+  }
+
+  // Step 1: Group uncached URLs by platform and create batches
   const instagramUrls: string[] = [];
   const tiktokUrls: string[] = [];
-  
-  for (const url of urls) {
+
+  for (const url of uncachedUrls) {
     const platform = detectPlatform(url);
     if (platform === 'instagram') {
       instagramUrls.push(url);
@@ -326,9 +401,6 @@ export async function processBatchedCollectionStreaming(
   const maxWaitMs = maxWaitTime * 1000;
   const processedSnapshots = new Set<string>();
   const processingPromises: Promise<void>[] = [];
-  let completedBatches = 0;
-  let failedBatches = 0;
-  let totalProfiles = 0;
   
   while (processedSnapshots.size < snapshots.length) {
     const elapsed = Date.now() - startTime;
@@ -388,13 +460,14 @@ export async function processBatchedCollectionStreaming(
   await Promise.allSettled(processingPromises);
   
   const totalTime = Math.floor((Date.now() - startTime) / 1000);
-  console.log(`[Streaming] Completed! Processed ${completedBatches} batches, ${failedBatches} failed, ${totalProfiles} profiles in ${totalTime}s`);
-  
+  console.log(`[Streaming] Completed! Processed ${completedBatches} batches, ${failedBatches} failed, ${totalProfiles} profiles in ${totalTime}s (${cachedProfiles.size} from cache)`);
+
   return {
-    totalBatches: snapshots.length,
+    totalBatches: snapshots.length + (cachedProfiles.size > 0 ? 1 : 0),
     completedBatches,
     failedBatches,
     totalProfiles,
+    cacheHits: cachedProfiles.size,
   };
 }
 

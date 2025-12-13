@@ -66,11 +66,24 @@
 				<button
 					type="button"
 					onclick={() => onSelectAllForMethod('instagram')}
-					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {
-						allInstagramSelected
-							? 'bg-[#E4405F] text-white hover:bg-[#D32A4F]'
-							: 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-					}"
+					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+					style={allInstagramSelected
+						? 'background: #E4405F; color: white;'
+						: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+					onmouseenter={(e) => {
+						if (allInstagramSelected) {
+							e.currentTarget.style.background = '#D32A4F';
+						} else {
+							e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+						}
+					}}
+					onmouseleave={(e) => {
+						if (allInstagramSelected) {
+							e.currentTarget.style.background = '#E4405F';
+						} else {
+							e.currentTarget.style.background = 'var(--color-bg-secondary)';
+						}
+					}}
 				>
 					{@html getMethodIcon('instagram')}
 					<span>{allInstagramSelected ? 'Deselect All Instagram' : 'Select All Instagram'} ({availableMethodCounts.instagram})</span>
@@ -81,11 +94,24 @@
 				<button
 					type="button"
 					onclick={() => onSelectAllForMethod('tiktok')}
-					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {
-						allTikTokSelected
-							? 'bg-black text-white hover:bg-gray-900'
-							: 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-					}"
+					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+					style={allTikTokSelected
+						? 'background: black; color: white;'
+						: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+					onmouseenter={(e) => {
+						if (allTikTokSelected) {
+							e.currentTarget.style.background = '#1a1a1a';
+						} else {
+							e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+						}
+					}}
+					onmouseleave={(e) => {
+						if (allTikTokSelected) {
+							e.currentTarget.style.background = 'black';
+						} else {
+							e.currentTarget.style.background = 'var(--color-bg-secondary)';
+						}
+					}}
 				>
 					{@html getMethodIcon('tiktok')}
 					<span>{allTikTokSelected ? 'Deselect All TikTok' : 'Select All TikTok'} ({availableMethodCounts.tiktok})</span>
@@ -99,7 +125,7 @@
 				{@const selected = getSelectedMethods(key)}
 				{@const hasEmailAddr = hasEmail(influencer)}
 				{@const platform = influencer.platform?.toLowerCase()}
-				<div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
+				<div class="flex items-center justify-between p-4 rounded-lg transition-colors" style="border: 1px solid var(--color-border);" onmouseenter={(e) => e.currentTarget.style.borderColor = 'var(--color-text-muted)'} onmouseleave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
 					<div class="flex items-center gap-4 flex-1 min-w-0">
 						<div class="shrink-0 flex flex-col items-center gap-1">
 							{#if influencer.platform}
@@ -108,15 +134,15 @@
 								</div>
 							{/if}
 							{#if hasEmailAddr}
-								<svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+								<svg class="h-4 w-4" style="color: var(--color-text-muted);" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
 								</svg>
 							{/if}
 						</div>
 						<div class="flex-1 min-w-0">
-							<p class="text-sm font-medium text-gray-900 truncate">{influencer.display_name ?? 'N/A'}</p>
+							<p class="text-sm font-medium truncate" style="color: var(--color-text);">{influencer.display_name ?? 'N/A'}</p>
 							{#if influencer.biography || influencer.bio}
-								<p class="text-xs text-gray-500 line-clamp-2 mt-1">{influencer.biography || influencer.bio}</p>
+								<p class="text-xs line-clamp-2 mt-1" style="color: var(--color-text-muted);">{influencer.biography || influencer.bio}</p>
 							{/if}
 						</div>
 					</div>
@@ -133,11 +159,20 @@
 											onSetEmailAccount(key, connection.id);
 										}
 									}}
-									class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {
-										isSelected
-											? 'bg-[#FF6F61] text-white'
-											: 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-									}"
+									class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+									style={isSelected
+										? 'background: var(--color-primary); color: white;'
+										: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+									onmouseenter={(e) => {
+										if (!isSelected) {
+											e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+										}
+									}}
+									onmouseleave={(e) => {
+										if (!isSelected) {
+											e.currentTarget.style.background = 'var(--color-bg-secondary)';
+										}
+									}}
 									title={connection.email}
 								>
 									{@html getMethodIcon('email')}
@@ -148,11 +183,20 @@
 							<button
 								type="button"
 								onclick={() => onToggleMethod(key, 'email')}
-								class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {
-									isMethodSelected(key, 'email')
-										? 'bg-[#FF6F61] text-white'
-										: 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-								}"
+								class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+								style={isMethodSelected(key, 'email')
+									? 'background: var(--color-primary); color: white;'
+									: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+								onmouseenter={(e) => {
+									if (!isMethodSelected(key, 'email')) {
+										e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+									}
+								}}
+								onmouseleave={(e) => {
+									if (!isMethodSelected(key, 'email')) {
+										e.currentTarget.style.background = 'var(--color-bg-secondary)';
+									}
+								}}
 							>
 								{@html getMethodIcon('email')}
 								<span>Email</span>
@@ -162,11 +206,20 @@
 							<button
 								type="button"
 								onclick={() => onToggleMethod(key, 'instagram')}
-								class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {
-									isMethodSelected(key, 'instagram')
-										? 'bg-[#E4405F] text-white'
-										: 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-								}"
+								class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+								style={isMethodSelected(key, 'instagram')
+									? 'background: #E4405F; color: white;'
+									: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+								onmouseenter={(e) => {
+									if (!isMethodSelected(key, 'instagram')) {
+										e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+									}
+								}}
+								onmouseleave={(e) => {
+									if (!isMethodSelected(key, 'instagram')) {
+										e.currentTarget.style.background = 'var(--color-bg-secondary)';
+									}
+								}}
 							>
 								{@html getMethodIcon('instagram')}
 								<span>Instagram</span>
@@ -176,11 +229,20 @@
 							<button
 								type="button"
 								onclick={() => onToggleMethod(key, 'tiktok')}
-								class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {
-									isMethodSelected(key, 'tiktok')
-										? 'bg-black text-white'
-										: 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-								}"
+								class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+								style={isMethodSelected(key, 'tiktok')
+									? 'background: black; color: white;'
+									: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+								onmouseenter={(e) => {
+									if (!isMethodSelected(key, 'tiktok')) {
+										e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+									}
+								}}
+								onmouseleave={(e) => {
+									if (!isMethodSelected(key, 'tiktok')) {
+										e.currentTarget.style.background = 'var(--color-bg-secondary)';
+									}
+								}}
 							>
 								{@html getMethodIcon('tiktok')}
 								<span>TikTok</span>

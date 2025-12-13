@@ -19,7 +19,7 @@
 	}: Props = $props();
 </script>
 
-<div class="border-t border-gray-200 px-8 py-4 shrink-0 flex items-center justify-between">
+<div class="px-8 py-4 shrink-0 flex items-center justify-between" style="border-top: 1px solid var(--color-border);">
 	<!-- Back Button (Left) -->
 	<div class="flex-1 flex justify-start">
 		{#if currentStage === 'draft-messages'}
@@ -48,18 +48,10 @@
 	
 	<!-- Progress Indicator (Middle) -->
 	<div class="flex items-center gap-2">
-		<div class="h-2 w-2 rounded-full transition-colors {
-			currentStageIndex >= 1 ? 'bg-[#FF6F61]' : 'bg-gray-300'
-		}"></div>
-		<div class="h-2 w-2 rounded-full transition-colors {
-			currentStageIndex >= 2 ? 'bg-[#FF6F61]' : 'bg-gray-300'
-		}"></div>
-		<div class="h-2 w-2 rounded-full transition-colors {
-			currentStageIndex >= 3 ? 'bg-[#FF6F61]' : 'bg-gray-300'
-		}"></div>
-		<div class="h-2 w-2 rounded-full transition-colors {
-			currentStageIndex >= 4 ? 'bg-[#FF6F61]' : 'bg-gray-300'
-		}"></div>
+		<div class="h-2 w-2 rounded-full transition-colors" style="background: {currentStageIndex >= 1 ? 'var(--color-primary)' : 'var(--color-border)'};"></div>
+		<div class="h-2 w-2 rounded-full transition-colors" style="background: {currentStageIndex >= 2 ? 'var(--color-primary)' : 'var(--color-border)'};"></div>
+		<div class="h-2 w-2 rounded-full transition-colors" style="background: {currentStageIndex >= 3 ? 'var(--color-primary)' : 'var(--color-border)'};"></div>
+		<div class="h-2 w-2 rounded-full transition-colors" style="background: {currentStageIndex >= 4 ? 'var(--color-primary)' : 'var(--color-border)'};"></div>
 	</div>
 	
 	<!-- Forward Button (Right) -->

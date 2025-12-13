@@ -122,6 +122,8 @@ export interface PipelineJobDocument {
     status: StageStatus;
     profiles_requested: number;
     profiles_collected: number;
+    cache_hits?: number;
+    api_calls?: number;
     batches_completed?: number;
     batches_processing?: number;
     batches_failed?: number;
@@ -158,6 +160,12 @@ export interface PipelineJobDocument {
     deduplicated_results: number;
     profiles_collected: number;
     profiles_analyzed: number;
+    // Cost tracking
+    cache_hits?: number;
+    api_calls?: number;
+    brightdata_cost?: number;
+    openai_cost?: number;
+    total_cost?: number;
   };
 }
 
@@ -426,26 +434,36 @@ export async function updateBrightDataStage(
   status: StageStatus,
   profilesRequested?: number,
   profilesCollected?: number,
-  error?: string | null
+  error?: string | null,
+  cacheHits?: number,
+  apiCalls?: number
 ): Promise<void> {
   const updates: any = {
     'brightdata_collection.status': status,
     'brightdata_collection.completed_at': status === 'completed' ? Timestamp.now() : null,
     updated_at: Timestamp.now(),
   };
-  
+
   if (profilesRequested !== undefined) {
     updates['brightdata_collection.profiles_requested'] = profilesRequested;
   }
-  
+
   if (profilesCollected !== undefined) {
     updates['brightdata_collection.profiles_collected'] = profilesCollected;
   }
-  
+
   if (error !== undefined) {
     updates['brightdata_collection.error'] = error;
   }
-  
+
+  if (cacheHits !== undefined) {
+    updates['brightdata_collection.cache_hits'] = cacheHits;
+  }
+
+  if (apiCalls !== undefined) {
+    updates['brightdata_collection.api_calls'] = apiCalls;
+  }
+
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
 }
 
@@ -551,6 +569,12 @@ export async function storePipelineResults(
     deduplicated_results: number;
     profiles_collected: number;
     profiles_analyzed: number;
+    // Cost tracking
+    cache_hits?: number;
+    api_calls?: number;
+    brightdata_cost?: number;
+    openai_cost?: number;
+    total_cost?: number;
   }
 ): Promise<void> {
   // Validate profiles array

@@ -149,7 +149,7 @@
   }
 
   .popup-content {
-    background: white;
+    background: var(--color-bg-elevated);
     border-radius: 16px;
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15);
     max-width: 500px;
@@ -173,13 +173,13 @@
     align-items: center;
     justify-content: space-between;
     padding: 20px 24px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    border-bottom: 1px solid var(--color-border);
   }
 
   .popup-title {
     font-size: 18px;
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--color-text);
     margin: 0;
   }
 
@@ -189,7 +189,7 @@
     border-radius: 8px;
     border: none;
     background: transparent;
-    color: rgba(0, 0, 0, 0.4);
+    color: var(--color-text-muted);
     font-size: 28px;
     line-height: 1;
     cursor: pointer;
@@ -201,7 +201,7 @@
 
   .close-btn:hover {
     background: rgba(0, 0, 0, 0.05);
-    color: rgba(0, 0, 0, 0.7);
+    color: var(--color-text-secondary);
   }
 
   .popup-body {
@@ -221,13 +221,13 @@
   .empty-text {
     font-size: 16px;
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--color-text);
     margin: 0 0 8px 0;
   }
 
   .empty-subtext {
     font-size: 14px;
-    color: rgba(0, 0, 0, 0.5);
+    color: var(--color-text-secondary);
     margin: 0;
   }
 
@@ -244,7 +244,7 @@
     justify-content: space-between;
     padding: 16px;
     background: rgba(0, 0, 0, 0.02);
-    border: 1px solid rgba(0, 0, 0, 0.08);
+    border: 1px solid var(--color-border);
     border-radius: 12px;
     transition: all 0.2s;
   }
@@ -262,7 +262,7 @@
   .connection-email {
     font-size: 14px;
     font-weight: 500;
-    color: #1a1a1a;
+    color: var(--color-text);
     margin-bottom: 4px;
     display: flex;
     align-items: center;
@@ -273,7 +273,7 @@
     display: inline-flex;
     align-items: center;
     padding: 2px 8px;
-    background: linear-gradient(135deg, #FF6F61, #FF8A80);
+    background: var(--color-primary);
     color: white;
     font-size: 11px;
     font-weight: 600;
@@ -284,7 +284,7 @@
 
   .connection-id {
     font-size: 11px;
-    color: rgba(0, 0, 0, 0.4);
+    color: var(--color-text-muted);
     font-family: monospace;
   }
 
@@ -308,14 +308,14 @@
 
   .set-primary-btn {
     background: transparent;
-    border-color: rgba(0, 0, 0, 0.15);
-    color: rgba(0, 0, 0, 0.6);
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
   }
 
   .set-primary-btn:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.03);
     border-color: rgba(0, 0, 0, 0.25);
-    color: rgba(0, 0, 0, 0.8);
+    color: var(--color-text);
   }
 
   .set-primary-btn:disabled {
@@ -359,7 +359,7 @@
 
   .popup-footer {
     padding-top: 16px;
-    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    border-top: 1px solid var(--color-border);
   }
 
   .connect-btn {
@@ -369,7 +369,7 @@
     font-weight: 600;
     border-radius: 10px;
     border: none;
-    background: linear-gradient(135deg, #FF6F61, #FF8A80);
+    background: var(--color-primary);
     color: white;
     cursor: pointer;
     transition: all 0.2s;

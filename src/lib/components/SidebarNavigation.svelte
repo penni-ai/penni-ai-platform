@@ -1,8 +1,10 @@
 <script lang="ts">
 import Button from '$lib/components/Button.svelte';
+import ThemeToggle from './ThemeToggle.svelte';
 import { goto } from '$app/navigation';
 import { onMount } from 'svelte';
 import { sidebarState } from '$lib/stores/sidebar';
+import { upgradeModal } from '$lib/stores/upgrade';
 import { getPlatformLogo, getPlatformColor, normalizePlatforms } from '$lib/utils/campaign';
 
 	type NavItem = {
@@ -321,7 +323,7 @@ $effect(() => {
 
 <div class="flex flex-1 flex-col min-h-0">
 	<!-- Fixed Header -->
-	<div class="px-6 pt-6 pb-5 border-b border-gray-100 shrink-0">
+	<div class="px-6 pt-6 pb-5 border-b shrink-0" style="border-color: var(--color-border);">
 	<Button
 		onclick={async () => {
 				try {
@@ -340,7 +342,9 @@ $effect(() => {
 					alert('Failed to create campaign. Please try again.');
 				}
 			}}
-			class="w-full justify-center bg-[#FF6F61] text-white hover:bg-[#ff846f]"
+			variant="primary"
+			class="w-full"
+			fullWidth={true}
 		>
 			New Campaign
 		</Button>
@@ -348,17 +352,20 @@ $effect(() => {
 
 	<!-- Scrollable Campaigns Section -->
 	<div class="flex-1 overflow-y-auto min-h-0">
-	<div class="px-6 py-5 space-y-3 border-t border-gray-100">
-		<p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Campaign</p>
+	<div class="px-6 py-5 space-y-3 border-t" style="border-color: var(--color-border);">
+		<p class="text-xs font-semibold uppercase tracking-wide" style="color: var(--color-text-muted);">Campaign</p>
 		{#if campaigns.length}
 			<div class="space-y-2">
 				{#each campaigns as campaign}
 					<div
 						class={`group relative flex items-center justify-between rounded-xl px-4 py-2.5 text-sm transition ${
 							selectedCampaignId === campaign.id
-								? 'bg-[#FFF1ED] text-gray-900 shadow-sm'
-								: 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+								? 'shadow-sm'
+								: ''
 						}`}
+						style={selectedCampaignId === campaign.id
+							? 'background-color: #FFF1ED; color: var(--color-text);'
+							: 'color: var(--color-text-secondary);'}
 					>
 						<a
 							href={campaign.href ?? `/campaign/${campaign.id}`}
@@ -371,7 +378,8 @@ $effect(() => {
 			type="button"
 			data-campaign-menu-trigger
 			onclick={(e) => toggleMenu(campaign.id, e)}
-							class="ml-2 flex items-center justify-center rounded-lg p-1 text-gray-400 opacity-0 transition hover:bg-gray-200 hover:text-gray-600 group-hover:opacity-100"
+							class="ml-2 flex items-center justify-center rounded-lg p-1 opacity-0 transition group-hover:opacity-100"
+							style="color: var(--color-text-muted);"
 							aria-label="Campaign options"
 						>
 							<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
@@ -380,7 +388,8 @@ $effect(() => {
 						</button>
 			{#if openMenuId === campaign.id}
 				<div
-					class="absolute right-0 top-full z-10 mt-1 w-40 rounded-lg border border-gray-200 bg-white shadow-lg"
+					class="absolute right-0 top-full z-10 mt-1 w-40 rounded-lg border shadow-lg"
+					style="border-color: var(--color-border); background-color: var(--color-bg-elevated);"
 					role="menu"
 					aria-label="Campaign options menu"
 					tabindex="-1"
@@ -389,14 +398,15 @@ $effect(() => {
 					<button
 						type="button"
 						onclick={(e) => showCampaignInfo(campaign.id, e)}
-						class="w-full rounded-lg px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+						class="w-full rounded-lg px-4 py-2 text-left text-sm"
+						style="color: var(--color-text-secondary);"
 					>
 						Info
 					</button>
 					<button
 						type="button"
 						onclick={(e) => deleteCampaign(campaign.id, e)}
-						class="w-full rounded-lg px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+						class="w-full rounded-lg px-4 py-2 text-left text-sm text-red-600"
 					>
 						Delete
 					</button>
@@ -406,22 +416,22 @@ $effect(() => {
 				{/each}
 			</div>
 		{:else}
-			<div class="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500">
-				<p class="font-medium text-gray-600">No campaigns setup</p>
-				<p class="mt-1 text-[11px] text-gray-500">Start a chat to create your first campaign.</p>
+			<div class="rounded-2xl border border-dashed px-4 py-3 text-xs" style="border-color: var(--color-border); background-color: var(--color-bg-subtle); color: var(--color-text-muted);">
+				<p class="font-medium" style="color: var(--color-text-secondary);">No campaigns setup</p>
+				<p class="mt-1 text-[11px]" style="color: var(--color-text-muted);">Start a chat to create your first campaign.</p>
 			</div>
 		{/if}
 		</div>
 	</div>
 
 	<!-- Fixed Bottom Section -->
-	<div class="shrink-0 border-t border-gray-100">
+	<div class="shrink-0 border-t" style="border-color: var(--color-border);">
 	<!-- Current Plan Panel -->
 	{#if usage}
-			<div class="mx-6 mb-4 mt-4 rounded-lg border-2 border-gray-200 bg-white p-3">
+			<div class="mx-6 mb-4 mt-4 rounded-lg border-2 p-3" style="border-color: var(--color-border); background-color: var(--color-bg-elevated);">
 			<div class="space-y-3">
 				<div class="flex items-center justify-between">
-					<p class="text-sm font-semibold text-gray-900">{getPlanName(currentPlanKey)}</p>
+					<p class="text-sm font-semibold" style="color: var(--color-text);">{getPlanName(currentPlanKey)}</p>
 					<Button
 						variant="primary"
 						size="sm"
@@ -430,7 +440,7 @@ $effect(() => {
 							if (onUpgrade) {
 								onUpgrade();
 							} else {
-								window.location.href = '/pricing';
+								upgradeModal.open('Upgrade your plan', 'Unlock more influencer searches, outreach emails, and connected inboxes.');
 							}
 						}}
 					>
@@ -441,15 +451,15 @@ $effect(() => {
 				<!-- Influencers Found Bar -->
 				<div class="space-y-1">
 					<div class="flex items-center justify-between">
-						<p class="text-xs text-gray-600">Influencers Found</p>
-						<p class="text-xs font-medium text-gray-900">
+						<p class="text-xs" style="color: var(--color-text-secondary);">Influencers Found</p>
+						<p class="text-xs font-medium" style="color: var(--color-text);">
 							{usage.influencersFound.remaining} / {usage.influencersFound.limit} remaining
 						</p>
 					</div>
-					<div class="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+					<div class="h-2 w-full overflow-hidden rounded-full" style="background-color: var(--color-bg-subtle);">
 						<div
-							class="h-full bg-[#FF6F61] transition-all duration-300"
-							style="width: {usage.influencersFound.limit > 0 ? Math.min(100, (usage.influencersFound.remaining / usage.influencersFound.limit) * 100) : 0}%"
+							class="h-full transition-all duration-300"
+							style="width: {usage.influencersFound.limit > 0 ? Math.min(100, (usage.influencersFound.remaining / usage.influencersFound.limit) * 100) : 0}%; background-color: var(--color-primary);"
 						></div>
 					</div>
 				</div>
@@ -457,35 +467,41 @@ $effect(() => {
 				<!-- Outreach Sent Bar -->
 				<div class="space-y-1">
 					<div class="flex items-center justify-between">
-						<p class="text-xs text-gray-600">Outreach Sent</p>
-						<p class="text-xs font-medium text-gray-900">
+						<p class="text-xs" style="color: var(--color-text-secondary);">Outreach Sent</p>
+						<p class="text-xs font-medium" style="color: var(--color-text);">
 							{usage.outreachSent.remaining} / {usage.outreachSent.limit} remaining
 						</p>
 					</div>
-					<div class="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+					<div class="h-2 w-full overflow-hidden rounded-full" style="background-color: var(--color-bg-subtle);">
 						<div
-							class="h-full bg-[#FF6F61] transition-all duration-300"
-							style="width: {usage.outreachSent.limit > 0 ? Math.min(100, (usage.outreachSent.remaining / usage.outreachSent.limit) * 100) : 0}%"
+							class="h-full transition-all duration-300"
+							style="width: {usage.outreachSent.limit > 0 ? Math.min(100, (usage.outreachSent.remaining / usage.outreachSent.limit) * 100) : 0}%; background-color: var(--color-primary);"
 						></div>
 					</div>
 				</div>
-				
-				<p class="text-[10px] text-gray-500">
+
+				<p class="text-[10px]" style="color: var(--color-text-muted);">
 					Resets {formatResetDate(usage.influencersFound.resetDate)}
 				</p>
 			</div>
 		</div>
 	{/if}
 
+		<!-- Theme Toggle -->
+		<div class="mx-6 mb-4">
+			<ThemeToggle />
+		</div>
+
 		<!-- Bottom Navigation -->
 		<nav class="px-6 py-5 space-y-1">
 			{#each navItems as item}
 				<a
 					href={item.href}
-					class="relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-gray-600 transition hover:text-gray-900 hover:bg-gray-50"
+					class="relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition"
+					style="color: var(--color-text-secondary);"
 				>
 					{#if item.icon === 'settings'}
-						<svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+						<svg class="h-4 w-4" style="color: var(--color-text-muted);" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
 							<path
 								stroke-linecap="round"
 								stroke-linejoin="round"
@@ -494,13 +510,13 @@ $effect(() => {
 							<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
 						</svg>
 					{:else}
-						<svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+						<svg class="h-4 w-4" style="color: var(--color-text-muted);" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.667 2.667 0 00-.1.661z" />
 						</svg>
 					{/if}
 					<span class="font-medium">{item.label}</span>
 					{#if item.badge}
-						<span class="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#FF6F61] text-[10px] font-semibold text-white">{item.badge}</span>
+						<span class="ml-auto flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white" style="background-color: var(--color-primary);">{item.badge}</span>
 					{/if}
 				</a>
 			{/each}
@@ -526,17 +542,19 @@ $effect(() => {
 		tabindex="-1"
 	>
 		<div
-			class="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl"
+			class="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border shadow-xl"
+			style="border-color: var(--color-border); background-color: var(--color-bg-elevated);"
 			role="document"
 			tabindex="-1"
 		>
-			<div class="sticky top-0 border-b border-gray-200 bg-white px-6 py-4">
+			<div class="sticky top-0 border-b px-6 py-4" style="border-color: var(--color-border); background-color: var(--color-bg-elevated);">
 				<div class="flex items-center justify-between">
-					<h2 id="campaign-info-title" class="text-xl font-semibold text-gray-900">Campaign Details</h2>
+					<h2 id="campaign-info-title" class="text-xl font-semibold" style="color: var(--color-text);">Campaign Details</h2>
 					<button
 						type="button"
 						onclick={closeInfoModal}
-						class="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+						class="rounded-lg p-1"
+						style="color: var(--color-text-muted);"
 						aria-label="Close"
 					>
 						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -549,52 +567,60 @@ $effect(() => {
 			<div class="px-6 py-5">
 				{#if isLoadingInfo}
 					<div class="flex justify-center py-12">
-						<div class="text-gray-500">Loading campaign information...</div>
+						<div style="color: var(--color-text-muted);">Loading campaign information...</div>
 					</div>
 				{:else if infoCampaignData}
 					<div class="space-y-6">
 						<!-- Basic Info -->
 						<section>
-							<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Basic Information</h3>
+							<h3 class="text-sm font-semibold uppercase tracking-wide mb-3" style="color: var(--color-text-muted);">Basic Information</h3>
 							<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 								<div>
-									<dt class="text-xs font-medium text-gray-500">Campaign ID</dt>
-									<dd class="mt-1 text-sm text-gray-900 font-mono">{infoCampaignData.id ?? '—'}</dd>
+									<dt class="text-xs font-medium" style="color: var(--color-text-muted);">Campaign ID</dt>
+									<dd class="mt-1 text-sm font-mono" style="color: var(--color-text);">{infoCampaignData.id ?? '—'}</dd>
 								</div>
 								<div>
-									<dt class="text-xs font-medium text-gray-500">Title</dt>
-									<dd class="mt-1 text-sm text-gray-900">{infoCampaignData.title ?? '—'}</dd>
+									<dt class="text-xs font-medium mb-1" style="color: var(--color-text-muted);">Title</dt>
+									<dd class="mt-1">
+										<input
+											type="text"
+											bind:value={editingFields.title}
+											placeholder="Enter campaign title"
+											class="w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1"
+											style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-bg-elevated); --tw-ring-color: var(--color-primary);"
+										/>
+									</dd>
 								</div>
 								<div>
-									<dt class="text-xs font-medium text-gray-500">Status</dt>
-									<dd class="mt-1 text-sm text-gray-900 capitalize">{infoCampaignData.status ?? '—'}</dd>
+									<dt class="text-xs font-medium" style="color: var(--color-text-muted);">Status</dt>
+									<dd class="mt-1 text-sm capitalize" style="color: var(--color-text);">{infoCampaignData.status ?? '—'}</dd>
 								</div>
 								<div>
-									<dt class="text-xs font-medium text-gray-500">Created</dt>
-									<dd class="mt-1 text-sm text-gray-900">
+									<dt class="text-xs font-medium" style="color: var(--color-text-muted);">Created</dt>
+									<dd class="mt-1 text-sm" style="color: var(--color-text);">
 										{infoCampaignData.createdAt ? new Date(infoCampaignData.createdAt).toLocaleString() : '—'}
 									</dd>
 								</div>
 								<div>
-									<dt class="text-xs font-medium text-gray-500">Last Updated</dt>
-									<dd class="mt-1 text-sm text-gray-900">
+									<dt class="text-xs font-medium" style="color: var(--color-text-muted);">Last Updated</dt>
+									<dd class="mt-1 text-sm" style="color: var(--color-text);">
 										{infoCampaignData.updatedAt ? new Date(infoCampaignData.updatedAt).toLocaleString() : '—'}
 									</dd>
 								</div>
 								<div>
-									<dt class="text-xs font-medium text-gray-500">Message Sequence</dt>
-									<dd class="mt-1 text-sm text-gray-900">{infoCampaignData.messageSequence ?? '—'}</dd>
+									<dt class="text-xs font-medium" style="color: var(--color-text-muted);">Message Sequence</dt>
+									<dd class="mt-1 text-sm" style="color: var(--color-text);">{infoCampaignData.messageSequence ?? '—'}</dd>
 								</div>
 							</dl>
 						</section>
 
 						<!-- Campaign Fields -->
 							<section>
-							<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Campaign Fields</h3>
+							<h3 class="text-sm font-semibold uppercase tracking-wide mb-3" style="color: var(--color-text-muted);">Campaign Fields</h3>
 							<dl class="space-y-3">
 								<!-- Business Name -->
 								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+									<dt class="text-xs font-medium flex items-center gap-2 mb-1" style="color: var(--color-text-muted);">
 										Business Name
 										{#if infoCampaignData.fieldStatus?.business_name === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -611,14 +637,15 @@ $effect(() => {
 											type="text"
 											bind:value={editingFields.business_name}
 											placeholder="Enter business name"
-											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+											class="w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1"
+											style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-bg-elevated); --tw-ring-color: var(--color-primary);"
 										/>
 									</dd>
 								</div>
 
 								<!-- Website -->
 								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+									<dt class="text-xs font-medium flex items-center gap-2 mb-1" style="color: var(--color-text-muted);">
 										Website
 										{#if infoCampaignData.fieldStatus?.website === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -637,14 +664,15 @@ $effect(() => {
 											type="text"
 											bind:value={editingFields.website}
 											placeholder="Enter website URL"
-											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+											class="w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1"
+											style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-bg-elevated); --tw-ring-color: var(--color-primary);"
 										/>
 									</dd>
 								</div>
 
 				<!-- Business About -->
 				<div>
-					<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+					<dt class="text-xs font-medium flex items-center gap-2 mb-1" style="color: var(--color-text-muted);">
 										Business About
 										{#if infoCampaignData.fieldStatus?.business_about === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -661,14 +689,15 @@ $effect(() => {
 											bind:value={editingFields.businessSummary}
 											placeholder="Enter business description"
 											rows="3"
-											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61] resize-none"
+											class="w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 resize-none"
+											style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-bg-elevated); --tw-ring-color: var(--color-primary);"
 										></textarea>
 									</dd>
 								</div>
 
 								<!-- Influencer Location -->
 										<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+									<dt class="text-xs font-medium flex items-center gap-2 mb-1" style="color: var(--color-text-muted);">
 										Influencer Location
 										{#if infoCampaignData.fieldStatus?.influencer_location === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -686,15 +715,16 @@ $effect(() => {
 										<input
 											type="text"
 											bind:value={editingFields.locations}
-											placeholder="Enter influencer location"
-											class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+											placeholder="e.g., NYC, New York, US, Remote"
+											class="w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1"
+											style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-bg-elevated); --tw-ring-color: var(--color-primary);"
 										/>
 									</dd>
 										</div>
 
 								<!-- Influencer Types -->
 								<div>
-								<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+								<dt class="text-xs font-medium flex items-center gap-2 mb-1" style="color: var(--color-text-muted);">
 									Type of Influencer
 									{#if (infoCampaignData.collected?.type_of_influencer ?? infoCampaignData.type_of_influencer) !== null && (infoCampaignData.collected?.type_of_influencer ?? infoCampaignData.type_of_influencer) !== undefined}
 										<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Collected</span>
@@ -707,14 +737,15 @@ $effect(() => {
 										type="text"
 										bind:value={editingFields.type_of_influencer}
 										placeholder="Enter type of influencer"
-										class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+										class="w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1"
+										style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-bg-elevated); --tw-ring-color: var(--color-primary);"
 									/>
 								</dd>
 							</div>
 
 							<!-- Platform -->
 							<div>
-								<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+								<dt class="text-xs font-medium flex items-center gap-2 mb-1" style="color: var(--color-text-muted);">
 									Platform
 									{#if (infoCampaignData.collected?.platform ?? infoCampaignData.platform) !== null && (infoCampaignData.collected?.platform ?? infoCampaignData.platform) !== undefined}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Collected</span>
@@ -780,7 +811,7 @@ $effect(() => {
 
 								<!-- Followers -->
 								<div>
-									<dt class="text-xs font-medium text-gray-500 flex items-center gap-2 mb-1">
+									<dt class="text-xs font-medium flex items-center gap-2 mb-1" style="color: var(--color-text-muted);">
 										Follower Range
 										{#if infoCampaignData.fieldStatus?.min_followers === 'confirmed' || infoCampaignData.fieldStatus?.max_followers === 'confirmed'}
 											<span class="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">Confirmed</span>
@@ -800,14 +831,16 @@ $effect(() => {
 												type="number"
 												bind:value={editingFields.followersMin}
 												placeholder="Min"
-												class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+												class="w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1"
+												style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-bg-elevated); --tw-ring-color: var(--color-primary);"
 											/>
-											<span class="text-gray-500">–</span>
+											<span style="color: var(--color-text-muted);">–</span>
 											<input
 												type="number"
 												bind:value={editingFields.followersMax}
 												placeholder="Max"
-												class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+												class="w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-1"
+												style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-bg-elevated); --tw-ring-color: var(--color-primary);"
 											/>
 										</div>
 									</dd>
@@ -815,7 +848,7 @@ $effect(() => {
 							</dl>
 
 							<!-- Save Button -->
-							<div class="mt-4 pt-4 border-t border-gray-200">
+							<div class="mt-4 pt-4 border-t" style="border-color: var(--color-border);">
 								<div class="flex items-center justify-between gap-3">
 									{#if saveError}
 										<p class="text-xs text-red-600">{saveError}</p>
@@ -828,7 +861,8 @@ $effect(() => {
 										type="button"
 										onclick={saveCampaignFields}
 										disabled={isSaving}
-										class="ml-auto rounded-md bg-[#FF6F61] px-4 py-2 text-sm font-medium text-white hover:bg-[#FF5A4A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+										class="ml-auto rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+										style="background-color: var(--color-primary);"
 									>
 										{isSaving ? 'Saving...' : 'Save Changes'}
 									</button>
@@ -840,17 +874,17 @@ $effect(() => {
 						<!-- Follower Range -->
 						{#if infoCampaignData.followerRange || infoCampaignData.followersMin !== null || infoCampaignData.followersMax !== null}
 							<section>
-								<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Follower Range</h3>
+								<h3 class="text-sm font-semibold uppercase tracking-wide mb-3" style="color: var(--color-text-muted);">Follower Range</h3>
 								<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 									<div>
-										<dt class="text-xs font-medium text-gray-500">Min Followers</dt>
-										<dd class="mt-1 text-sm text-gray-900">
+										<dt class="text-xs font-medium" style="color: var(--color-text-muted);">Min Followers</dt>
+										<dd class="mt-1 text-sm" style="color: var(--color-text);">
 											{infoCampaignData.followerRange?.min ?? infoCampaignData.followersMin ?? '—'}
 										</dd>
 									</div>
 									<div>
-										<dt class="text-xs font-medium text-gray-500">Max Followers</dt>
-										<dd class="mt-1 text-sm text-gray-900">
+										<dt class="text-xs font-medium" style="color: var(--color-text-muted);">Max Followers</dt>
+										<dd class="mt-1 text-sm" style="color: var(--color-text);">
 											{infoCampaignData.followerRange?.max ?? infoCampaignData.followersMax ?? '—'}
 										</dd>
 									</div>
@@ -861,16 +895,16 @@ $effect(() => {
 						<!-- Search Status -->
 						{#if infoCampaignData.search}
 							<section>
-								<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Search Status</h3>
+								<h3 class="text-sm font-semibold uppercase tracking-wide mb-3" style="color: var(--color-text-muted);">Search Status</h3>
 								<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 									<div>
-										<dt class="text-xs font-medium text-gray-500">Status</dt>
-										<dd class="mt-1 text-sm text-gray-900 capitalize">{infoCampaignData.search.status ?? '—'}</dd>
+										<dt class="text-xs font-medium" style="color: var(--color-text-muted);">Status</dt>
+										<dd class="mt-1 text-sm capitalize" style="color: var(--color-text);">{infoCampaignData.search.status ?? '—'}</dd>
 									</div>
 									{#if infoCampaignData.search.completedAt}
 										<div>
-											<dt class="text-xs font-medium text-gray-500">Completed At</dt>
-											<dd class="mt-1 text-sm text-gray-900">
+											<dt class="text-xs font-medium" style="color: var(--color-text-muted);">Completed At</dt>
+											<dd class="mt-1 text-sm" style="color: var(--color-text);">
 												{new Date(infoCampaignData.search.completedAt).toLocaleString()}
 											</dd>
 										</div>
@@ -888,15 +922,15 @@ $effect(() => {
 						<!-- Business Summary -->
 						{#if infoCampaignData.businessSummary}
 							<section>
-								<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Business Summary</h3>
-								<p class="text-sm text-gray-700 whitespace-pre-wrap">{infoCampaignData.businessSummary}</p>
+								<h3 class="text-sm font-semibold uppercase tracking-wide mb-3" style="color: var(--color-text-muted);">Business Summary</h3>
+								<p class="text-sm whitespace-pre-wrap" style="color: var(--color-text-secondary);">{infoCampaignData.businessSummary}</p>
 							</section>
 						{/if}
 
 						<!-- Influencer Search Query -->
 						<section>
-							<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Influencer Search Query</h3>
-							<p class="text-sm text-gray-700 whitespace-pre-wrap">{infoCampaignData.influencerSearchQuery ?? '—'}</p>
+							<h3 class="text-sm font-semibold uppercase tracking-wide mb-3" style="color: var(--color-text-muted);">Influencer Search Query</h3>
+							<p class="text-sm whitespace-pre-wrap" style="color: var(--color-text-secondary);">{infoCampaignData.influencerSearchQuery ?? '—'}</p>
 						</section>
 					</div>
 				{/if}

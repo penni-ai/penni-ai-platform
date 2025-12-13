@@ -171,7 +171,6 @@ export async function canExportCSV(uid: string): Promise<boolean> {
  */
 export async function getFeatureLimits(uid: string): Promise<{
 	influencerSearchResults: number;
-	maxActiveCampaigns: number;
 	monthlyOutreachEmails: number;
 	connectedInboxes: number;
 } | null> {
@@ -179,15 +178,13 @@ export async function getFeatureLimits(uid: string): Promise<{
 	if (!capabilities) {
 		return {
 			influencerSearchResults: 10,
-			maxActiveCampaigns: 1,
 			monthlyOutreachEmails: 10,
 			connectedInboxes: 1
 		};
 	}
-	
+
 	return {
 		influencerSearchResults: capabilities.influencerSearchResults,
-		maxActiveCampaigns: capabilities.maxActiveCampaigns,
 		monthlyOutreachEmails: capabilities.monthlyOutreachEmails,
 		connectedInboxes: capabilities.connectedInboxes
 	};

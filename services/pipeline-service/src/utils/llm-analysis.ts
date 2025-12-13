@@ -253,6 +253,29 @@ export async function analyzeProfileFit(
   businessDescription: string,
   strictLocationMatching: boolean = false
 ): Promise<{ fit_score: number; fit_rationale: string; fit_summary: string }> {
+  // Check if influencer has posted within the last 60 days
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+  const posts = profile.posts_data || [];
+  const hasRecentPost = posts.some(post => {
+    if (!post.created_at) return false;
+    try {
+      const postDate = new Date(post.created_at);
+      return !isNaN(postDate.getTime()) && postDate >= sixtyDaysAgo;
+    } catch {
+      return false;
+    }
+  });
+
+  if (!hasRecentPost) {
+    return {
+      fit_score: 0,
+      fit_rationale: 'Influencer is inactive - no posts within the last 60 days.',
+      fit_summary: 'Inactive account with no recent content. Last activity was over 60 days ago.',
+    };
+  }
+
   const profileText = formatProfileForLLM(profile);
   const prompt = buildFitAnalysisPrompt(profileText, businessDescription, strictLocationMatching);
   const model = getOpenAIModel();

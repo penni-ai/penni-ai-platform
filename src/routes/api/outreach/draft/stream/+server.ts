@@ -39,6 +39,9 @@ export const POST = handleApiRoute(async (event) => {
 	const platform = typeof payload.platform === 'string' && ['email', 'instagram', 'tiktok'].includes(payload.platform)
 		? payload.platform
 		: 'email';
+	const customInstructions = typeof payload.customInstructions === 'string'
+		? payload.customInstructions.slice(0, 500)
+		: '';
 
 	if (!campaignId) {
 		throw new ApiProblem({
@@ -140,7 +143,7 @@ Requirements:
 - Focus on mutual value and partnership opportunities
 ${platform === 'instagram' || platform === 'tiktok' ? '- Use emojis sparingly and appropriately' : ''}
 - Write naturally as a normal message - do not use formal email formatting
-
+${customInstructions ? `\nAdditional User Requirements:\n${customInstructions}` : ''}
 ${formatGuidance}:`;
 
 				if (!env.OPENAI_API_KEY) {
@@ -155,7 +158,8 @@ ${formatGuidance}:`;
 					campaignId,
 					tone,
 					platform,
-					model
+					model,
+					hasCustomInstructions: !!customInstructions
 				});
 
 				const response = await openaiClient.responses.create({

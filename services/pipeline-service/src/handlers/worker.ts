@@ -541,9 +541,13 @@ export async function handlePipelineExecution(messageData: {
     const batchSize = streamingConfig.batchSize || 20;
     const totalBatches = Math.ceil(topProfileUrls.length / batchSize);
 
+    // Track cache stats for cost calculation
+    let cacheHits = 0;
+    let apiCalls = 0;
+
     try {
       // Use streaming processor - processes batches as they become ready
-      await processBatchedCollectionStreaming(
+      const streamingResult = await processBatchedCollectionStreaming(
         topProfileUrls,
         streamingConfig,
         timingTracker,
@@ -641,6 +645,11 @@ export async function handlePipelineExecution(messageData: {
         }
       );
 
+      // Capture cache stats from streaming result
+      cacheHits = streamingResult.cacheHits || 0;
+      apiCalls = streamingResult.totalProfiles - cacheHits;
+      console.log(`[Worker] Cache stats: ${cacheHits} cache hits, ${apiCalls} API calls`);
+
       // Check for cancellation after streaming completes
       if (await isJobCancelled(jobId)) {
         await updatePipelineJobStatus(jobId, 'cancelled');
@@ -668,7 +677,10 @@ export async function handlePipelineExecution(messageData: {
         jobId,
         'completed',
         topProfileUrls.length,
-        mergedProfiles.length
+        mergedProfiles.length,
+        null, // no error
+        cacheHits,
+        apiCalls
       );
       await completeStage(jobId, 'brightdata_collection');
       await updateLLMAnalysisStage(
@@ -690,13 +702,28 @@ export async function handlePipelineExecution(messageData: {
       }
 
       // Finalize: Store results and update status
+      // Cost calculations:
+      // - BrightData: $0.0015 per API call (cached profiles are free)
+      // - OpenAI: ~5000 tokens per profile at $0.30 per 1M tokens = $0.0015 per profile
+      const brightdataCost = apiCalls * 0.0015;
+      const openaiCost = mergedProfiles.length * 0.0015;
+      const totalCost = brightdataCost + openaiCost;
+
       const pipelineStats = {
         queries_generated: queries.length,
         total_search_results: totalResultsFromSearch,
         deduplicated_results: deduplicatedResults.length,
         profiles_collected: finalProfiles.length, // Final profiles after fit_score sorting
         profiles_analyzed: mergedProfiles.length, // All profiles analyzed
+        // Cost tracking
+        cache_hits: cacheHits,
+        api_calls: apiCalls,
+        brightdata_cost: brightdataCost,
+        openai_cost: openaiCost,
+        total_cost: totalCost,
       };
+
+      console.log(`[Worker] Pipeline costs: BrightData $${brightdataCost.toFixed(4)}, OpenAI $${openaiCost.toFixed(4)}, Total $${totalCost.toFixed(4)}`);
 
       // Store final top llm_top_n results sorted by fit_score
       await storePipelineResults(jobId, finalProfiles, pipelineStats);

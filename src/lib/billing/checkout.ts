@@ -14,7 +14,7 @@ export interface CheckoutOptions {
 }
 
 /**
- * Shared checkout function used by SubscriptionPanel, Pricing page, and OutreachUpgradePanel
+ * Shared checkout function used by UpgradeModal and Pricing page
  * Handles the checkout flow with Stripe
  */
 export async function startCheckout(options: CheckoutOptions): Promise<CheckoutResult> {

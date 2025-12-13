@@ -453,3 +453,24 @@ export interface BrightDataSnapshotResponse {
   platform?: BrightDataPlatform;
 }
 
+/**
+ * BrightData cache document stored in Firestore
+ * Used to cache raw profile data to avoid redundant API calls
+ */
+export interface BrightDataCacheDoc {
+  /** Original profile URL (normalized) */
+  profile_url: string;
+
+  /** Platform identifier */
+  platform: BrightDataPlatform;
+
+  /** Raw profile data from BrightData API */
+  raw_data: BrightDataInstagramProfile | BrightDataTikTokProfile;
+
+  /** Timestamp when cached (Unix ms) */
+  cached_at: number;
+
+  /** Timestamp when cache expires (Unix ms) - cached_at + 14 days */
+  expires_at: number;
+}
+

@@ -1,9 +1,9 @@
 /**
  * Firebase Client SDK initialization
- * 
+ *
  * This module initializes Firebase client SDK for browser use.
  * It automatically connects to emulators in development mode when configured.
- * 
+ *
  * Exports:
  * - firebaseApp: The Firebase app instance
  * - firebaseAuth: The Firebase Auth instance
@@ -30,7 +30,7 @@ function createFirebaseApp(): FirebaseApp {
 	if (getApps().length) {
 		return getApp();
 	}
-	
+
 	// Validate required config (but don't throw during build - use fallbacks)
 	if (!firebaseConfig.apiKey) {
 		// In browser, this is a real error. During SSR/build, we might not have env vars yet
@@ -40,7 +40,7 @@ function createFirebaseApp(): FirebaseApp {
 		// During SSR/build, create a minimal app - it will fail gracefully if used without config
 		console.warn('[FirebaseClient] Missing PUBLIC_FIREBASE_API_KEY - Firebase features may not work');
 	}
-	
+
 	return initializeApp(firebaseConfig);
 }
 
@@ -56,10 +56,8 @@ function configureAuth(app: FirebaseApp): Auth {
 }
 
 function configureFirestore(app: FirebaseApp): Firestore {
-	// Get auth first to ensure it's initialized
-	const auth = getAuth(app);
 	const firestore = getFirestore(app);
-	
+
 	// Connect to emulator if in development mode
 	// IMPORTANT: This must be called BEFORE any Firestore operations
 	if (browser && import.meta.env.DEV) {

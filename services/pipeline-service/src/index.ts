@@ -1,6 +1,7 @@
 import express from 'express';
 import { handlePipelineStart } from './handlers/orchestrator.js';
 import { handlePipelineExecution } from './handlers/worker.js';
+import { processEmailQueueBatch } from './handlers/email-queue-cron.js';
 import { getOrInitAdminApp, resolvedFirebaseProjectId, resolvedStorageBucketName } from './utils/firebase-admin.js';
 import { runHealthChecks } from './utils/health-check.js';
 
@@ -206,6 +207,37 @@ app.post('/pubsub/pipeline-start', async (req, res) => {
     // Return 204 even on error to avoid Pub/Sub retries for permanent failures
     // Errors are logged and job status is updated in Firestore
     res.status(204).send();
+  }
+});
+
+// Cron endpoint for processing email queue: POST /cron/process-email-queue
+// Called by Cloud Scheduler every 15 minutes
+app.post('/cron/process-email-queue', async (req, res) => {
+  try {
+    console.log('[Index] Email queue cron job triggered');
+
+    // Process the email queue batch
+    const result = await processEmailQueueBatch();
+
+    console.log('[Index] Email queue cron job completed:', {
+      totalProcessed: result.totalProcessed,
+      totalSucceeded: result.totalSucceeded,
+      totalFailed: result.totalFailed,
+      duration: result.duration,
+    });
+
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      result,
+    });
+  } catch (error) {
+    console.error('[Index] Error in /cron/process-email-queue handler:', error);
+    res.status(500).json({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 

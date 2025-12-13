@@ -179,7 +179,7 @@ async function handlePasswordChange(event: SubmitEvent) {
 
 <section class="flex flex-col gap-8">
 	<div>
-		<h2 class="text-base font-semibold text-gray-900 mb-4">Profile</h2>
+		<h2 class="text-base font-semibold mb-4" style="color: var(--color-text)">Profile</h2>
 		<form
 			class="space-y-3"
 			onsubmit={(event) => {
@@ -188,16 +188,16 @@ async function handlePasswordChange(event: SubmitEvent) {
 			}}
 		>
 			<div>
-				<label class="text-xs font-medium text-gray-700 mb-1 block" for="full_name">Full name</label>
-				<input id="full_name" name="full_name" bind:value={fullName} class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]" />
+				<label class="text-xs font-medium mb-1 block" style="color: var(--color-text-secondary)" for="full_name">Full name</label>
+				<input id="full_name" name="full_name" bind:value={fullName} class="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1" style="border-color: var(--color-border); color: var(--color-text); --tw-ring-color: var(--color-primary);" onfocus={(e) => e.currentTarget.style.borderColor = 'var(--color-primary)'} onblur={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'} />
 			</div>
 			<div>
-				<label class="text-xs font-medium text-gray-700 mb-1 block" for="account_email">Email</label>
-				<input id="account_email" value={data.userEmail ?? ''} readonly class="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+				<label class="text-xs font-medium mb-1 block" style="color: var(--color-text-secondary)" for="account_email">Email</label>
+				<input id="account_email" value={data.userEmail ?? ''} readonly class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-bg-elevated); color: var(--color-text-muted)" />
 			</div>
 			<div>
-				<label class="text-xs font-medium text-gray-700 mb-1 block" for="locale">Locale</label>
-				<select id="locale" name="locale" bind:value={locale} class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]">
+				<label class="text-xs font-medium mb-1 block" style="color: var(--color-text-secondary)" for="locale">Locale</label>
+				<select id="locale" name="locale" bind:value={locale} class="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1" style="border-color: var(--color-border); color: var(--color-text); --tw-ring-color: var(--color-primary);" onfocus={(e) => e.currentTarget.style.borderColor = 'var(--color-primary)'} onblur={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
 					<option value="en">English</option>
 					<option value="id">Bahasa Indonesia</option>
 					<option value="es">Spanish</option>
@@ -209,28 +209,28 @@ async function handlePasswordChange(event: SubmitEvent) {
 		</form>
 	</div>
 
-	<div class="border-t border-gray-200 pt-6">
-		<h2 class="text-base font-semibold text-gray-900 mb-4">Team preferences</h2>
+	<div class="border-t pt-6" style="border-color: var(--color-border)">
+		<h2 class="text-base font-semibold mb-4" style="color: var(--color-text)">Team preferences</h2>
 		<div class="space-y-3 text-sm">
 			<label class="flex items-start gap-2">
-				<input type="checkbox" bind:checked={shareLists} class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#FF6F61] focus:ring-[#FF6F61]" />
+				<input type="checkbox" bind:checked={shareLists} class="mt-0.5 h-4 w-4 rounded border focus:ring" style="border-color: var(--color-border); color: var(--color-primary); --tw-ring-color: var(--color-primary);" />
 				<div>
-					<p class="font-medium text-gray-900">Share influencer lists by default</p>
-					<p class="text-xs text-gray-500">New matches appear for all collaborators instantly.</p>
+					<p class="font-medium" style="color: var(--color-text)">Share influencer lists by default</p>
+					<p class="text-xs" style="color: var(--color-text-muted)">New matches appear for all collaborators instantly.</p>
 				</div>
 			</label>
 			<label class="flex items-start gap-2">
-				<input type="checkbox" bind:checked={allowTemplateEdits} class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#FF6F61] focus:ring-[#FF6F61]" />
+				<input type="checkbox" bind:checked={allowTemplateEdits} class="mt-0.5 h-4 w-4 rounded border focus:ring" style="border-color: var(--color-border); color: var(--color-primary); --tw-ring-color: var(--color-primary);" />
 				<div>
-					<p class="font-medium text-gray-900">Allow edits to outreach templates</p>
-					<p class="text-xs text-gray-500">Teammates can refine copy before it's sent out.</p>
+					<p class="font-medium" style="color: var(--color-text)">Allow edits to outreach templates</p>
+					<p class="text-xs" style="color: var(--color-text-muted)">Teammates can refine copy before it's sent out.</p>
 				</div>
 			</label>
 			<label class="flex items-start gap-2">
-				<input type="checkbox" bind:checked={sendDailyDigest} class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#FF6F61] focus:ring-[#FF6F61]" />
+				<input type="checkbox" bind:checked={sendDailyDigest} class="mt-0.5 h-4 w-4 rounded border focus:ring" style="border-color: var(--color-border); color: var(--color-primary); --tw-ring-color: var(--color-primary);" />
 				<div>
-					<p class="font-medium text-gray-900">Send daily digest</p>
-					<p class="text-xs text-gray-500">Recap replies and next steps at 8am local time.</p>
+					<p class="font-medium" style="color: var(--color-text)">Send daily digest</p>
+					<p class="text-xs" style="color: var(--color-text-muted)">Recap replies and next steps at 8am local time.</p>
 				</div>
 			</label>
 		</div>
@@ -244,27 +244,28 @@ async function handlePasswordChange(event: SubmitEvent) {
 		</div>
 	</div>
 
-	<div class="border-t border-gray-200 pt-6">
-		<h2 class="text-base font-semibold text-gray-900 mb-4">Outreach Settings</h2>
+	<div class="border-t pt-6" style="border-color: var(--color-border)">
+		<h2 class="text-base font-semibold mb-4" style="color: var(--color-text)">Outreach Settings</h2>
 		<div class="space-y-3 text-sm">
 			<label class="flex items-start gap-2">
-				<input 
-					type="checkbox" 
-					bind:checked={directSend} 
-					class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#FF6F61] focus:ring-[#FF6F61]" 
+				<input
+					type="checkbox"
+					bind:checked={directSend}
+					class="mt-0.5 h-4 w-4 rounded border focus:ring"
+					style="border-color: var(--color-border); color: var(--color-primary); --tw-ring-color: var(--color-primary);"
 					disabled={outreachSettingsLoading || outreachSettingsSaving}
 				/>
 				<div>
-					<p class="font-medium text-gray-900">Direct Gmail Send</p>
-					<p class="text-xs text-gray-500">When enabled, emails will be sent directly instead of creating drafts. This will use your outreach credits.</p>
+					<p class="font-medium" style="color: var(--color-text)">Direct Gmail Send</p>
+					<p class="text-xs" style="color: var(--color-text-muted)">When enabled, emails will be sent directly instead of creating drafts. This will use your outreach credits.</p>
 				</div>
 			</label>
 		</div>
 		<div class="flex items-center gap-3 mt-4">
-			<Button 
-				type="button" 
-				class="px-4 py-1.5 text-sm" 
-				onclick={saveOutreachSettings} 
+			<Button
+				type="button"
+				class="px-4 py-1.5 text-sm"
+				onclick={saveOutreachSettings}
 				disabled={outreachSettingsSaving || outreachSettingsLoading}
 			>
 				{outreachSettingsSaving ? 'Saving…' : 'Save outreach settings'}
@@ -275,11 +276,11 @@ async function handlePasswordChange(event: SubmitEvent) {
 		</div>
 	</div>
 
-	<div class="border-t border-gray-200 pt-6">
+	<div class="border-t pt-6" style="border-color: var(--color-border)">
 		<div class="flex items-center justify-between mb-4">
 			<div>
-				<h2 class="text-base font-semibold text-gray-900">Usage</h2>
-				<p class="text-xs text-gray-500 mt-0.5">Recent activity used for billing and performance reporting.</p>
+				<h2 class="text-base font-semibold" style="color: var(--color-text)">Usage</h2>
+				<p class="text-xs mt-0.5" style="color: var(--color-text-muted)">Recent activity used for billing and performance reporting.</p>
 			</div>
 			<Button
 				type="button"
@@ -293,31 +294,31 @@ async function handlePasswordChange(event: SubmitEvent) {
 		{#if hasUsage()}
 			<div class="overflow-x-auto">
 				<table class="min-w-full text-left text-sm">
-					<thead class="text-xs font-medium text-gray-500 border-b border-gray-200">
+					<thead class="text-xs font-medium border-b" style="color: var(--color-text-secondary); border-color: var(--color-border)">
 						<tr>
 							<th class="px-3 py-2">Metric</th>
 							<th class="px-3 py-2">Quantity</th>
 							<th class="px-3 py-2">Recorded</th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-gray-100">
+					<tbody class="divide-y" style="border-color: var(--color-border)">
 						{#each usage as row}
 							<tr>
-								<td class="px-3 py-2 text-gray-900">{row.metric}</td>
-								<td class="px-3 py-2 text-gray-900">{row.quantity}</td>
-								<td class="px-3 py-2 text-gray-600">{formatUsageDate(row.recordedAt)}</td>
+								<td class="px-3 py-2" style="color: var(--color-text)">{row.metric}</td>
+								<td class="px-3 py-2" style="color: var(--color-text)">{row.quantity}</td>
+								<td class="px-3 py-2" style="color: var(--color-text-secondary)">{formatUsageDate(row.recordedAt)}</td>
 							</tr>
 						{/each}
 					</tbody>
 				</table>
 			</div>
 		{:else}
-			<p class="text-sm text-gray-500">No usage data yet.</p>
+			<p class="text-sm" style="color: var(--color-text-muted)">No usage data yet.</p>
 		{/if}
 	</div>
 
-	<div class="border-t border-gray-200 pt-6">
-		<h2 class="text-base font-semibold text-gray-900 mb-4">Security</h2>
+	<div class="border-t pt-6" style="border-color: var(--color-border)">
+		<h2 class="text-base font-semibold mb-4" style="color: var(--color-text)">Security</h2>
 		<form class="space-y-3" onsubmit={handlePasswordChange}>
 			{#if passwordError}
 				<div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{passwordError}</div>
@@ -326,36 +327,45 @@ async function handlePasswordChange(event: SubmitEvent) {
 				<div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{passwordMessage}</div>
 			{/if}
 			<div>
-				<label class="text-xs font-medium text-gray-700 mb-1 block" for="current_password">Current password</label>
+				<label class="text-xs font-medium mb-1 block" style="color: var(--color-text-secondary)" for="current_password">Current password</label>
 				<input
 					id="current_password"
 					type="password"
 					required
 					minlength="6"
 					bind:value={currentPassword}
-					class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+					class="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1"
+					style="border-color: var(--color-border); color: var(--color-text); --tw-ring-color: var(--color-primary);"
+					onfocus={(e) => e.currentTarget.style.borderColor = 'var(--color-primary)'}
+					onblur={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}
 				/>
 			</div>
 			<div>
-				<label class="text-xs font-medium text-gray-700 mb-1 block" for="new_password">New password</label>
+				<label class="text-xs font-medium mb-1 block" style="color: var(--color-text-secondary)" for="new_password">New password</label>
 				<input
 					id="new_password"
 					type="password"
 					required
 					minlength="8"
 					bind:value={newPassword}
-					class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+					class="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1"
+					style="border-color: var(--color-border); color: var(--color-text); --tw-ring-color: var(--color-primary);"
+					onfocus={(e) => e.currentTarget.style.borderColor = 'var(--color-primary)'}
+					onblur={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}
 				/>
 			</div>
 			<div>
-				<label class="text-xs font-medium text-gray-700 mb-1 block" for="confirm_password">Confirm new password</label>
+				<label class="text-xs font-medium mb-1 block" style="color: var(--color-text-secondary)" for="confirm_password">Confirm new password</label>
 				<input
 					id="confirm_password"
 					type="password"
 					required
 					minlength="8"
 					bind:value={confirmPassword}
-					class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#FF6F61] focus:outline-none focus:ring-1 focus:ring-[#FF6F61]"
+					class="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1"
+					style="border-color: var(--color-border); color: var(--color-text); --tw-ring-color: var(--color-primary);"
+					onfocus={(e) => e.currentTarget.style.borderColor = 'var(--color-primary)'}
+					onblur={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}
 				/>
 			</div>
 			<div class="flex justify-end pt-2">
@@ -370,11 +380,11 @@ async function handlePasswordChange(event: SubmitEvent) {
 		</form>
 	</div>
 
-	<div class="border-t border-gray-200 pt-6">
+	<div class="border-t pt-6" style="border-color: var(--color-border)">
 		<div class="flex items-center justify-between">
 			<div>
-				<p class="text-sm font-medium text-gray-900">Ready to sign out?</p>
-				<p class="text-xs text-gray-500 mt-0.5">You can log back in anytime with your email and password.</p>
+				<p class="text-sm font-medium" style="color: var(--color-text)">Ready to sign out?</p>
+				<p class="text-xs mt-0.5" style="color: var(--color-text-muted)">You can log back in anytime with your email and password.</p>
 			</div>
 			<Button href="/logout" variant="outline" class="px-4 py-1.5 text-sm border-red-300 text-red-600 hover:bg-red-50">
 				Log out

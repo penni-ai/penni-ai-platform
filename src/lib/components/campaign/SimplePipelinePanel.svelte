@@ -8,7 +8,10 @@ import SendOutreachPopupPanel from '$lib/components/outreach/SendOutreachPopupPa
 import EmailDraftPrompt from './EmailDraftPrompt.svelte';
 import EmailEditor from '$lib/components/EmailEditor.svelte';
 import InboxManagementPopup from './InboxManagementPopup.svelte';
+import DraftOptionsModal from './DraftOptionsModal.svelte';
+import GmailAccountTypeModal from './GmailAccountTypeModal.svelte';
 import { getProfileId } from '$lib/utils/campaign';
+import { upgradeModal } from '$lib/stores/upgrade';
 import type { PipelineStatus, SearchParams, SearchUsage, InfluencerProfile } from '$lib/types/campaign';
 import type { SerializedCampaign } from '$lib/server/campaigns';
 
@@ -78,15 +81,18 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
   let sliderPosition = $state(0);
 
   // Calculate effective max for the slider (respects remaining count)
-  const effectiveMaxInfluencers = $derived(() => {
+  const effectiveMaxInfluencers = $derived.by(() => {
     return Math.min(searchUsage?.remaining ?? maxInfluencers, maxInfluencers);
   });
+
+  // Hide slider if user has 10 or fewer remaining
+  const shouldHideSlider = $derived(effectiveMaxInfluencers <= 10);
 
   // Convert slider position (0-100) to topN value (10 to effectiveMax)
   // First half (0-50) maps to 10-100
   // Second half (50-100) maps to 100-effectiveMax
   function positionToTopN(position: number): number {
-    const max = effectiveMaxInfluencers();
+    const max = effectiveMaxInfluencers;
 
     if (position <= 50) {
       // First half: 10-100
@@ -100,7 +106,7 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
 
   // Convert topN value to slider position (0-100)
   function topNToPosition(topN: number): number {
-    const max = effectiveMaxInfluencers();
+    const max = effectiveMaxInfluencers;
 
     if (topN <= 100) {
       // First half: 10-100 maps to 0-50
@@ -115,7 +121,13 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
 
   // Initialize slider position from topNLocal and ensure topNLocal doesn't exceed max
   $effect(() => {
-    const max = effectiveMaxInfluencers();
+    const max = effectiveMaxInfluencers;
+    // If slider is hidden (10 or fewer remaining), hardcode to 10
+    if (shouldHideSlider) {
+      topNLocal = 10;
+      sliderPosition = 0;
+      return;
+    }
     // Cap topNLocal at the effective max
     if (topNLocal > max) {
       topNLocal = max;
@@ -130,7 +142,7 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     const position = Number(target.value);
     sliderPosition = position;
     const newValue = positionToTopN(position);
-    const max = effectiveMaxInfluencers();
+    const max = effectiveMaxInfluencers;
     // Ensure we don't exceed the max
     topNLocal = Math.min(newValue, max);
     scheduleAutosave();
@@ -172,6 +184,7 @@ let templateWarning: string | null = $state(null);
 let templateLoadedCampaignId: string | null = $state(null);
 let lastPipelineId: string | null = $state(null);
 let connectAccountType = $state<'draft' | 'send'>('draft');
+let showGmailTypeModal = $state(false);
   const templateKey = () => {
     const id = campaignId ?? effectiveCampaign?.id ?? '';
     return `simpleEmailTemplate:${id}`;
@@ -199,6 +212,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   let isQuickDrafting = $state(false);
   let quickDraftError: string | null = $state(null);
   let quickDraftRanCampaignId: string | null = $state(null);
+  let showDraftOptionsModal = $state(false);
 
   // Selection state for influencers
   let selectedInfluencerIds = $state<Set<string>>(new Set());
@@ -705,11 +719,18 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   }
 
   function handleConnectInbox() {
+    // Show the account type selection modal instead of redirecting immediately
+    showGmailTypeModal = true;
+  }
+
+  function handleGmailTypeSelect(type: 'draft' | 'send') {
+    showGmailTypeModal = false;
+    connectAccountType = type;
     if (browser) {
       const id = campaignId ?? effectiveCampaign?.id;
       const url = id
-        ? `/api/auth/gmail/connect?returnCampaignId=${encodeURIComponent(id)}`
-        : '/api/auth/gmail/connect';
+        ? `/api/auth/gmail/connect?returnCampaignId=${encodeURIComponent(id)}&accountType=${type}`
+        : `/api/auth/gmail/connect?accountType=${type}`;
       window.location.href = url;
     }
   }
@@ -956,13 +977,13 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   }
 </script>
 
-<div style="display: flex; flex-direction: column; width: 100%; height: 100%; background: {hasPipeline && isCompleted() ? '#ffffff' : 'linear-gradient(145deg, #faf9f7 0%, #f5f3f0 50%, #f0eeeb 100%)'}; position: relative; overflow: hidden;">
+<div style="display: flex; flex-direction: column; width: 100%; height: 100%; background: {hasPipeline && isCompleted() ? 'var(--color-bg-elevated)' : 'linear-gradient(145deg, var(--color-bg) 0%, var(--color-bg-subtle) 50%, var(--color-bg-subtle) 100%)'}; position: relative; overflow: hidden;">
   <!-- Subtle grid pattern (only show for form and preliminary) -->
   {#if !hasPipeline || !isCompleted()}
-    <div style="position: absolute; inset: 0; background-image: linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none;"></div>
+    <div style="position: absolute; inset: 0; background-image: linear-gradient(var(--color-border) 1px, transparent 1px), linear-gradient(90deg, var(--color-border) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none; opacity: 0.3;"></div>
 
     <!-- Soft gradient orbs for depth -->
-    <div style="position: absolute; top: -15%; right: -5%; width: 500px; height: 500px; background: radial-gradient(circle, rgba(255,111,97,0.08) 0%, transparent 70%); pointer-events: none; filter: blur(80px);"></div>
+    <div style="position: absolute; top: -15%; right: -5%; width: 500px; height: 500px; background: radial-gradient(circle, color-mix(in srgb, var(--color-primary) 8%, transparent) 0%, transparent 70%); pointer-events: none; filter: blur(80px);"></div>
     <div style="position: absolute; bottom: -20%; left: -10%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(147,112,219,0.06) 0%, transparent 70%); pointer-events: none; filter: blur(100px);"></div>
   {/if}
 
@@ -972,22 +993,15 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
       <!-- Top bar with usage -->
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 11px; font-weight: 600; color: rgba(0,0,0,0.4); text-transform: uppercase; letter-spacing: 0.1em;">Step {step + 1} of {steps.length}</span>
-          <span style="font-size: 11px; color: rgba(0,0,0,0.2);">·</span>
-          <span style="font-size: 11px; color: #FF6F61; font-weight: 500;">{steps[step]}</span>
+          <span style="font-size: 11px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.1em;">Step {step + 1} of {steps.length}</span>
+          <span style="font-size: 11px; color: var(--color-border-strong);">·</span>
+          <span style="font-size: 11px; color: var(--color-primary); font-weight: 500;">{steps[step]}</span>
         </div>
-        {#if searchUsage && searchUsage.limit !== undefined && searchUsage.remaining !== undefined}
-          <div style="display: flex; align-items: center; gap: 6px; padding: 6px 14px; background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
-            <span style="font-size: 11px; color: rgba(0,0,0,0.5);">Searches:</span>
-            <span style="font-size: 12px; font-weight: 600; color: #FF6F61;">{searchUsage.remaining}</span>
-            <span style="font-size: 11px; color: rgba(0,0,0,0.3);">/ {searchUsage.limit}</span>
-          </div>
-        {/if}
       </div>
 
       <!-- Progress bar -->
-      <div style="width: 100%; height: 3px; background: rgba(0,0,0,0.06); border-radius: 2px; margin-bottom: 48px; position: relative; overflow: hidden;">
-        <div style="height: 100%; background: linear-gradient(90deg, #FF6F61, #FF8A80); border-radius: 2px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: {((step + 1) / steps.length) * 100}%;"></div>
+      <div style="width: 100%; height: 3px; background: var(--color-border); border-radius: 2px; margin-bottom: 48px; position: relative; overflow: hidden;">
+        <div style="height: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover)); border-radius: 2px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: {((step + 1) / steps.length) * 100}%;"></div>
       </div>
 
       <!-- Main content area -->
@@ -996,21 +1010,21 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
           {#if step === 0}
             <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
               <div style="margin-bottom: 16px;">
-                <h1 style="font-size: 38px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px 0; letter-spacing: -0.02em;">Tell us about your brand</h1>
-                <p style="font-size: 16px; color: rgba(0,0,0,0.5); margin: 0;">We'll use this to find the perfect creators for you.</p>
+                <h1 style="font-size: 38px; font-weight: 700; color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.02em;">Tell us about your brand</h1>
+                <p style="font-size: 16px; color: var(--color-text-secondary); margin: 0;">We'll use this to find the perfect creators for you.</p>
               </div>
               
               <div style="display: flex; flex-direction: column; gap: 24px;">
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-brand" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Brand / Company name</label>
+                  <label for="simple-brand" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Brand / Company name</label>
                   <input id="simple-brand" class="light-input" bind:value={brand} oninput={scheduleAutosave} placeholder="e.g., Dune Skincare" />
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-about" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">What do you sell?</label>
+                  <label for="simple-about" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">What do you sell?</label>
                   <textarea id="simple-about" rows="3" class="light-input" bind:value={about} oninput={scheduleAutosave} placeholder="Describe your product and what makes it special..."></textarea>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-website" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Website <span style="color: rgba(0,0,0,0.3);">(optional)</span></label>
+                  <label for="simple-website" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Website <span style="color: var(--color-text-muted);">(optional)</span></label>
                   <input id="simple-website" class="light-input" bind:value={website} oninput={scheduleAutosave} placeholder="https://yoursite.com" />
                 </div>
               </div>
@@ -1018,70 +1032,73 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
           {:else if step === 1}
             <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
               <div style="margin-bottom: 16px;">
-                <h1 style="font-size: 38px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px 0; letter-spacing: -0.02em;">Who are you looking for?</h1>
-                <p style="font-size: 16px; color: rgba(0,0,0,0.5); margin: 0;">Define the type of creators you need.</p>
+                <h1 style="font-size: 38px; font-weight: 700; color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.02em;">Who are you looking for?</h1>
+                <p style="font-size: 16px; color: var(--color-text-secondary); margin: 0;">Define the type of creators you need.</p>
               </div>
 
               <div style="display: flex; flex-direction: column; gap: 24px;">
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-type" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Creator niche or type</label>
+                  <label for="simple-type" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Creator niche or type</label>
                   <input id="simple-type" class="light-input" bind:value={influencerType} oninput={scheduleAutosave} placeholder="e.g., beauty reviewers, fitness coaches, food bloggers" />
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-location" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Location of Influencers</label>
-                  <input id="simple-location" class="light-input" bind:value={location} oninput={scheduleAutosave} placeholder="e.g., US, Canada, UK" />
+                  <label for="simple-location" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Location of Influencers</label>
+                  <input id="simple-location" class="light-input" bind:value={location} oninput={scheduleAutosave} placeholder="e.g., NYC, New York, US, Remote" />
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 12px;">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <label for="simple-topn" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">How many creators do you want?</label>
-                    <span style="font-size: 16px; font-weight: 600; color: #FF6F61;">{topNLocal}</span>
+                    <label for="simple-topn" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">How many creators do you want?</label>
+                    <span style="font-size: 16px; font-weight: 600; color: var(--color-primary);">{topNLocal}</span>
                   </div>
-                  <input
-                    id="simple-topn"
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="1"
-                    class="slider"
-                    value={sliderPosition}
-                    oninput={handleSliderChange}
-                    style="width: 100%; height: 6px; border-radius: 999px; background: linear-gradient(to right, #FF6F61 0%, #FF6F61 {sliderPosition}%, rgba(0,0,0,0.08) {sliderPosition}%, rgba(0,0,0,0.08) 100%); outline: none; -webkit-appearance: none; appearance: none; cursor: pointer;"
-                  />
-                  <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <p style="font-size: 11px; color: rgba(0,0,0,0.4); margin: 0;">Min: 10</p>
-                    <p style="font-size: 11px; color: rgba(0,0,0,0.4); margin: 0;">
-                      {#if searchUsage?.remaining !== undefined}
-                        Max: {effectiveMaxInfluencers()} {searchUsage.remaining < maxInfluencers ? '(remaining searches)' : '(per-search limit)'}
-                      {:else}
-                        Max: {maxInfluencers} (per-search limit)
-                      {/if}
-                    </p>
-                  </div>
+                  {#if !shouldHideSlider}
+                    <input
+                      id="simple-topn"
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      class="slider"
+                      value={sliderPosition}
+                      oninput={handleSliderChange}
+                      style="width: 100%; height: 6px; border-radius: 999px; background: linear-gradient(to right, var(--color-primary) 0%, var(--color-primary) {sliderPosition}%, var(--color-border) {sliderPosition}%, var(--color-border) 100%); outline: none; -webkit-appearance: none; appearance: none; cursor: pointer;"
+                    />
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                      <p style="font-size: 11px; color: var(--color-text-muted); margin: 0;">Min: 10</p>
+                      <p style="font-size: 11px; color: var(--color-text-muted); margin: 0;">
+                        {#if searchUsage?.remaining !== undefined}
+                          Max: {effectiveMaxInfluencers} {searchUsage.remaining < maxInfluencers ? '(remaining searches)' : '(per-search limit)'}
+                        {:else}
+                          Max: {maxInfluencers} (per-search limit)
+                        {/if}
+                      </p>
+                    </div>
+                  {/if}
                 </div>
               </div>
             </div>
           {:else}
             <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
               <div style="margin-bottom: 16px;">
-                <h1 style="font-size: 38px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px 0; letter-spacing: -0.02em;">Premium features</h1>
-                <p style="font-size: 16px; color: rgba(0,0,0,0.5); margin: 0;">Fine-tune your search with advanced filters.</p>
+                <h1 style="font-size: 38px; font-weight: 700; color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.02em;">Premium features</h1>
+                <p style="font-size: 16px; color: var(--color-text-secondary); margin: 0;">Fine-tune your search with advanced filters.</p>
               </div>
 
               {#if !isPremiumUser()}
-                <div style="padding: 20px 24px; background: linear-gradient(135deg, rgba(255,111,97,0.08), rgba(255,138,128,0.05)); border: 1px solid rgba(255,111,97,0.2); border-radius: 12px; box-shadow: 0 2px 12px rgba(255,111,97,0.1);">
+                <div style="padding: 20px 24px; background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 8%, transparent), color-mix(in srgb, var(--color-primary-hover) 5%, transparent)); border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent); border-radius: 12px; box-shadow: 0 2px 12px color-mix(in srgb, var(--color-primary) 10%, transparent);">
                   <div style="display: flex; align-items: flex-start; gap: 16px;">
                     <div style="font-size: 24px; line-height: 1;">✨</div>
                     <div style="flex: 1;">
-                      <h3 style="font-size: 16px; font-weight: 600; color: #e85a4f; margin: 0 0 8px 0;">Upgrade to unlock Premium Features</h3>
-                      <p style="font-size: 14px; color: rgba(0,0,0,0.6); margin: 0 0 16px 0;">Get access to advanced platform selection, custom follower ranges, and strict location matching to find the perfect influencers for your campaign.</p>
-                      <a
-                        href="/pricing"
-                        style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; font-size: 14px; font-weight: 600; border-radius: 8px; background: linear-gradient(135deg, #FF6F61, #FF8A80); color: white; text-decoration: none; transition: all 0.2s; box-shadow: 0 4px 16px rgba(255,111,97,0.25);"
+                      <h3 style="font-size: 16px; font-weight: 600; color: var(--color-primary-hover); margin: 0 0 8px 0;">Upgrade to unlock Premium Features</h3>
+                      <p style="font-size: 14px; color: var(--color-text-secondary); margin: 0 0 16px 0;">Get access to advanced platform selection, custom follower ranges, and strict location matching to find the perfect influencers for your campaign.</p>
+                      <button
+                        type="button"
+                        onclick={() => upgradeModal.open('Upgrade to unlock Premium Features', 'Get access to advanced platform selection, custom follower ranges, and strict location matching.')}
+                        style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; font-size: 14px; font-weight: 600; border-radius: 8px; background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)); color: white; text-decoration: none; transition: all 0.2s; box-shadow: var(--shadow-primary); border: none; cursor: pointer;"
                       >
                         View Plans →
-                      </a>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1089,14 +1106,14 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 
               <div style="display: flex; flex-direction: column; gap: 24px;">
                 <div style="display: flex; flex-direction: column; gap: 12px;">
-                  <div id="platforms-label" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Platforms</div>
+                  <div id="platforms-label" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Platforms</div>
                   <div style="display: flex; gap: 12px; flex-wrap: wrap;">
                     {#each platformOptions as option}
                       <button
                         type="button"
                         class="platform-btn"
                         disabled={!isPremiumUser()}
-                        style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid {selectedPlatforms.includes(option) ? 'rgba(255,111,97,0.4)' : 'rgba(0,0,0,0.1)'}; background: {selectedPlatforms.includes(option) ? 'linear-gradient(135deg, rgba(255,111,97,0.12), rgba(255,138,128,0.08))' : 'rgba(255,255,255,0.7)'}; backdrop-filter: blur(10px); color: {selectedPlatforms.includes(option) ? '#e85a4f' : 'rgba(0,0,0,0.6)'}; cursor: {isPremiumUser() ? 'pointer' : 'not-allowed'}; opacity: {isPremiumUser() ? '1' : '0.5'}; transition: all 0.2s; box-shadow: {selectedPlatforms.includes(option) ? '0 2px 12px rgba(255,111,97,0.15)' : '0 2px 8px rgba(0,0,0,0.04)'};"
+                        style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid {selectedPlatforms.includes(option) ? 'color-mix(in srgb, var(--color-primary) 40%, transparent)' : 'var(--color-border)'}; background: {selectedPlatforms.includes(option) ? 'linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 12%, transparent), color-mix(in srgb, var(--color-primary-hover) 8%, transparent))' : 'color-mix(in srgb, var(--color-bg-elevated) 70%, transparent)'}; backdrop-filter: blur(10px); color: {selectedPlatforms.includes(option) ? 'var(--color-primary-hover)' : 'var(--color-text-secondary)'}; cursor: {isPremiumUser() ? 'pointer' : 'not-allowed'}; opacity: {isPremiumUser() ? '1' : '0.5'}; transition: all 0.2s; box-shadow: {selectedPlatforms.includes(option) ? '0 2px 12px color-mix(in srgb, var(--color-primary) 15%, transparent)' : 'var(--shadow-sm)'};"
                         onclick={() => togglePlatform(option)}
                         aria-labelledby="platforms-label"
                       >
@@ -1108,31 +1125,31 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                   <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label for="simple-min" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Min followers</label>
+                    <label for="simple-min" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Min followers</label>
                     <input id="simple-min" type="number" class="light-input" bind:value={minFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="10,000" disabled={!isPremiumUser()} style="opacity: {isPremiumUser() ? '1' : '0.5'}; cursor: {isPremiumUser() ? 'text' : 'not-allowed'};" />
                   </div>
                   <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label for="simple-max" style="font-size: 13px; font-weight: 500; color: rgba(0,0,0,0.7);">Max followers</label>
+                    <label for="simple-max" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Max followers</label>
                     <input id="simple-max" type="number" class="light-input" bind:value={maxFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="500,000" disabled={!isPremiumUser()} style="opacity: {isPremiumUser() ? '1' : '0.5'}; cursor: {isPremiumUser() ? 'text' : 'not-allowed'};" />
                   </div>
                 </div>
 
-                <div style="display: flex; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); opacity: {isPremiumUser() ? '1' : '0.5'};">
+                <div style="display: flex; align-items: center; gap: 16px; padding: 16px 20px; background: color-mix(in srgb, var(--color-bg-elevated) 60%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-sm); opacity: {isPremiumUser() ? '1' : '0.5'};">
                   <button
                     type="button"
                     disabled={!isPremiumUser()}
                     onclick={() => strictLocationMatching = !strictLocationMatching}
                     id="simple-strict-location"
-                    style="position: relative; width: 48px; height: 26px; border-radius: 999px; border: none; cursor: {isPremiumUser() ? 'pointer' : 'not-allowed'}; transition: background 0.2s; background: {strictLocationMatching ? 'linear-gradient(90deg, #FF6F61, #FF8A80)' : 'rgba(0,0,0,0.15)'};"
+                    style="position: relative; width: 48px; height: 26px; border-radius: 999px; border: none; cursor: {isPremiumUser() ? 'pointer' : 'not-allowed'}; transition: background 0.2s; background: {strictLocationMatching ? 'linear-gradient(90deg, var(--color-primary), var(--color-primary-hover))' : 'var(--color-border-strong)'};"
                     role="switch"
                     aria-checked={strictLocationMatching}
                     aria-label="Toggle strict location matching"
                   >
-                    <span style="position: absolute; top: 3px; left: {strictLocationMatching ? '25px' : '3px'}; width: 20px; height: 20px; background: #ffffff; border-radius: 50%; transition: left 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.15);"></span>
+                    <span style="position: absolute; top: 3px; left: {strictLocationMatching ? '25px' : '3px'}; width: 20px; height: 20px; background: var(--color-bg-elevated); border-radius: 50%; transition: left 0.2s; box-shadow: 0 2px 4px color-mix(in srgb, var(--color-text) 15%, transparent);"></span>
                   </button>
                   <div style="flex: 1;">
-                    <label id="simple-strict-location-label" style="font-size: 14px; font-weight: 500; color: rgba(0,0,0,0.8);" for="simple-strict-location">Strict location matching</label>
-                    <p style="font-size: 12px; color: rgba(0,0,0,0.4); margin: 4px 0 0 0;">Only show creators with verified locations</p>
+                    <label id="simple-strict-location-label" style="font-size: 14px; font-weight: 500; color: var(--color-text);" for="simple-strict-location">Strict location matching</label>
+                    <p style="font-size: 12px; color: var(--color-text-muted); margin: 4px 0 0 0;">Only show creators with verified locations</p>
                   </div>
                 </div>
               </div>
@@ -1140,13 +1157,13 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
           {/if}
 
           <!-- Navigation buttons - sticky at bottom -->
-          <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 32px; margin-top: auto; border-top: 1px solid rgba(0,0,0,0.06);">
+          <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 32px; margin-top: auto; border-top: 1px solid var(--color-border);">
             {#if isFirstStep}
               <button
                 type="button"
                 onclick={() => onReopenWebsitePrefill?.()}
                 class="nav-btn-back-light"
-                style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); color: rgba(0,0,0,0.5); cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.04);"
+                style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent); backdrop-filter: blur(10px); color: var(--color-text-secondary); cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm);"
               >
                 I have a website
               </button>
@@ -1155,7 +1172,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 type="button"
                 onclick={prevStep}
                 class="nav-btn-back-light"
-                style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); color: rgba(0,0,0,0.6); cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.04);"
+                style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent); backdrop-filter: blur(10px); color: var(--color-text-secondary); cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm);"
               >
                 ← Back
               </button>
@@ -1166,11 +1183,11 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 type="submit"
                 disabled={isSearchFormSubmitting}
                 class="nav-btn-primary-light"
-                style="padding: 16px 40px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: linear-gradient(135deg, #FF6F61 0%, #FF8A80 100%); color: #ffffff; cursor: {isSearchFormSubmitting ? 'not-allowed' : 'pointer'}; transition: all 0.2s; box-shadow: 0 4px 20px rgba(255,111,97,0.25); opacity: {isSearchFormSubmitting ? '0.7' : '1'};"
+                style="padding: 16px 40px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%); color: var(--color-text-inverse); cursor: {isSearchFormSubmitting ? 'not-allowed' : 'pointer'}; transition: all 0.2s; box-shadow: var(--shadow-primary); opacity: {isSearchFormSubmitting ? '0.7' : '1'};"
               >
                 {#if isSearchFormSubmitting}
                   <span style="display: inline-flex; align-items: center; gap: 8px;">
-                    <span style="width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
+                    <span style="width: 16px; height: 16px; border: 2px solid color-mix(in srgb, var(--color-text-inverse) 30%, transparent); border-top-color: var(--color-text-inverse); border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
                     Launching...
                   </span>
                 {:else}
@@ -1182,7 +1199,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 type="button"
                 onclick={nextStep}
                 class="nav-btn-primary-light"
-                style="padding: 16px 40px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: linear-gradient(135deg, #FF6F61 0%, #FF8A80 100%); color: #ffffff; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 20px rgba(255,111,97,0.25);"
+                style="padding: 16px 40px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%); color: var(--color-text-inverse); cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-primary);"
               >
                 Continue →
               </button>
@@ -1198,12 +1215,12 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
         <!-- Loading state: Show centered animated loading indicator -->
         <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;">
           <div class="loading-spinner"></div>
-          <p style="font-size: 16px; font-weight: 500; color: rgba(0,0,0,0.5); margin: 0;">Loading</p>
+          <p style="font-size: 16px; font-weight: 500; color: var(--color-text-secondary); margin: 0;">Loading</p>
         </div>
       {:else}
         <div style="flex-shrink: 0; padding: 32px 32px 0 32px;">
           {#if pipelineError}
-            <div style="padding: 16px 20px; background: rgba(239,68,68,0.08); backdrop-filter: blur(10px); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; color: #dc2626; font-size: 14px; margin-bottom: 24px;">
+            <div style="padding: 16px 20px; background: color-mix(in srgb, var(--color-error) 8%, transparent); backdrop-filter: blur(10px); border: 1px solid color-mix(in srgb, var(--color-error) 20%, transparent); border-radius: 12px; color: var(--color-error); font-size: 14px; margin-bottom: 24px;">
               {pipelineError.message}
             </div>
           {/if}
@@ -1222,13 +1239,13 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
             <div style="display: flex; flex-direction: column; gap: 16px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                   <div style="display: flex; align-items: center; gap: 12px;">
-                    <p style="font-size: 16px; font-weight: 600; color: rgba(0,0,0,0.8); margin: 0;">Preview</p>
-                    <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.06); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.5); box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
-                      <span style="width: 6px; height: 6px; background: #FF6F61; border-radius: 50%; animation: pulse 1.5s ease-in-out infinite;"></span>
+                    <p style="font-size: 16px; font-weight: 600; color: var(--color-text); margin: 0;">Preview</p>
+                    <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--color-border); border-radius: 999px; font-size: 11px; color: var(--color-text-secondary); box-shadow: var(--shadow-sm);">
+                      <span style="width: 6px; height: 6px; background: var(--color-primary); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite;"></span>
                       Searching...
                     </span>
                   </div>
-                  <span style="font-size: 11px; color: rgba(0,0,0,0.4);">
+                  <span style="font-size: 11px; color: var(--color-text-muted);">
                     {list.length} of {previewProfiles().length} candidates
                   </span>
                 </div>
@@ -1246,18 +1263,18 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                         <div style="position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
                           <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
                             <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
-                              <span style="font-weight: 600; color: rgba(0,0,0,0.45); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{profile?.display_name ?? profile?.profile_url ?? 'Profile'}</span>
+                              <span style="font-weight: 600; color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{profile?.display_name ?? profile?.profile_url ?? 'Profile'}</span>
                               {#if profile?.platform}
-                                <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px solid rgba(0,0,0,0.06); border-radius: 999px; font-size: 11px; color: rgba(0,0,0,0.35); background: rgba(255,255,255,0.4);">
+                                <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px solid var(--color-border); border-radius: 999px; font-size: 11px; color: var(--color-text-muted); background: color-mix(in srgb, var(--color-bg-elevated) 40%, transparent);">
                                   {profile.platform === 'TikTok' ? '🎵' : '📸'} {profile.platform}
                                 </span>
                               {/if}
                             </div>
                             {#if profile?.biography || profile?.bio}
-                              <p style="font-size: 13px; color: rgba(0,0,0,0.3); margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{profile.biography ?? profile.bio}</p>
+                              <p style="font-size: 13px; color: var(--color-text-muted); margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{profile.biography ?? profile.bio}</p>
                             {/if}
                           </div>
-                          <div style="flex-shrink: 0; text-align: right; font-size: 13px; color: rgba(0,0,0,0.3);">
+                          <div style="flex-shrink: 0; text-align: right; font-size: 13px; color: var(--color-text-muted);">
                             {#if profile?.followers}
                               <div>{profile.followers.toLocaleString()} followers</div>
                             {/if}
@@ -1267,7 +1284,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                     {/each}
                   </div>
                 {/key}
-                <p style="font-size: 12px; text-align: center; color: rgba(0,0,0,0.35); font-style: italic; margin: 0;">
+                <p style="font-size: 12px; text-align: center; color: var(--color-text-muted); font-style: italic; margin: 0;">
                   Preliminary matches. Final results may differ after analysis.
                 </p>
             </div>
@@ -1296,11 +1313,11 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 
         <!-- Bottom Action Bar (sticky outside scroll) -->
         {#if pipelineStatus && isCompleted()}
-          <div style="border-top: 1px solid rgba(0,0,0,0.08); background: white; flex-shrink: 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); margin-top: auto;">
+          <div style="border-top: 1px solid var(--color-border); background: var(--color-bg-elevated); flex-shrink: 0; box-shadow: 0 -2px 10px color-mix(in srgb, var(--color-text) 5%, transparent); margin-top: auto;">
             <!-- Selection row -->
-            <div style="padding: 16px 32px; border-bottom: 1px solid rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: space-between;">
+            <div style="padding: 16px 32px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between;">
               <div style="display: flex; align-items: center; gap: 20px;">
-                <div style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: linear-gradient(135deg, #FF6F61, #FF8A80); border-radius: 8px;">
+                <div style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)); border-radius: 8px;">
                   <span style="font-size: 14px; font-weight: 600; color: white;">
                     {selectedCount} {selectedCount === 1 ? 'creator' : 'creators'} selected
                   </span>
@@ -1330,13 +1347,13 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
               <!-- Step 1: Gmail status indicator -->
               <div style="position: relative;">
                 <div
-                  style="display: flex; align-items: center; gap: 8px; padding: 13px 32px; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: {gmailConnected ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {gmailConnected ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}; min-width: 224px;"
+                  style="display: flex; align-items: center; gap: 8px; padding: 13px 32px; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: {gmailConnected ? 'color-mix(in srgb, var(--color-success) 8%, transparent)' : 'color-mix(in srgb, var(--color-error) 8%, transparent)'}; border: 1px solid {gmailConnected ? 'color-mix(in srgb, var(--color-success) 20%, transparent)' : 'color-mix(in srgb, var(--color-error) 20%, transparent)'}; min-width: 224px;"
                   onclick={() => inboxPopupOpen = true}
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => e.key === 'Enter' && (inboxPopupOpen = true)}
                 >
-                  <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {gmailConnected ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
+                  <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {gmailConnected ? 'var(--color-success)' : 'var(--color-error)'}; color: white; font-size: 11px; font-weight: 700;">
                     {#if gmailConnected}
                       ✓
                     {:else}
@@ -1344,10 +1361,10 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                     {/if}
                   </div>
                   <div style="display: flex; flex-direction: column;">
-                    <span style="font-size: 12px; font-weight: 500; color: {gmailConnected ? '#16a34a' : '#dc2626'};">
+                    <span style="font-size: 12px; font-weight: 500; color: {gmailConnected ? 'var(--color-success)' : 'var(--color-error)'};">
                       {gmailConnected ? 'Email Selected' : 'Select Email'}
                     </span>
-                    <span style="font-size: 10px; color: {gmailConnected ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
+                    <span style="font-size: 10px; color: {gmailConnected ? 'color-mix(in srgb, var(--color-success) 70%, transparent)' : 'color-mix(in srgb, var(--color-error) 70%, transparent)'};">
                       {gmailConnected ? `${gmailConnections.length} inbox${gmailConnections.length !== 1 ? 'es' : ''}` : 'Click to connect'}
                     </span>
                   </div>
@@ -1362,14 +1379,14 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
               <!-- Step 2: Template status indicator -->
               <div style="position: relative;">
                 <div
-                  style="display: flex; align-items: center; gap: 8px; padding: 13px 32px; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: {templateSaved ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {templateSaved ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}; min-width: 224px;"
+                  style="display: flex; align-items: center; gap: 8px; padding: 13px 32px; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: {templateSaved ? 'color-mix(in srgb, var(--color-success) 8%, transparent)' : 'color-mix(in srgb, var(--color-error) 8%, transparent)'}; border: 1px solid {templateSaved ? 'color-mix(in srgb, var(--color-success) 20%, transparent)' : 'color-mix(in srgb, var(--color-error) 20%, transparent)'}; min-width: 224px;"
                   onclick={() => showEmailPopup = true}
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => e.key === 'Enter' && (showEmailPopup = true)}
                   class={templateSaved ? '' : 'attention-pulse'}
                 >
-                  <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {templateSaved ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
+                  <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {templateSaved ? 'var(--color-success)' : 'var(--color-error)'}; color: white; font-size: 11px; font-weight: 700;">
                     {#if templateSaved}
                       ✓
                     {:else}
@@ -1377,10 +1394,10 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                     {/if}
                   </div>
                   <div style="display: flex; flex-direction: column;">
-                    <span style="font-size: 12px; font-weight: 500; color: {templateSaved ? '#16a34a' : '#dc2626'};">
+                    <span style="font-size: 12px; font-weight: 500; color: {templateSaved ? 'var(--color-success)' : 'var(--color-error)'};">
                       {templateSaved ? 'Draft Complete' : 'Draft Incomplete'}
                     </span>
-                    <span style="font-size: 10px; color: {templateSaved ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
+                    <span style="font-size: 10px; color: {templateSaved ? 'color-mix(in srgb, var(--color-success) 70%, transparent)' : 'color-mix(in srgb, var(--color-error) 70%, transparent)'};">
                       {templateSaved ? 'Ready to send' : 'Click to write email'}
                     </span>
                   </div>
@@ -1395,14 +1412,14 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
               <!-- Step 3: Send outreach -->
               <div style="position: relative;">
                 <div
-                  style="display: flex; align-items: center; gap: 8px; padding: 13px 32px; border-radius: 8px; cursor: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? 'not-allowed' : 'pointer'}; transition: all 0.2s; background: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'}; border: 1px solid {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}; min-width: 224px; opacity: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? '0.5' : '1'};"
+                  style="display: flex; align-items: center; gap: 8px; padding: 13px 32px; border-radius: 8px; cursor: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? 'not-allowed' : 'pointer'}; transition: all 0.2s; background: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'color-mix(in srgb, var(--color-success) 8%, transparent)' : 'color-mix(in srgb, var(--color-error) 8%, transparent)'}; border: 1px solid {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'color-mix(in srgb, var(--color-success) 20%, transparent)' : 'color-mix(in srgb, var(--color-error) 20%, transparent)'}; min-width: 224px; opacity: {selectedCount === 0 || draftInFlight || !gmailConnected || !templateSaved ? '0.5' : '1'};"
                   onclick={selectedCount > 0 && !draftInFlight && gmailConnected && templateSaved ? createGmailDrafts : null}
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => e.key === 'Enter' && selectedCount > 0 && !draftInFlight && gmailConnected && templateSaved && createGmailDrafts()}
                   class={(selectedCount === 0 || !gmailConnected || !templateSaved) && !draftInFlight ? 'attention-pulse' : ''}
                 >
-                  <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? '#22c55e' : '#ef4444'}; color: white; font-size: 11px; font-weight: 700;">
+                  <div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'var(--color-success)' : 'var(--color-error)'}; color: white; font-size: 11px; font-weight: 700;">
                     {#if gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight}
                       ✓
                     {:else}
@@ -1410,7 +1427,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                     {/if}
                   </div>
                   <div style="display: flex; flex-direction: column;">
-                    <span style="font-size: 12px; font-weight: 500; color: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? '#16a34a' : '#dc2626'};">
+                    <span style="font-size: 12px; font-weight: 500; color: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'var(--color-success)' : 'var(--color-error)'};">
                       {#if draftInFlight}
                         Sending…
                       {:else if gmailConnected && templateSaved && selectedCount > 0}
@@ -1419,7 +1436,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                         Send Outreach
                       {/if}
                     </span>
-                    <span style="font-size: 10px; color: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'rgba(22,163,74,0.7)' : 'rgba(220,38,38,0.7)'};">
+                    <span style="font-size: 10px; color: {gmailConnected && templateSaved && selectedCount > 0 && !draftInFlight ? 'color-mix(in srgb, var(--color-success) 70%, transparent)' : 'color-mix(in srgb, var(--color-error) 70%, transparent)'};">
                       {#if draftInFlight}
                         Processing…
                       {:else if !gmailConnected}
@@ -1439,9 +1456,9 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
           </div>
         {:else if pipelineStatus?.status === 'running' || !pipelineStatus}
           <!-- During search or loading: show simplified prompt bar -->
-          <div style="border-top: 1px solid rgba(0,0,0,0.08); background: white; padding: 20px 32px; flex-shrink: 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); margin-top: auto;">
+          <div style="border-top: 1px solid var(--color-border); background: var(--color-bg-elevated); padding: 20px 32px; flex-shrink: 0; box-shadow: 0 -2px 10px color-mix(in srgb, var(--color-text) 5%, transparent); margin-top: auto;">
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
-              <span style="font-size: 13px; color: rgba(0,0,0,0.4);">
+              <span style="font-size: 13px; color: var(--color-text-muted);">
                 {#if !pipelineStatus}
                   Prepare your outreach while we load...
                 {:else}
@@ -1454,16 +1471,16 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 <div style="position: relative;">
                   <button
                     type="button"
-                    style="display: flex; align-items: center; gap: 6px; padding: 11px 26px; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.04); min-width: 160px;"
+                    style="display: flex; align-items: center; gap: 6px; padding: 11px 26px; background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent); border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm); min-width: 160px;"
                     onclick={() => inboxPopupOpen = true}
                     class={!gmailConnected ? 'attention-pulse' : ''}
                   >
                     {#if gmailConnected}
-                      <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span>
-                      <span style="font-size: 13px; color: rgba(0,0,0,0.6);">{gmailConnections.length} inbox{gmailConnections.length !== 1 ? 'es' : ''}</span>
+                      <span style="width: 8px; height: 8px; background: var(--color-success); border-radius: 50%;"></span>
+                      <span style="font-size: 13px; color: var(--color-text-secondary);">{gmailConnections.length} inbox{gmailConnections.length !== 1 ? 'es' : ''}</span>
                     {:else}
-                      <span style="width: 8px; height: 8px; background: rgba(0,0,0,0.2); border-radius: 50%;"></span>
-                      <span style="font-size: 13px; color: #FF6F61; font-weight: 500;">Connect Gmail</span>
+                      <span style="width: 8px; height: 8px; background: var(--color-border-strong); border-radius: 50%;"></span>
+                      <span style="font-size: 13px; color: var(--color-primary); font-weight: 500;">Connect Gmail</span>
                     {/if}
                   </button>
                   {#if !gmailConnected}
@@ -1477,16 +1494,16 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
                 <div style="position: relative;">
                   <button
                     type="button"
-                    style="display: flex; align-items: center; gap: 6px; padding: 11px 26px; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.04); min-width: 160px;"
+                    style="display: flex; align-items: center; gap: 6px; padding: 11px 26px; background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent); border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm); min-width: 160px;"
                     onclick={() => showEmailPopup = true}
                     class={!templateSaved ? 'attention-pulse' : ''}
                   >
                     {#if templateSaved}
-                      <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span>
+                      <span style="width: 8px; height: 8px; background: var(--color-success); border-radius: 50%;"></span>
                     {:else}
-                      <span style="width: 8px; height: 8px; background: #f59e0b; border-radius: 50%;"></span>
+                      <span style="width: 8px; height: 8px; background: var(--color-warning); border-radius: 50%;"></span>
                     {/if}
-                    <span style="font-size: 13px; color: rgba(0,0,0,0.6);">{templateStatusText()}</span>
+                    <span style="font-size: 13px; color: var(--color-text-secondary);">{templateStatusText()}</span>
                   </button>
                   {#if !templateSaved}
                     <div class="chat-bubble chat-bubble-small">
@@ -1511,9 +1528,14 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   <div class="h-full flex flex-col">
     <div class="flex-1 min-h-0 flex flex-col p-4 gap-2">
       <div class="flex items-center justify-between">
-        <Button variant="primary" size="sm" onclick={quickDraftEmail} disabled={isQuickDrafting}>
-          {isQuickDrafting ? 'Drafting…' : 'Penni Quick Draft'}
-        </Button>
+        <div class="flex items-center gap-2">
+          <Button variant="primary" size="sm" onclick={quickDraftEmail} disabled={isQuickDrafting}>
+            {isQuickDrafting ? 'Drafting…' : 'Penni Quick Draft'}
+          </Button>
+          <Button variant="secondary" size="sm" onclick={() => showDraftOptionsModal = true} disabled={isQuickDrafting}>
+            Customize
+          </Button>
+        </div>
         <span class="text-xs text-gray-600">{templateStatusText()}</span>
       </div>
       {#if quickDraftError}
@@ -1613,6 +1635,23 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   onSetPrimary={handleSetPrimary}
 />
 
+<DraftOptionsModal
+  open={showDraftOptionsModal}
+  campaignId={campaignId ?? effectiveCampaign?.id ?? ''}
+  platform="email"
+  onClose={() => showDraftOptionsModal = false}
+  onDraftGenerated={(content) => {
+    emailTemplate = content;
+    showDraftOptionsModal = false;
+  }}
+/>
+
+<GmailAccountTypeModal
+  open={showGmailTypeModal}
+  onSelect={handleGmailTypeSelect}
+  onCancel={() => showGmailTypeModal = false}
+/>
+
 <style>
   @keyframes spin {
     from { transform: rotate(0deg); }
@@ -1626,13 +1665,13 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
 
   @keyframes pulse-red {
     0% {
-      box-shadow: 0 0 0 0 rgba(255, 111, 97, 0.5);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 50%, transparent);
     }
     70% {
-      box-shadow: 0 0 0 10px rgba(255, 111, 97, 0);
+      box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-primary) 0%, transparent);
     }
     100% {
-      box-shadow: 0 0 0 0 rgba(255, 111, 97, 0);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 0%, transparent);
     }
   }
 
@@ -1644,8 +1683,8 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   .loading-spinner {
     width: 48px;
     height: 48px;
-    border: 3px solid rgba(255,111,97,0.2);
-    border-top-color: #FF6F61;
+    border: 3px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+    border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
@@ -1654,44 +1693,44 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   .light-input {
     width: 100%;
     padding: 16px 20px;
-    background: rgba(255,255,255,0.7);
+    background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent);
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(0,0,0,0.08);
+    border: 1px solid var(--color-border);
     border-radius: 12px;
-    color: #1a1a1a;
+    color: var(--color-text);
     font-size: 16px;
     outline: none;
     transition: all 0.2s;
     resize: none;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    box-shadow: var(--shadow-sm);
   }
 
   .light-input::placeholder {
-    color: rgba(0,0,0,0.35);
+    color: var(--color-text-muted);
   }
 
   .light-input:focus {
-    border-color: rgba(255,111,97,0.4);
-    background: rgba(255,255,255,0.9);
-    box-shadow: 0 2px 12px rgba(255,111,97,0.1);
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+    background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent);
+    box-shadow: 0 2px 12px color-mix(in srgb, var(--color-primary) 10%, transparent);
   }
 
   /* Light mode navigation buttons */
   .nav-btn-back-light:not(:disabled):hover {
-    border-color: rgba(0,0,0,0.2) !important;
-    background: rgba(255,255,255,0.9) !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+    border-color: var(--color-border-strong) !important;
+    background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent) !important;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-text) 8%, transparent) !important;
   }
 
   .nav-btn-primary-light:not(:disabled):hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 25px rgba(255,111,97,0.35) !important;
+    box-shadow: 0 6px 25px color-mix(in srgb, var(--color-primary) 35%, transparent) !important;
   }
 
   /* Platform button hover */
   .platform-btn:hover {
-    border-color: rgba(255,111,97,0.3) !important;
-    box-shadow: 0 4px 12px rgba(255,111,97,0.1) !important;
+    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent) !important;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 10%, transparent) !important;
   }
 
   /* Light mode selection links */
@@ -1705,19 +1744,19 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
   }
 
   .select-link-btn-light.select-all-light {
-    color: #FF6F61;
+    color: var(--color-primary);
   }
 
   .select-link-btn-light.select-all-light:hover {
-    color: #e85a4f;
+    color: var(--color-primary-hover);
   }
 
   .select-link-btn-light.clear-selection-light {
-    color: rgba(0,0,0,0.5);
+    color: var(--color-text-secondary);
   }
 
   .select-link-btn-light.clear-selection-light:hover {
-    color: rgba(0,0,0,0.7);
+    color: var(--color-text-secondary);
   }
 
   /* Slider thumb styling */
@@ -1727,31 +1766,31 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #FF6F61;
+    background: var(--color-primary);
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(255,111,97,0.3);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 30%, transparent);
     transition: all 0.2s;
   }
 
   .slider::-webkit-slider-thumb:hover {
     transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(255,111,97,0.4);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 40%, transparent);
   }
 
   .slider::-moz-range-thumb {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #FF6F61;
+    background: var(--color-primary);
     cursor: pointer;
     border: none;
-    box-shadow: 0 2px 8px rgba(255,111,97,0.3);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 30%, transparent);
     transition: all 0.2s;
   }
 
   .slider::-moz-range-thumb:hover {
     transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(255,111,97,0.4);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 40%, transparent);
   }
 
   /* Chat bubble prompts */
@@ -1783,14 +1822,14 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     position: absolute;
     bottom: calc(100% + 10px);
     left: 0;
-    background: linear-gradient(135deg, #ef4444, #dc2626);
+    background: linear-gradient(135deg, var(--color-error), color-mix(in srgb, var(--color-error) 80%, #000));
     color: white;
     padding: 10px 16px;
     border-radius: 12px;
     font-size: 13px;
     font-weight: 500;
     white-space: nowrap;
-    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--color-error) 30%, transparent);
     z-index: 40;
     animation: bounce-in 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55), float 2s ease-in-out 0.5s infinite;
   }
@@ -1804,7 +1843,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     height: 0;
     border-style: solid;
     border-width: 8px 8px 0 8px;
-    border-color: #dc2626 transparent transparent transparent;
+    border-color: color-mix(in srgb, var(--color-error) 80%, #000) transparent transparent transparent;
   }
 
   .chat-bubble-small {
@@ -1823,8 +1862,8 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     position: relative;
     padding: 18px 22px;
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.4);
-    border: 1.5px dashed rgba(0, 0, 0, 0.08);
+    background: color-mix(in srgb, var(--color-bg-elevated) 40%, transparent);
+    border: 1.5px dashed var(--color-border);
     backdrop-filter: blur(12px);
     overflow: hidden;
     opacity: 0;
@@ -1852,7 +1891,7 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(255, 255, 255, 0.3) 50%,
+      color-mix(in srgb, var(--color-bg-elevated) 30%, transparent) 50%,
       transparent 100%
     );
     animation: shimmer 2.5s infinite;
@@ -1877,10 +1916,10 @@ let connectAccountType = $state<'draft' | 'send'>('draft');
     padding: 1.5px;
     background: linear-gradient(
       135deg,
-      rgba(255, 111, 97, 0.1),
-      rgba(147, 112, 219, 0.05)
+      color-mix(in srgb, var(--color-primary) 10%, transparent),
+      color-mix(in srgb, var(--color-primary) 5%, transparent)
     );
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask: linear-gradient(var(--color-text-inverse) 0 0) content-box, linear-gradient(var(--color-text-inverse) 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     opacity: 0;

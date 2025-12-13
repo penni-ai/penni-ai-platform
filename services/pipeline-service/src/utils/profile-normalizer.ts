@@ -100,9 +100,12 @@ function normalizeInstagramPost(post: any): BrightDataUnifiedPost {
   const views = post.video_view_count || post.view_count || undefined;
   
   // Get created timestamp
-  const createdAt = post.taken_at_timestamp 
+  // BrightData returns 'datetime' as ISO string, but may also return legacy fields
+  const createdAt = post.datetime
+    ? new Date(post.datetime).toISOString()
+    : post.taken_at_timestamp
     ? new Date(post.taken_at_timestamp * 1000).toISOString()
-    : post.taken_at 
+    : post.taken_at
     ? new Date(post.taken_at).toISOString()
     : new Date().toISOString();
   

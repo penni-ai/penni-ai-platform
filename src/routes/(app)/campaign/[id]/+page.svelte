@@ -3,7 +3,7 @@ import { onMount } from 'svelte';
 import { page } from '$app/stores';
 import { browser } from '$app/environment';
 import SimplePipelinePanel from '$lib/components/campaign/SimplePipelinePanel.svelte';
-import OutreachUpgradePanel from '$lib/components/OutreachUpgradePanel.svelte';
+import { UpgradeModal } from '$lib/components/billing';
 import SearchLimitExceededPanel from '$lib/components/SearchLimitExceededPanel.svelte';
 import CampaignLoadingCover from '$lib/components/campaign/CampaignLoadingCover.svelte';
 import FindMorePopup from '$lib/components/campaign/FindMorePopup.svelte';
@@ -583,7 +583,8 @@ async function loadSearchUsage() {
     const response = await fetch('/api/usage');
     if (response.ok) {
       const result = await response.json();
-      searchUsage = (result as any).data ?? result;
+      const data = (result as any).data ?? result;
+      searchUsage = data.influencersFound ?? data;
     }
   } catch (error) {
     console.error('Failed to load usage:', error);
@@ -779,12 +780,14 @@ $effect(() => {
     />
   </div>
 
-  <OutreachUpgradePanel
+  <UpgradeModal
     open={upgradePanelOpen}
     onClose={closeUpgradePanel}
     returnUrl={`/campaign/${routeCampaignId ?? ''}`}
-    title={upgradePanelTitle}
-    description={upgradePanelDescription}
+    title={upgradePanelTitle ?? 'Upgrade to send more outreach'}
+    description={upgradePanelDescription ?? 'Free includes 10 outreach emails. Upgrade to unlock higher limits and more inboxes.'}
+    showFreePlan={false}
+    dismissible={true}
   />
 
   <SearchLimitExceededPanel

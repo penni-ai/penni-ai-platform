@@ -1,5 +1,6 @@
 <script lang="ts">
 import Button from '$lib/components/Button.svelte';
+import { upgradeModal } from '$lib/stores/upgrade';
 
 type SubscriptionInfo = {
 	planKey?: string | null;
@@ -121,19 +122,19 @@ async function openBillingPortal() {
 
 <section class="flex flex-col gap-6">
 	<div>
-		<h2 class="text-base font-semibold text-gray-900 mb-4">Billing</h2>
+		<h2 class="text-base font-semibold mb-4" style="color: var(--color-text)">Billing</h2>
 		<div class="space-y-2 text-sm">
 			<div class="flex items-center gap-2">
-				<span class="text-gray-500 w-24">Plan:</span>
-				<span class="text-gray-900 font-medium">{planName()}</span>
+				<span class="w-24" style="color: var(--color-text-muted)">Plan:</span>
+				<span class="font-medium" style="color: var(--color-text)">{planName()}</span>
 			</div>
 			<div class="flex items-center gap-2">
-				<span class="text-gray-500 w-24">Status:</span>
-				<span class="text-gray-900 font-medium">{subscriptionStatusLabel()}</span>
+				<span class="w-24" style="color: var(--color-text-muted)">Status:</span>
+				<span class="font-medium" style="color: var(--color-text)">{subscriptionStatusLabel()}</span>
 			</div>
 			<div class="flex items-center gap-2">
-				<span class="text-gray-500 w-24">Next invoice:</span>
-				<span class="text-gray-900">{nextInvoiceLabel()}</span>
+				<span class="w-24" style="color: var(--color-text-muted)">Next invoice:</span>
+				<span style="color: var(--color-text)">{nextInvoiceLabel()}</span>
 			</div>
 		</div>
 		{#if subscriptionMessage()}
@@ -142,7 +143,7 @@ async function openBillingPortal() {
 			</div>
 		{/if}
 		<div class="flex gap-3 mt-6">
-			<Button variant="outline" class="px-4 py-1.5 text-sm" href="/pricing">View plans</Button>
+			<Button variant="outline" class="px-4 py-1.5 text-sm" onclick={() => upgradeModal.open('Choose a plan', 'Select the plan that best fits your influencer marketing needs.')}>View plans</Button>
 			<Button class="px-4 py-1.5 text-sm" onclick={openBillingPortal} disabled={billingLoading}>
 				{billingLoading ? 'Opening…' : 'Manage billing'}
 			</Button>

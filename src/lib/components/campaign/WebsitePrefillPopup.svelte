@@ -122,7 +122,7 @@
   }
 
   .popup {
-    background: linear-gradient(135deg, #ffffff 0%, #fafafa 100%);
+    background: var(--color-bg-elevated);
     border-radius: 24px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     max-width: 560px;
@@ -155,14 +155,14 @@
   .title {
     font-size: 32px;
     font-weight: 700;
-    color: #1a1a1a;
+    color: var(--color-text);
     margin: 0 0 12px 0;
     letter-spacing: -0.02em;
   }
 
   .subtitle {
     font-size: 16px;
-    color: rgba(0, 0, 0, 0.6);
+    color: var(--color-text-secondary);
     margin: 0;
     line-height: 1.5;
   }
@@ -181,16 +181,16 @@
     width: 100%;
     padding: 18px 24px;
     font-size: 16px;
-    border: 2px solid rgba(0, 0, 0, 0.1);
+    border: 2px solid var(--color-border);
     border-radius: 12px;
     outline: none;
     transition: all 0.2s;
-    background: white;
-    color: #1a1a1a;
+    background: var(--color-bg-elevated);
+    color: var(--color-text);
   }
 
   .input:focus {
-    border-color: #FF6F61;
+    border-color: var(--color-primary);
     box-shadow: 0 0 0 4px rgba(255, 111, 97, 0.1);
   }
 
@@ -200,7 +200,7 @@
   }
 
   .input::placeholder {
-    color: rgba(0, 0, 0, 0.3);
+    color: var(--color-text-muted);
   }
 
   .error {
@@ -232,7 +232,7 @@
     font-weight: 600;
     border: none;
     border-radius: 12px;
-    background: linear-gradient(135deg, #FF6F61, #FF8A80);
+    background: var(--color-primary);
     color: white;
     cursor: pointer;
     transition: all 0.2s;
@@ -258,10 +258,10 @@
     padding: 14px 24px;
     font-size: 15px;
     font-weight: 500;
-    border: 1px solid rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--color-border);
     border-radius: 10px;
     background: transparent;
-    color: rgba(0, 0, 0, 0.6);
+    color: var(--color-text-secondary);
     cursor: pointer;
     transition: all 0.2s;
   }
@@ -294,13 +294,13 @@
   .footer {
     margin-top: 32px;
     padding-top: 24px;
-    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    border-top: 1px solid var(--color-border);
   }
 
   .footer-text {
     text-align: center;
     font-size: 13px;
-    color: rgba(0, 0, 0, 0.4);
+    color: var(--color-text-muted);
     margin: 0;
   }
 </style>

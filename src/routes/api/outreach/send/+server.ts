@@ -13,6 +13,8 @@ import {
 import type { UserEmailSettings, OutreachContact } from '$lib/server/core/firestore';
 import { clearSelectionsAfterSend } from '$lib/server/outreach/clear-selections';
 import { FieldValue } from 'firebase-admin/firestore';
+import { checkAndReserveDailyCapacity, getNextMidnightUTC } from '$lib/server/usage/daily-inbox-usage';
+import { addToEmailQueue } from '$lib/server/email-queue/queue-service';
 
 export const POST = handleApiRoute(async (event) => {
 	const user = requireUser(event);
@@ -69,9 +71,11 @@ export const POST = handleApiRoute(async (event) => {
 	const platform = body.platform || 'gmail';
 	
 	const senderConnectionId = body.senderConnectionId ?? null;
+	let gmailConnection: Awaited<ReturnType<typeof getGmailConnection>> | null = null;
+
 	if (platform === 'gmail') {
 		try {
-			await getGmailConnection(user.uid, senderConnectionId ?? null);
+			gmailConnection = await getGmailConnection(user.uid, senderConnectionId ?? null);
 		} catch (error) {
 			throw new ApiProblem({
 				status: 403,
@@ -83,6 +87,14 @@ export const POST = handleApiRoute(async (event) => {
 	}
 
 	const requestedCount = hasRecipients ? body.recipients!.length : body.influencerIds!.length;
+
+	// Check daily inbox capacity and reserve slots
+	let dailyCapacity: { canSend: number; toQueue: number; currentUsed: number; resetAt: number } | null = null;
+	const effectiveConnectionId = senderConnectionId ?? gmailConnection?.id ?? null;
+
+	if (platform === 'gmail' && effectiveConnectionId) {
+		dailyCapacity = await checkAndReserveDailyCapacity(user.uid, effectiveConnectionId, requestedCount);
+	}
 	
 	// Fetch user's email settings for footer and directSend preference
 	let emailSettings: UserEmailSettings | null = null;
@@ -134,12 +146,21 @@ export const POST = handleApiRoute(async (event) => {
 	let created = 0;
 	let sent = 0;
 	let failed = 0;
+	let queued = 0;
 	const errors: string[] = [];
 	const draftIds: string[] = [];
-	
+	const queuedIds: string[] = [];
+
 	if (platform === 'gmail') {
 		// Process emails with template variable replacement per recipient
-		const emails: Array<{ to: string; subject: string; htmlBody: string }> = [];
+		interface ProcessedEmail {
+			to: string;
+			subject: string;
+			htmlBody: string;
+			influencerId?: string;
+			influencerName?: string;
+		}
+		const allEmails: ProcessedEmail[] = [];
 		
 		if (hasRecipients) {
 			// New format: recipients with full data
@@ -149,7 +170,7 @@ export const POST = handleApiRoute(async (event) => {
 					errors.push(`${recipient.influencerId}: No email address`);
 					continue;
 				}
-				
+
 				// Replace template variables for this recipient
 				const templateVars = {
 					name: recipient.name || 'there',
@@ -158,18 +179,20 @@ export const POST = handleApiRoute(async (event) => {
 					platform: recipient.platform || '',
 					email: recipient.email
 				};
-				
+
 				let processedContent = replaceTemplateVariables(body.emailContent, templateVars);
-				
+
 				// Append footer if enabled
 				if (footerHtml) {
 					processedContent = processedContent + footerHtml;
 				}
-				
-				emails.push({
+
+				allEmails.push({
 					to: recipient.email,
 					subject: body.subject || defaultSubject,
-					htmlBody: processedContent
+					htmlBody: processedContent,
+					influencerId: recipient.influencerId,
+					influencerName: recipient.name
 				});
 			}
 		} else {
@@ -177,36 +200,71 @@ export const POST = handleApiRoute(async (event) => {
 			// TODO: Fetch influencer profiles to get email addresses
 			// For now, this is a placeholder
 			for (let i = 0; i < body.influencerIds!.length; i++) {
-				emails.push({
+				allEmails.push({
 					to: `influencer${i}@example.com`, // TODO: Fetch actual email
 					subject: body.subject || defaultSubject,
 					htmlBody: body.emailContent // No template replacement for legacy format
 				});
 			}
 		}
+
+		// Split emails into immediate send vs queue based on daily capacity
+		const canSendCount = dailyCapacity?.canSend ?? allEmails.length;
+		const emailsToSendNow = allEmails.slice(0, canSendCount);
+		const emailsToQueue = allEmails.slice(canSendCount);
+		const emails = emailsToSendNow; // For backwards compatibility with code below
 		
-		if (directSend) {
-			// Send emails directly
-			const result = await sendEmailsViaGmail(user.uid, emails, senderConnectionId ?? null);
-			sent = result.sent;
-			failed = result.failed;
-			errors.push(...result.errors);
-			
-			// Increment usage for successfully sent emails
-			if (sent > 0) {
-				await incrementOutreachUsage(user.uid, sent);
+		// Only process immediate emails if there are any
+		if (emails.length > 0) {
+			if (directSend) {
+				// Send emails directly
+				const result = await sendEmailsViaGmail(user.uid, emails, senderConnectionId ?? null);
+				sent = result.sent;
+				failed += result.failed;
+				errors.push(...result.errors);
+
+				// Increment usage for successfully sent emails
+				if (sent > 0) {
+					await incrementOutreachUsage(user.uid, sent);
+				}
+			} else {
+				// Create drafts instead of sending
+				const result = await createDraftsViaGmail(user.uid, emails, senderConnectionId ?? null);
+				created = result.created;
+				failed += result.failed;
+				errors.push(...result.errors);
+				draftIds.push(...result.draftIds);
+
+				// Increment usage for successfully created drafts
+				if (created > 0) {
+					await incrementOutreachUsage(user.uid, created);
+				}
 			}
-		} else {
-		// Create drafts instead of sending
-		const result = await createDraftsViaGmail(user.uid, emails, senderConnectionId ?? null);
-		created = result.created;
-		failed = result.failed;
-		errors.push(...result.errors);
-		draftIds.push(...result.draftIds);
-			
-			// Increment usage for successfully created drafts
-			if (created > 0) {
-				await incrementOutreachUsage(user.uid, created);
+		}
+
+		// Queue overflow emails for later processing
+		if (emailsToQueue.length > 0 && effectiveConnectionId && gmailConnection) {
+			const scheduledFor = getNextMidnightUTC();
+
+			const queueInputs = emailsToQueue.map((email) => ({
+				to: email.to,
+				subject: email.subject,
+				htmlBody: email.htmlBody,
+				senderConnectionId: effectiveConnectionId,
+				senderEmail: gmailConnection.email,
+				campaignId: body.campaignId ?? null,
+				influencerId: email.influencerId ?? null,
+				influencerName: email.influencerName ?? null
+			}));
+
+			try {
+				const ids = await addToEmailQueue(user.uid, queueInputs, scheduledFor);
+				queuedIds.push(...ids);
+				queued = ids.length;
+			} catch (error) {
+				console.error('Failed to queue emails:', error);
+				// Don't fail the entire request if queuing fails
+				errors.push(`Failed to queue ${emailsToQueue.length} emails: ${error instanceof Error ? error.message : 'Unknown error'}`);
 			}
 		}
 		
@@ -362,8 +420,17 @@ export const POST = handleApiRoute(async (event) => {
 		success: true,
 		created: directSend ? undefined : created,
 		sent: directSend ? sent : undefined,
+		queued: queued > 0 ? queued : undefined,
 		failed,
 		draftIds: draftIds.length > 0 ? draftIds : undefined,
-		errors: errors.length > 0 ? errors : undefined
+		queuedIds: queuedIds.length > 0 ? queuedIds : undefined,
+		errors: errors.length > 0 ? errors : undefined,
+		dailyUsage: dailyCapacity
+			? {
+					used: dailyCapacity.currentUsed,
+					remaining: 50 - dailyCapacity.currentUsed,
+					resetAt: dailyCapacity.resetAt
+				}
+			: undefined
 	});
 }, { component: 'outreach-send' });

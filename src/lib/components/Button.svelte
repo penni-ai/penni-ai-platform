@@ -26,9 +26,9 @@ interface Props {
 	const baseStyles = 'font-medium rounded-full transition-all duration-200 inline-block text-center';
 
 	const variantStyles = {
-		primary: 'bg-[#FF6F61] text-white hover:bg-[#ff846f] shadow-sm',
-		secondary: 'bg-black text-white hover:bg-gray-800',
-		outline: 'border-2 border-black text-black hover:bg-black hover:text-white'
+		primary: 'shadow-sm',
+		secondary: '',
+		outline: 'border-2'
 	};
 
 	const sizeStyles = {
@@ -46,6 +46,7 @@ interface Props {
 			sizeStyles[size],
 			widthStyles,
 			disabled ? 'opacity-60 pointer-events-none' : '',
+			`variant-${variant}`,
 			className
 		]
 			.filter(Boolean)
@@ -68,3 +69,37 @@ interface Props {
 		{@render children?.()}
 	</button>
 {/if}
+
+<style>
+	/* Primary variant - using CSS variables */
+	:global(.variant-primary) {
+		background-color: var(--color-primary);
+		color: var(--color-text-inverse);
+	}
+
+	:global(.variant-primary:hover:not(:disabled)) {
+		background-color: var(--color-primary-hover);
+	}
+
+	/* Secondary variant - using CSS variables */
+	:global(.variant-secondary) {
+		background-color: var(--color-text);
+		color: var(--color-text-inverse);
+	}
+
+	:global(.variant-secondary:hover:not(:disabled)) {
+		background-color: var(--color-text-secondary, #374151);
+	}
+
+	/* Outline variant - using CSS variables */
+	:global(.variant-outline) {
+		border-color: var(--color-text);
+		color: var(--color-text);
+		background-color: transparent;
+	}
+
+	:global(.variant-outline:hover:not(:disabled)) {
+		background-color: var(--color-text);
+		color: var(--color-text-inverse);
+	}
+</style>

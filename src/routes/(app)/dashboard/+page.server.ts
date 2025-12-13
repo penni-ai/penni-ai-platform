@@ -55,22 +55,32 @@ async function getCampaignStats(uid: string, campaignId: string, pipelineId: str
 export const load: PageServerLoad = async ({ parent, locals }) => {
 	// Use campaigns from layout
 	const layoutData = await parent() as LayoutData;
-	
-	// Check subscription status
+
+	// Check subscription status and onboarding status
 	const uid = locals.user?.uid ?? null;
 	let hasSubscription = false;
-	
+	let onboardingCompleted = false;
+	let currentPlan: { planKey?: string; status?: string; currentPeriodEnd?: number | null } | null = null;
+
 	if (uid) {
 		try {
 			const userSnap = await userDocRef(uid).get();
 			const userData = userSnap.data() as UserStripeState | undefined;
-			const currentPlan = userData?.currentPlan;
-			
+			const userPlan = userData?.currentPlan;
+
+			// Check onboarding status
+			onboardingCompleted = userData?.onboarding?.tutorialCompleted ?? userData?.onboarding?.tutorialSkipped ?? false;
+
 			// Check if user has an active subscription
-			if (currentPlan?.planKey && currentPlan.status !== 'canceled') {
+			if (userPlan?.planKey && userPlan.status !== 'canceled') {
 				hasSubscription = true;
+				currentPlan = {
+					planKey: userPlan.planKey,
+					status: userPlan.status,
+					currentPeriodEnd: userPlan.currentPeriodEnd
+				};
 			}
-			
+
 			// Also check subscriptions collection
 			if (!hasSubscription) {
 				const subsSnap = await userDocRef(uid)
@@ -78,10 +88,15 @@ export const load: PageServerLoad = async ({ parent, locals }) => {
 					.orderBy('updatedAt', 'desc')
 					.limit(1)
 					.get();
-				
+
 				const subscriptionData = subsSnap.docs[0]?.data();
 				if (subscriptionData?.status && subscriptionData.status !== 'canceled') {
 					hasSubscription = true;
+					currentPlan = {
+						planKey: subscriptionData.planKey,
+						status: subscriptionData.status,
+						currentPeriodEnd: subscriptionData.currentPeriodEnd
+					};
 				}
 			}
 		} catch (error) {
@@ -104,7 +119,9 @@ export const load: PageServerLoad = async ({ parent, locals }) => {
 	
 	return {
 		campaigns: campaignsWithStats,
-		hasSubscription
+		hasSubscription,
+		onboardingCompleted,
+		currentPlan
 	};
 };
 

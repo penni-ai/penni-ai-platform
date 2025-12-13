@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 import DashboardShell from '$lib/components/DashboardShell.svelte';
-	import OutreachUpgradePanel from '$lib/components/OutreachUpgradePanel.svelte';
+	import { UpgradeModal } from '$lib/components/billing';
+	import { upgradeModal } from '$lib/stores/upgrade';
 import { firebaseAuth, firebaseFirestore } from '$lib/firebase/client';
 import { ensureFirebaseAuthSession } from '$lib/firebase/auth-sync';
 import type { LayoutData } from './$types';
@@ -234,20 +235,18 @@ onMount(() => {
 		});
 	}
 
-	let upgradePanelOpen = $state(false);
-	let upgradePanelTitle = $state<string | undefined>(undefined);
-	let upgradePanelDescription = $state<string | undefined>(undefined);
+	// Sync with upgrade store for components that use the store directly
+	$effect(() => {
+		// This allows both the store and callback patterns to work
+		return upgradeModal.subscribe(() => {});
+	});
 
 	function openUpgradePanel(title?: string, description?: string) {
-		upgradePanelTitle = title;
-		upgradePanelDescription = description;
-		upgradePanelOpen = true;
+		upgradeModal.open(title, description);
 	}
 
 	function closeUpgradePanel() {
-		upgradePanelOpen = false;
-		upgradePanelTitle = undefined;
-		upgradePanelDescription = undefined;
+		upgradeModal.close();
 	}
 </script>
 
@@ -257,10 +256,12 @@ onMount(() => {
 	{@render children()}
 </DashboardShell>
 
-<OutreachUpgradePanel 
-	open={upgradePanelOpen} 
+<UpgradeModal
+	open={$upgradeModal.open}
 	onClose={closeUpgradePanel}
 	returnUrl={$page.url.pathname}
-	title={upgradePanelTitle}
-	description={upgradePanelDescription}
+	title={$upgradeModal.title ?? 'Upgrade to send more outreach'}
+	description={$upgradeModal.description ?? 'Free includes 10 outreach emails. Upgrade to unlock higher limits and more inboxes.'}
+	showFreePlan={false}
+	dismissible={true}
 />

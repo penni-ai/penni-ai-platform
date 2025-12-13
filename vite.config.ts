@@ -10,6 +10,18 @@ export default defineConfig(() => {
 		server: {
 			host: true,
 			port
+		},
+		optimizeDeps: {
+			// Include Firebase modules to ensure proper bundling of side effects
+			include: [
+				'firebase/app',
+				'firebase/auth',
+				'firebase/firestore'
+			]
+		},
+		ssr: {
+			// Don't externalize Firebase - bundle it for consistent behavior
+			noExternal: ['firebase']
 		}
 	};
 });

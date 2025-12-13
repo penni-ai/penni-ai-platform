@@ -1,3 +1,4 @@
+@import './lib/styles/theme.css';
 @import 'tailwindcss';
 @source './src/**/*.{svelte,ts,js}';
 @source './src/**/*.{html,md}';

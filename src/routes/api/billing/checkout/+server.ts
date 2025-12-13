@@ -76,10 +76,10 @@ export const POST = handleApiRoute(async (event) => {
 		// Convert to absolute URL if needed
 		const returnUrl = toAbsoluteUrl(returnUrlRaw);
 		
-		// For cancel URL, try to preserve the return URL context, otherwise default to pricing
+		// For cancel URL, try to preserve the return URL context, otherwise default to dashboard
 		const cancelUrlRaw = typeof body.returnUrl === 'string' && body.returnUrl.trim()
 			? body.returnUrl.trim()
-			: `${origin}/pricing?plan=${plan.plan}&cancelled=1`;
+			: `${origin}/dashboard?cancelled=1`;
 		
 		const cancelUrl = toAbsoluteUrl(cancelUrlRaw);
 		

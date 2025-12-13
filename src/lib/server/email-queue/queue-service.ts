@@ -1,0 +1,454 @@
+/**
+ * Email Queue Service
+ *
+ * Manages the email queue for deferred sending when daily limits are exceeded.
+ * Emails are queued and automatically processed when the daily limit resets.
+ */
+
+import { randomUUID } from 'crypto';
+import { FieldValue } from 'firebase-admin/firestore';
+import {
+	firestore,
+	emailQueueCollectionRef,
+	emailQueueDocRef,
+	contactsCollectionRef,
+	type QueuedEmail,
+	type EmailQueueStatus
+} from '../core/firestore';
+import { sendEmailViaGmail, type SendEmailOptions } from '../gmail/gmail-sender';
+import { incrementDailyInboxUsage } from '../usage/daily-inbox-usage';
+import { incrementOutreachUsage } from '../usage/outreach-usage';
+
+/**
+ * Default priority for queued emails (lower = higher priority)
+ */
+const DEFAULT_PRIORITY = 100;
+
+/**
+ * Default max retry attempts for failed emails
+ */
+const DEFAULT_MAX_ATTEMPTS = 3;
+
+/**
+ * Backoff delays for retries (in milliseconds)
+ */
+const RETRY_BACKOFF_MS = [60_000, 300_000, 900_000]; // 1min, 5min, 15min
+
+export interface QueueEmailInput {
+	to: string;
+	subject: string;
+	htmlBody: string;
+	senderConnectionId: string;
+	senderEmail: string;
+	campaignId?: string | null;
+	influencerId?: string | null;
+	influencerName?: string | null;
+	priority?: number;
+}
+
+/**
+ * Add emails to the queue for later processing
+ *
+ * @param uid - User ID
+ * @param emails - Array of emails to queue
+ * @param scheduledFor - Timestamp when emails become eligible for sending (typically next midnight UTC)
+ * @returns Array of created queue item IDs
+ */
+export async function addToEmailQueue(
+	uid: string,
+	emails: QueueEmailInput[],
+	scheduledFor: number
+): Promise<string[]> {
+	if (emails.length === 0) return [];
+
+	const now = Date.now();
+	const queueIds: string[] = [];
+	const queueRef = emailQueueCollectionRef(uid);
+
+	// Use batch write for efficiency
+	const batch = firestore.batch();
+
+	for (const email of emails) {
+		const queueId = randomUUID();
+		const docRef = queueRef.doc(queueId);
+
+		const queuedEmail: QueuedEmail = {
+			id: queueId,
+			campaignId: email.campaignId ?? null,
+			influencerId: email.influencerId ?? null,
+			influencerName: email.influencerName ?? null,
+			to: email.to,
+			subject: email.subject,
+			htmlBody: email.htmlBody,
+			senderConnectionId: email.senderConnectionId,
+			senderEmail: email.senderEmail,
+			status: 'queued',
+			priority: email.priority ?? DEFAULT_PRIORITY,
+			createdAt: now,
+			scheduledFor,
+			processedAt: null,
+			sentAt: null,
+			attempts: 0,
+			maxAttempts: DEFAULT_MAX_ATTEMPTS,
+			lastError: null,
+			lastAttemptAt: null,
+			updatedAt: now
+		};
+
+		batch.set(docRef, queuedEmail);
+		queueIds.push(queueId);
+
+		// Also update the campaign contact status to 'queued' if applicable
+		if (email.campaignId && email.influencerId) {
+			const contactRef = contactsCollectionRef(uid, email.campaignId).doc(email.influencerId);
+			batch.set(
+				contactRef,
+				{
+					sendStatus: 'pending', // Keep as pending since it's queued, not sent
+					queuedAt: now,
+					updatedAt: now
+				},
+				{ merge: true }
+			);
+		}
+	}
+
+	await batch.commit();
+	return queueIds;
+}
+
+/**
+ * Get user's email queue with optional filters
+ */
+export async function getUserEmailQueue(
+	uid: string,
+	filters?: {
+		status?: EmailQueueStatus | EmailQueueStatus[];
+		connectionId?: string;
+		campaignId?: string;
+		limit?: number;
+	}
+): Promise<QueuedEmail[]> {
+	let query = emailQueueCollectionRef(uid).orderBy('createdAt', 'desc');
+
+	if (filters?.status) {
+		if (Array.isArray(filters.status)) {
+			query = query.where('status', 'in', filters.status);
+		} else {
+			query = query.where('status', '==', filters.status);
+		}
+	}
+
+	if (filters?.connectionId) {
+		query = query.where('senderConnectionId', '==', filters.connectionId);
+	}
+
+	if (filters?.campaignId) {
+		query = query.where('campaignId', '==', filters.campaignId);
+	}
+
+	if (filters?.limit) {
+		query = query.limit(filters.limit);
+	} else {
+		query = query.limit(100); // Default limit
+	}
+
+	const snapshot = await query.get();
+	return snapshot.docs.map((doc) => doc.data() as QueuedEmail);
+}
+
+/**
+ * Get queued emails ready for processing (scheduledFor <= now)
+ */
+export async function getReadyQueuedEmails(
+	uid: string,
+	connectionId: string,
+	limit: number
+): Promise<QueuedEmail[]> {
+	const now = Date.now();
+
+	const snapshot = await emailQueueCollectionRef(uid)
+		.where('senderConnectionId', '==', connectionId)
+		.where('status', '==', 'queued')
+		.where('scheduledFor', '<=', now)
+		.orderBy('scheduledFor')
+		.orderBy('priority')
+		.limit(limit)
+		.get();
+
+	return snapshot.docs.map((doc) => doc.data() as QueuedEmail);
+}
+
+/**
+ * Cancel a queued email
+ */
+export async function cancelQueuedEmail(uid: string, queueId: string): Promise<void> {
+	const queueRef = emailQueueDocRef(uid, queueId);
+	const doc = await queueRef.get();
+
+	if (!doc.exists) {
+		throw new Error('Queue item not found');
+	}
+
+	const data = doc.data() as QueuedEmail;
+	if (data.status !== 'queued') {
+		throw new Error(`Cannot cancel email with status: ${data.status}`);
+	}
+
+	await queueRef.update({
+		status: 'cancelled' as EmailQueueStatus,
+		updatedAt: Date.now()
+	});
+}
+
+/**
+ * Process a single queued email - attempt to send it
+ *
+ * @returns Object with success status and optional error
+ */
+export async function processQueuedEmail(
+	uid: string,
+	queueId: string
+): Promise<{ success: boolean; error?: string }> {
+	const queueRef = emailQueueDocRef(uid, queueId);
+	const doc = await queueRef.get();
+
+	if (!doc.exists) {
+		return { success: false, error: 'Queue item not found' };
+	}
+
+	const email = doc.data() as QueuedEmail;
+
+	// Validate status
+	if (email.status !== 'queued') {
+		return { success: false, error: `Invalid status for processing: ${email.status}` };
+	}
+
+	const now = Date.now();
+
+	// Mark as processing
+	await queueRef.update({
+		status: 'processing' as EmailQueueStatus,
+		processedAt: now,
+		attempts: FieldValue.increment(1),
+		lastAttemptAt: now,
+		updatedAt: now
+	});
+
+	try {
+		// Attempt to send via Gmail
+		const sendOptions: SendEmailOptions = {
+			to: email.to,
+			subject: email.subject,
+			htmlBody: email.htmlBody
+		};
+
+		await sendEmailViaGmail(uid, sendOptions, email.senderConnectionId);
+
+		// Success! Update queue item and usage
+		await firestore.runTransaction(async (tx) => {
+			// Update queue item
+			tx.update(queueRef, {
+				status: 'sent' as EmailQueueStatus,
+				sentAt: Date.now(),
+				updatedAt: Date.now()
+			});
+
+			// Update campaign contact if applicable
+			if (email.campaignId && email.influencerId) {
+				const contactRef = contactsCollectionRef(uid, email.campaignId).doc(email.influencerId);
+				tx.set(
+					contactRef,
+					{
+						sendStatus: 'sent',
+						sentAt: Date.now(),
+						updatedAt: Date.now()
+					},
+					{ merge: true }
+				);
+			}
+		});
+
+		// Increment usage counters (outside transaction for simplicity)
+		await incrementDailyInboxUsage(uid, email.senderConnectionId, 1);
+		await incrementOutreachUsage(uid, 1);
+
+		return { success: true };
+	} catch (error) {
+		// Handle failure
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+		const currentAttempts = email.attempts + 1; // Already incremented above
+		const shouldRetry = currentAttempts < email.maxAttempts && isRetryableError(error);
+
+		if (shouldRetry) {
+			// Schedule for retry with backoff
+			const backoffDelay = getBackoffDelay(currentAttempts);
+			await queueRef.update({
+				status: 'queued' as EmailQueueStatus,
+				lastError: errorMessage,
+				scheduledFor: now + backoffDelay,
+				updatedAt: now
+			});
+		} else {
+			// Mark as failed permanently
+			await queueRef.update({
+				status: 'failed' as EmailQueueStatus,
+				lastError: errorMessage,
+				updatedAt: now
+			});
+
+			// Update campaign contact if applicable
+			if (email.campaignId && email.influencerId) {
+				await contactsCollectionRef(uid, email.campaignId)
+					.doc(email.influencerId)
+					.set(
+						{
+							sendStatus: 'failed',
+							failedAt: now,
+							errorMessage,
+							updatedAt: now
+						},
+						{ merge: true }
+					);
+			}
+		}
+
+		return { success: false, error: errorMessage };
+	}
+}
+
+/**
+ * Check if an error is retryable
+ */
+function isRetryableError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+
+	const message = error.message.toLowerCase();
+
+	// Rate limit errors are retryable
+	if (message.includes('rate limit') || message.includes('429')) {
+		return true;
+	}
+
+	// Server errors are retryable
+	if (message.includes('5') && message.includes('error')) {
+		return true;
+	}
+
+	// Auth errors are NOT retryable
+	if (
+		message.includes('access denied') ||
+		message.includes('401') ||
+		message.includes('403') ||
+		message.includes('reconnect')
+	) {
+		return false;
+	}
+
+	// Invalid email errors are NOT retryable
+	if (message.includes('invalid') || message.includes('400')) {
+		return false;
+	}
+
+	// Default to not retrying for unknown errors
+	return false;
+}
+
+/**
+ * Get backoff delay for retry attempt
+ */
+function getBackoffDelay(attempt: number): number {
+	const index = Math.min(attempt - 1, RETRY_BACKOFF_MS.length - 1);
+	return RETRY_BACKOFF_MS[index];
+}
+
+/**
+ * Get queue statistics for a user
+ */
+export async function getQueueStats(uid: string): Promise<{
+	queued: number;
+	processing: number;
+	sent: number;
+	failed: number;
+	cancelled: number;
+	total: number;
+}> {
+	const queueRef = emailQueueCollectionRef(uid);
+
+	const [queuedSnap, processingSnap, sentSnap, failedSnap, cancelledSnap] = await Promise.all([
+		queueRef.where('status', '==', 'queued').count().get(),
+		queueRef.where('status', '==', 'processing').count().get(),
+		queueRef.where('status', '==', 'sent').count().get(),
+		queueRef.where('status', '==', 'failed').count().get(),
+		queueRef.where('status', '==', 'cancelled').count().get()
+	]);
+
+	const queued = queuedSnap.data().count;
+	const processing = processingSnap.data().count;
+	const sent = sentSnap.data().count;
+	const failed = failedSnap.data().count;
+	const cancelled = cancelledSnap.data().count;
+
+	return {
+		queued,
+		processing,
+		sent,
+		failed,
+		cancelled,
+		total: queued + processing + sent + failed + cancelled
+	};
+}
+
+/**
+ * Retry a failed email (reset status to queued)
+ */
+export async function retryFailedEmail(uid: string, queueId: string): Promise<void> {
+	const queueRef = emailQueueDocRef(uid, queueId);
+	const doc = await queueRef.get();
+
+	if (!doc.exists) {
+		throw new Error('Queue item not found');
+	}
+
+	const data = doc.data() as QueuedEmail;
+	if (data.status !== 'failed') {
+		throw new Error(`Cannot retry email with status: ${data.status}`);
+	}
+
+	const now = Date.now();
+	await queueRef.update({
+		status: 'queued' as EmailQueueStatus,
+		attempts: 0,
+		maxAttempts: DEFAULT_MAX_ATTEMPTS,
+		lastError: null,
+		scheduledFor: now, // Ready to send immediately
+		updatedAt: now
+	});
+}
+
+/**
+ * Delete old processed emails (cleanup)
+ * Removes sent/failed/cancelled emails older than specified days
+ */
+export async function cleanupOldQueueItems(uid: string, olderThanDays: number = 30): Promise<number> {
+	const cutoffTime = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
+	const queueRef = emailQueueCollectionRef(uid);
+
+	const snapshot = await queueRef
+		.where('status', 'in', ['sent', 'failed', 'cancelled'])
+		.where('updatedAt', '<', cutoffTime)
+		.limit(500) // Batch delete limit
+		.get();
+
+	if (snapshot.empty) {
+		return 0;
+	}
+
+	const batch = firestore.batch();
+	snapshot.docs.forEach((doc) => {
+		batch.delete(doc.ref);
+	});
+
+	await batch.commit();
+	return snapshot.size;
+}

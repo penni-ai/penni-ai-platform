@@ -4,7 +4,6 @@ export interface PlanEntitlements {
 	maxProfiles: number;
 	connectedInboxes: number;
 	monthlyOutreachEmails: number;
-	maxActiveCampaigns: number;
 	csvExportEnabled: boolean;
 }
 
@@ -30,7 +29,6 @@ export interface FeatureCapabilities {
 	
 	// Limits and quotas
 	connectedInboxes: number; // Max number of connected Gmail inboxes
-	maxActiveCampaigns: number; // Max concurrent campaigns
 	influencerSearchResults: number; // Max influencer search results per search
 	monthlyOutreachEmails: number; // Max outreach emails per month
 	
@@ -52,63 +50,58 @@ export function buildFeatureCapabilities(planKey: PlanKey | null | undefined): F
 			search: true,
 			csvExport: false,
 			connectedInboxes: 1,
-			maxActiveCampaigns: 1,
 			influencerSearchResults: 10,
 			monthlyOutreachEmails: 10,
 			planKey: 'free',
 			updatedAt: now
 		};
 	}
-	
+
 	if (planKey === 'starter') {
 		return {
 			outreach: true,
 			search: true,
 			csvExport: false,
 			connectedInboxes: 1,
-			maxActiveCampaigns: 1,
 			influencerSearchResults: 300,
 			monthlyOutreachEmails: 200,
 			planKey: 'starter',
 			updatedAt: now
 		};
 	}
-	
+
 	if (planKey === 'growth') {
 		return {
 			outreach: true,
 			search: true,
 			csvExport: true,
 			connectedInboxes: 3,
-			maxActiveCampaigns: 10,
 			influencerSearchResults: 1000,
 			monthlyOutreachEmails: 700,
 			planKey: 'growth',
 			updatedAt: now
 		};
 	}
-	
+
 	if (planKey === 'event') {
 		return {
 			outreach: true,
 			search: true,
 			csvExport: true,
 			connectedInboxes: 5,
-			maxActiveCampaigns: 10,
 			influencerSearchResults: 5000,
 			monthlyOutreachEmails: 5000,
 			planKey: 'event',
 			updatedAt: now
 		};
 	}
-	
+
 	// Default to free plan capabilities if plan key is invalid
 	return {
 		outreach: true, // Free plan allows limited outreach
 		search: true,
 		csvExport: false,
 		connectedInboxes: 1,
-		maxActiveCampaigns: 1,
 		influencerSearchResults: 10,
 		monthlyOutreachEmails: 10,
 		planKey: 'free',
@@ -122,7 +115,6 @@ export function buildEntitlements(planKey: PlanKey | null | undefined): PlanEnti
 			maxProfiles: 10,
 			connectedInboxes: 1,
 			monthlyOutreachEmails: 10,
-			maxActiveCampaigns: 1,
 			csvExportEnabled: false
 		};
 	}
@@ -131,7 +123,6 @@ export function buildEntitlements(planKey: PlanKey | null | undefined): PlanEnti
 			maxProfiles: 300,
 			connectedInboxes: 1,
 			monthlyOutreachEmails: 200,
-			maxActiveCampaigns: 1,
 			csvExportEnabled: false
 		};
 	}
@@ -140,7 +131,6 @@ export function buildEntitlements(planKey: PlanKey | null | undefined): PlanEnti
 			maxProfiles: 1000,
 			connectedInboxes: 3,
 			monthlyOutreachEmails: 700,
-			maxActiveCampaigns: 10,
 			csvExportEnabled: true
 		};
 	}
@@ -149,7 +139,6 @@ export function buildEntitlements(planKey: PlanKey | null | undefined): PlanEnti
 			maxProfiles: 5000,
 			connectedInboxes: 5,
 			monthlyOutreachEmails: 5000,
-			maxActiveCampaigns: 10,
 			csvExportEnabled: true
 		};
 	}

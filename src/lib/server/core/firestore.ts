@@ -80,6 +80,28 @@ export function gmailConnectionsCollectionRef(uid: string): CollectionReference 
 	return userDocRef(uid).collection('gmailConnections');
 }
 
+export function gmailConnectionDocRef(uid: string, connectionId: string): DocumentReference {
+	return gmailConnectionsCollectionRef(uid).doc(connectionId);
+}
+
+// Daily usage tracking per Gmail inbox
+export function gmailConnectionDailyUsageRef(
+	uid: string,
+	connectionId: string,
+	dateKey: string
+): DocumentReference {
+	return gmailConnectionDocRef(uid, connectionId).collection('dailyUsage').doc(dateKey);
+}
+
+// Email queue collection for a user
+export function emailQueueCollectionRef(uid: string): CollectionReference {
+	return userDocRef(uid).collection('emailQueue');
+}
+
+export function emailQueueDocRef(uid: string, queueId: string): DocumentReference {
+	return emailQueueCollectionRef(uid).doc(queueId);
+}
+
 // Campaign structure:
 // - campaigns/{campaignId}/collected (document) - collected data
 // - campaigns/{campaignId}/chat/{messageId} (collection) - messages
@@ -165,6 +187,11 @@ export interface UserStripeState {
 	usage?: UserUsage; // Usage tracking (outreach and search)
 	// Removed: entitlements field (redundant, use feature_capabilities instead)
 	addons?: Record<string, unknown>;
+	onboarding?: {
+		tutorialCompleted: boolean;
+		tutorialCompletedAt?: number | null;
+		tutorialSkipped?: boolean;
+	};
 	updatedAt: number;
 }
 
@@ -283,10 +310,59 @@ export interface UserFeatureCapabilities {
 	search: boolean;
 	csvExport: boolean;
 	connectedInboxes: number;
-	maxActiveCampaigns: number;
 	influencerSearchResults: number;
 	monthlyOutreachEmails: number;
 	planKey: string | null;
+	updatedAt: number;
+}
+
+/**
+ * Daily usage tracking per Gmail inbox
+ * Stored at: users/{uid}/gmailConnections/{connectionId}/dailyUsage/{YYYY-MM-DD}
+ */
+export interface DailyInboxUsage {
+	date: string; // Format: "YYYY-MM-DD" (UTC)
+	sendCount: number; // Emails sent today via this inbox
+	lastSentAt: number | null; // Timestamp of last successful send
+	resetAt: number; // Timestamp when this day's limit resets (next midnight UTC)
+	updatedAt: number;
+}
+
+/**
+ * Email queue status
+ */
+export type EmailQueueStatus = 'queued' | 'processing' | 'sent' | 'failed' | 'cancelled';
+
+/**
+ * Queued email document
+ * Stored at: users/{uid}/emailQueue/{queueItemId}
+ */
+export interface QueuedEmail {
+	id: string;
+	// Campaign & recipient info
+	campaignId: string | null;
+	influencerId: string | null;
+	influencerName: string | null;
+	// Email content
+	to: string; // Recipient email address
+	subject: string;
+	htmlBody: string; // Already-processed HTML (template vars filled)
+	// Sender info
+	senderConnectionId: string; // Gmail connection to use
+	senderEmail: string; // Sender's email (for display)
+	// Queue status
+	status: EmailQueueStatus;
+	priority: number; // Lower = higher priority (default: 100)
+	// Timing
+	createdAt: number;
+	scheduledFor: number; // When eligible to send (daily reset time)
+	processedAt: number | null; // When processing started
+	sentAt: number | null; // When successfully sent
+	// Error handling
+	attempts: number; // Number of send attempts
+	maxAttempts: number; // Max retry attempts (default: 3)
+	lastError: string | null;
+	lastAttemptAt: number | null;
 	updatedAt: number;
 }
 

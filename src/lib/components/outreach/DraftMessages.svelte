@@ -51,9 +51,9 @@
 
 <div class="absolute inset-0 h-full flex" transition:slideFade={{ axis: 'x', duration: 300, direction: navigationDirection }}>
 	<!-- Left Column: Platform Buttons -->
-	<div class="w-[20%] border-r border-gray-200 flex flex-col">
+	<div class="w-[20%] flex flex-col" style="border-right: 1px solid var(--color-border);">
 		<div class="p-6">
-			<h3 class="text-sm font-semibold text-gray-900 mb-4">Message Templates</h3>
+			<h3 class="text-sm font-semibold mb-4" style="color: var(--color-text);">Message Templates</h3>
 			<div class="space-y-2">
 				{#if hasContactMethodSelected('email')}
 					{@const emailCount = getRecipientCount('email')}
@@ -61,13 +61,16 @@
 					<button
 						type="button"
 						onclick={() => onEditingPlatformChange(editingPlatform === 'email' ? null : 'email')}
-						class="w-full flex flex-col items-start gap-1 px-4 py-3 rounded-lg border-2 text-sm font-medium transition-colors {
-							editingPlatform === 'email'
-								? 'border-[#FF6F61] bg-[#FFF1ED] text-gray-900' 
-								: hasEmailErrors
-								? 'border-red-300 bg-red-50 text-gray-900'
-								: 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+						class="w-full flex flex-col items-start gap-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors {
+							hasEmailErrors
+								? 'border-red-300 bg-red-50'
+								: ''
 						}"
+						style="{editingPlatform === 'email'
+							? 'border: 2px solid var(--color-primary); background: var(--color-bg-elevated); color: var(--color-text);'
+							: hasEmailErrors
+							? ''
+							: 'border: 2px solid var(--color-border); background: var(--color-bg-elevated); color: var(--color-text-secondary);'}"
 					>
 						<div class="flex items-center gap-2 w-full">
 							{@html getMethodIcon('email')}
@@ -78,7 +81,7 @@
 								</svg>
 							{/if}
 						</div>
-						<span class="text-xs text-gray-500">to {emailCount} {emailCount === 1 ? 'person' : 'people'}</span>
+						<span class="text-xs" style="color: var(--color-text-muted);">to {emailCount} {emailCount === 1 ? 'person' : 'people'}</span>
 					</button>
 				{/if}
 				{#if hasContactMethodSelected('instagram')}
@@ -90,13 +93,16 @@
 							onEditingPlatformChange(editingPlatform === 'instagram' ? null : 'instagram');
 							onSaveOutreachState(true);
 						}}
-						class="w-full flex flex-col items-start gap-1 px-4 py-3 rounded-lg border-2 text-sm font-medium transition-colors {
-							editingPlatform === 'instagram'
-								? 'border-[#FF6F61] bg-[#FFF1ED] text-gray-900'
-								: hasInstagramErrors
-								? 'border-red-300 bg-red-50 text-gray-900'
-								: 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+						class="w-full flex flex-col items-start gap-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors {
+							hasInstagramErrors
+								? 'border-red-300 bg-red-50'
+								: ''
 						}"
+						style="{editingPlatform === 'instagram'
+							? 'border: 2px solid var(--color-primary); background: var(--color-bg-elevated); color: var(--color-text);'
+							: hasInstagramErrors
+							? ''
+							: 'border: 2px solid var(--color-border); background: var(--color-bg-elevated); color: var(--color-text-secondary);'}"
 					>
 						<div class="flex items-center gap-2 w-full">
 							{@html getMethodIcon('instagram')}
@@ -107,7 +113,7 @@
 								</svg>
 							{/if}
 						</div>
-						<span class="text-xs text-gray-500">to {instagramCount} {instagramCount === 1 ? 'person' : 'people'}</span>
+						<span class="text-xs" style="color: var(--color-text-muted);">to {instagramCount} {instagramCount === 1 ? 'person' : 'people'}</span>
 					</button>
 				{/if}
 				{#if hasContactMethodSelected('tiktok')}
@@ -119,13 +125,16 @@
 							onEditingPlatformChange(editingPlatform === 'tiktok' ? null : 'tiktok');
 							onSaveOutreachState(true);
 						}}
-						class="w-full flex flex-col items-start gap-1 px-4 py-3 rounded-lg border-2 text-sm font-medium transition-colors {
-							editingPlatform === 'tiktok'
-								? 'border-[#FF6F61] bg-[#FFF1ED] text-gray-900' 
-								: hasTiktokErrors
-								? 'border-red-300 bg-red-50 text-gray-900'
-								: 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+						class="w-full flex flex-col items-start gap-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors {
+							hasTiktokErrors
+								? 'border-red-300 bg-red-50'
+								: ''
 						}"
+						style="{editingPlatform === 'tiktok'
+							? 'border: 2px solid var(--color-primary); background: var(--color-bg-elevated); color: var(--color-text);'
+							: hasTiktokErrors
+							? ''
+							: 'border: 2px solid var(--color-border); background: var(--color-bg-elevated); color: var(--color-text-secondary);'}"
 					>
 						<div class="flex items-center gap-2 w-full">
 							{@html getMethodIcon('tiktok')}
@@ -136,7 +145,7 @@
 								</svg>
 							{/if}
 						</div>
-						<span class="text-xs text-gray-500">to {tiktokCount} {tiktokCount === 1 ? 'person' : 'people'}</span>
+						<span class="text-xs" style="color: var(--color-text-muted);">to {tiktokCount} {tiktokCount === 1 ? 'person' : 'people'}</span>
 					</button>
 				{/if}
 			</div>
@@ -170,7 +179,7 @@
 			{/if}
 			<!-- Draft with ChatGPT and Customize Footer Buttons -->
 			{#if campaignId}
-				<div class="px-6 py-4 border-b border-gray-200 shrink-0 flex items-center justify-between gap-2">
+				<div class="px-6 py-4 shrink-0 flex items-center justify-between gap-2" style="border-bottom: 1px solid var(--color-border);">
 					<div class="flex items-center gap-2">
 						<button
 							type="button"
@@ -191,14 +200,16 @@
 							type="button"
 							onclick={onOpenDraftModal}
 							disabled={isDrafting || isQuickDrafting}
-							class="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							class="px-4 py-2 text-sm rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							style="color: var(--color-text-secondary); border: 1px solid var(--color-border);"
 						>
 							{isDrafting ? 'Drafting...' : 'Draft with ChatGPT'}
 						</button>
 						<button
 							type="button"
 							disabled
-							class="px-4 py-2 text-sm text-gray-400 border border-gray-300 rounded cursor-not-allowed relative group"
+							class="px-4 py-2 text-sm rounded cursor-not-allowed relative group"
+							style="color: var(--color-text-muted); border: 1px solid var(--color-border);"
 							title="Not Available"
 						>
 							<span class="group-hover:hidden">Choose Template</span>
@@ -208,7 +219,8 @@
 							<button
 								type="button"
 								onclick={onOpenFooterModal}
-								class="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+								class="px-4 py-2 text-sm rounded hover:bg-gray-50 transition-colors"
+								style="color: var(--color-text-secondary); border: 1px solid var(--color-border);"
 							>
 								Customize Footer
 							</button>
@@ -248,7 +260,7 @@
 				/>
 			</div>
 		{:else}
-			<div class="flex-1 flex items-center justify-center text-gray-400">
+			<div class="flex-1 flex items-center justify-center" style="color: var(--color-text-muted);">
 				<p>Select a platform to draft your message</p>
 			</div>
 		{/if}

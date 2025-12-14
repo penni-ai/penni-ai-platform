@@ -3,23 +3,42 @@ import { writable } from 'svelte/store';
 
 const STORAGE_KEY = 'penny-platform:sidebar-open';
 
-const sidebarStore = writable<boolean>(true);
-
-if (browser) {
-	const stored = window.localStorage.getItem(STORAGE_KEY);
-	if (stored !== null) {
-		sidebarStore.set(stored !== 'false');
-	}
-
-	sidebarStore.subscribe((value) => {
-		window.localStorage.setItem(STORAGE_KEY, value ? 'true' : 'false');
-	});
+function getStoredState(): boolean {
+	if (!browser) return true;
+	const stored = localStorage.getItem(STORAGE_KEY);
+	return stored === null ? true : stored !== 'false';
 }
 
-export const sidebarState = {
-	subscribe: sidebarStore.subscribe,
-	open: () => sidebarStore.set(true),
-	close: () => sidebarStore.set(false),
-	set: (value: boolean) => sidebarStore.set(value),
-	toggle: () => sidebarStore.update((value) => !value)
-};
+function persistState(value: boolean) {
+	if (!browser) return;
+	localStorage.setItem(STORAGE_KEY, value ? 'true' : 'false');
+}
+
+function createSidebarStore() {
+	const { subscribe, set, update } = writable<boolean>(getStoredState());
+
+	return {
+		subscribe,
+		open: () => {
+			persistState(true);
+			set(true);
+		},
+		close: () => {
+			persistState(false);
+			set(false);
+		},
+		set: (value: boolean) => {
+			persistState(value);
+			set(value);
+		},
+		toggle: () => {
+			update(current => {
+				const next = !current;
+				persistState(next);
+				return next;
+			});
+		}
+	};
+}
+
+export const sidebarState = createSidebarStore();

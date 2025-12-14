@@ -77,6 +77,7 @@ export type PipelineStatus = {
 	profiles_signed_url?: string; // Signed URL for direct profile fetch
 	progressive_profiles_signed_url?: string; // Signed URL for progressive results
 	is_progressive?: boolean; // True when profiles are partial results from completed batches
+	preliminary_candidates?: InfluencerProfile[]; // Weaviate candidates before LLM analysis
 	stages: PipelineStages;
 	error_message?: string | null;
 };

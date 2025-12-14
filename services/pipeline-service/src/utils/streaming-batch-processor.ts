@@ -254,7 +254,7 @@ export async function processBatchedCollectionStreaming(
   cacheHits: number;
 }> {
   const batchSize = config.batchSize || 20;
-  const maxConcurrentBatches = config.maxConcurrentBatches || 10;
+  const maxConcurrentBatches = config.maxConcurrentBatches || 20;
   const pollingInterval = config.pollingInterval || 10;
   const maxWaitTime = config.maxWaitTime || 3600;
 
@@ -346,9 +346,9 @@ export async function processBatchedCollectionStreaming(
   
   console.log(`[Streaming] Created ${allBatches.length} batches (${instagramBatches.length} Instagram, ${tiktokBatches.length} TikTok)`);
 
-  // Step 2: Trigger all batches with concurrency control (max 10 at once)
+  // Step 2: Trigger all batches with concurrency control (max 20 at once)
   const snapshots: Array<{ snapshot_id: string; platform: BrightDataPlatform; batch_index: number }> = [];
-  const maxTriggerConcurrency = Math.min(maxConcurrentBatches, 10); // Cap at 10 concurrent batches
+  const maxTriggerConcurrency = Math.min(maxConcurrentBatches, 20); // Cap at 20 concurrent batches
 
   if (timingTracker) {
     timingTracker.startSubStage('brightdata_collection', 'batch_triggering');
@@ -382,7 +382,7 @@ export async function processBatchedCollectionStreaming(
     
     // Wait a bit before triggering next chunk if there are more batches
     if (i + maxTriggerConcurrency < allBatches.length) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 250));
     }
   }
   

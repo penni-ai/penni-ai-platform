@@ -410,9 +410,14 @@ let showGmailTypeModal = $state(false);
 
   const platformOptions = ['TikTok', 'Instagram'];
   const previewProfiles = $derived((): InfluencerProfile[] => {
-    // Show profiles as they become available (progressive or final)
+    // First try progressive/final profiles
     const profiles = pipelineStatus?.profiles;
-    return Array.isArray(profiles) ? profiles.slice(0, 10) : [];
+    if (Array.isArray(profiles) && profiles.length > 0) {
+      return profiles.slice(0, 10);
+    }
+    // Fallback to preliminary candidates from Weaviate
+    const candidates = pipelineStatus?.preliminary_candidates;
+    return Array.isArray(candidates) ? candidates.slice(0, 10) : [];
   });
 
   // Whether we're showing progressive (partial) results

@@ -337,7 +337,7 @@ export async function handlePipelineExecution(messageData: {
 
     let queries: string[] = [];
     const queryExpansionStartTime = Date.now();
-    const MIN_QUERY_EXPANSION_DURATION_MS = 3000; // Minimum 3 seconds to show progress
+    const MIN_QUERY_EXPANSION_DURATION_MS = 0; // No artificial delay
     
     try {
       // Check for cancellation

@@ -10,7 +10,7 @@ import type { WeaviateHybridSearchResponse } from '../types/weaviate-search.js';
 let cachedWeaviateClient: WeaviateClient | null = null;
 let clientInitPromise: Promise<WeaviateClient> | null = null;
 
-const MAX_CONCURRENT_SEARCHES = Number(process.env.MAX_CONCURRENT_WEAVIATE_SEARCHES || 12);
+const MAX_CONCURRENT_SEARCHES = Number(process.env.MAX_CONCURRENT_WEAVIATE_SEARCHES || 24);
 const DEFAULT_WEAVIATE_TIMEOUT_MS = 120_000;
 
 /**
@@ -485,10 +485,10 @@ export async function performParallelHybridSearches(
       searchesInBatch: batch.length,
     });
     
-    // Small delay between batches
-    if (i + MAX_CONCURRENT_SEARCHES < searchConfigs.length) {
-      await sleep(100);
-    }
+    // No delay between batches for maximum speed
+    // if (i + MAX_CONCURRENT_SEARCHES < searchConfigs.length) {
+    //   await sleep(100);
+    // }
   }
   
   if (timingTracker) {

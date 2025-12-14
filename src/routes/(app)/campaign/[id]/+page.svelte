@@ -150,7 +150,15 @@ $effect(() => {
         const profiles = Array.isArray(data.profiles)
           ? data.profiles.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
           : [];
-        pipelineStatus = { ...pipelineStatus, profiles } as PipelineStatus;
+        const preliminaryCandidates = Array.isArray(data.preliminary_candidates)
+          ? data.preliminary_candidates.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
+          : [];
+        pipelineStatus = {
+          ...pipelineStatus,
+          profiles,
+          preliminary_candidates: preliminaryCandidates,
+          is_progressive: data.is_progressive ?? false,
+        } as PipelineStatus;
         loadedProfilesForPipeline = pipelineId;
       }
     } catch {
@@ -187,13 +195,20 @@ $effect(() => {
       pipelineError = null;
       const data = snapshot.data();
 
-      // Load profiles when available
-      if ((data.profiles_count ?? 0) > 0 || (data.progressive_profiles_count ?? 0) > 0) {
+      // Load profiles when available (including Weaviate candidates)
+      if ((data.profiles_count ?? 0) > 0 ||
+          (data.progressive_profiles_count ?? 0) > 0 ||
+          (data.weaviate_search?.candidates_count ?? 0) > 0) {
         void loadProfiles();
       }
 
-      // Update status, preserving loaded profiles
-      pipelineStatus = { ...data, profiles: pipelineStatus?.profiles ?? [] } as PipelineStatus;
+      // Update status, preserving loaded profiles and preliminary candidates
+      pipelineStatus = {
+        ...data,
+        profiles: pipelineStatus?.profiles ?? [],
+        preliminary_candidates: pipelineStatus?.preliminary_candidates ?? [],
+        is_progressive: pipelineStatus?.is_progressive ?? false,
+      } as PipelineStatus;
     },
     (error) => {
       pipelineError = { code: 'LISTENER_ERROR', message: error.message, pipelineId };

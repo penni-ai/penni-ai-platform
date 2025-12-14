@@ -28,7 +28,7 @@ function getOpenAIModel(): string {
  * Get max concurrent LLM profile analyses (configurable via env var)
  */
 function getMaxConcurrentLLMAnalyses(): number {
-  const maxConcurrent = Number(process.env.MAX_CONCURRENT_LLM_REQUESTS || process.env.MAX_CONCURRENT_LLM_ANALYSES || '20');
+  const maxConcurrent = Number(process.env.MAX_CONCURRENT_LLM_REQUESTS || process.env.MAX_CONCURRENT_LLM_ANALYSES || '50');
   return Math.max(1, maxConcurrent); // Ensure at least 1
 }
 
@@ -424,7 +424,7 @@ export async function analyzeProfileFitBatch(
 
     // Small delay between batches to avoid rate limiting
     if (i + concurrentLimit < profiles.length) {
-      await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
+      await new Promise(resolve => setTimeout(resolve, 50)); // 50ms delay
     }
   }
 

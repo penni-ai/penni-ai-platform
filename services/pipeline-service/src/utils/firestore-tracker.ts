@@ -95,10 +95,10 @@ export interface PipelineJobDocument {
   cancel_requested?: boolean;
   uid?: string | null;
   campaign_id?: string | null;
-  
+
   // Centralized timing data
   timing?: PipelineTimingData;
-  
+
   // Stage-specific data
   query_expansion?: {
     status: StageStatus;
@@ -107,7 +107,7 @@ export interface PipelineJobDocument {
     completed_at?: Timestamp | null;
     error?: string | null;
   };
-  
+
   weaviate_search?: {
     status: StageStatus;
     total_results: number;
@@ -117,7 +117,7 @@ export interface PipelineJobDocument {
     completed_at?: Timestamp | null;
     error?: string | null;
   };
-  
+
   brightdata_collection?: {
     status: StageStatus;
     profiles_requested: number;
@@ -131,25 +131,31 @@ export interface PipelineJobDocument {
     completed_at?: Timestamp | null;
     error?: string | null;
   };
-  
+
   llm_analysis?: {
     status: StageStatus;
     profiles_analyzed: number;
     completed_at?: Timestamp | null;
     error?: string | null;
   };
-  
+
   // Results (stored in Storage for large datasets)
-  profiles_storage_url?: string;
+  profiles_signed_url?: string; // Signed URL for direct frontend access (7 days expiry)
   profiles_storage_path?: string;
   profiles_count?: number;
-  remaining_profiles_storage_url?: string;
+  remaining_profiles_signed_url?: string;
   remaining_profiles_storage_path?: string;
   remaining_profiles_count?: number;
-  
+
+  // Progressive results (updated after each batch completes)
+  progressive_profiles_signed_url?: string;
+  progressive_profiles_storage_path?: string;
+  progressive_profiles_count?: number;
+  progressive_is_complete?: boolean; // True when all batches are processed
+
   // Legacy: Keep for backwards compatibility, but will be empty for large datasets
   profiles?: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string }>;
-  
+
   // Metadata
   top_n?: number;
   weaviate_top_n?: number;
@@ -530,7 +536,7 @@ export async function storeRemainingProfiles(
     if (!exists) {
       throw new Error(`Remaining profiles storage file was not created: ${filePath}`);
     }
-    
+
     const [contents] = await file.download();
     const savedProfiles = JSON.parse(contents.toString('utf-8'));
     if (!Array.isArray(savedProfiles) || savedProfiles.length !== remainingProfiles.length) {
@@ -540,19 +546,20 @@ export async function storeRemainingProfiles(
     console.error(`[Storage] Validation error for remaining profiles job ${jobId}:`, error);
     throw error;
   }
-  
-  const publicUrl = `https://storage.googleapis.com/${STORAGE_BUCKET_NAME}/${filePath}`;
-  
+
+  // Generate signed URL for direct frontend access
+  const signedUrl = await generateSignedUrl(filePath);
+
   // Update Firestore with remaining profiles metadata
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
-    remaining_profiles_storage_url: publicUrl,
+    remaining_profiles_signed_url: signedUrl,
     remaining_profiles_storage_path: filePath,
     remaining_profiles_count: remainingProfiles.length,
     updated_at: Timestamp.now(),
   });
-  
+
   console.log(`[Storage] Stored ${remainingProfiles.length} remaining profiles: ${jobId}`);
-  return publicUrl;
+  return signedUrl;
 }
 
 /**
@@ -581,20 +588,19 @@ export async function storePipelineResults(
   if (!Array.isArray(profiles)) {
     throw new Error(`Invalid profiles data: expected array, got ${typeof profiles}`);
   }
-  
-  // Save profiles to Storage
-  const storageUrl = await saveProfilesToStorage(jobId, profiles);
-  
+
+  // Save profiles to Storage and get signed URL
+  const { path: storagePath, signedUrl } = await saveProfilesToStorage(jobId, profiles);
+
   // Verify the file was saved correctly by reading it back
   try {
     const bucket = getBucket();
-    const filePath = getProfilesStoragePath(jobId);
-    const file = bucket.file(filePath);
+    const file = bucket.file(storagePath);
     const [exists] = await file.exists();
     if (!exists) {
-      throw new Error(`Storage file was not created: ${filePath}`);
+      throw new Error(`Storage file was not created: ${storagePath}`);
     }
-    
+
     // Verify count matches
     const [contents] = await file.download();
     const savedProfiles = JSON.parse(contents.toString('utf-8'));
@@ -605,19 +611,19 @@ export async function storePipelineResults(
     console.error(`[Storage] Validation error for job ${jobId}:`, error);
     throw error;
   }
-  
-  // Store metadata in Firestore (not the actual profiles)
+
+  // Store metadata in Firestore with signed URL for direct frontend access
   const updates: any = {
-    profiles_storage_url: storageUrl,
-    profiles_storage_path: getProfilesStoragePath(jobId),
+    profiles_signed_url: signedUrl,
+    profiles_storage_path: storagePath,
     profiles_count: profiles.length,
     updated_at: Timestamp.now(),
   };
-  
+
   if (pipelineStats) {
     updates.pipeline_stats = pipelineStats;
   }
-  
+
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
   console.log(`[Storage] Stored ${profiles.length} profiles: ${jobId}`);
 }
@@ -671,6 +677,13 @@ function getBatchStoragePath(jobId: string, batchIndex: number): string {
 }
 
 /**
+ * Get Storage path for progressive top-N profiles (updated after each batch)
+ */
+function getProgressiveProfilesStoragePath(jobId: string): string {
+  return `pipeline_jobs/${jobId}/profiles_progressive.json`;
+}
+
+/**
  * Load existing profiles from Storage
  */
 async function loadProfilesFromStorage(jobId: string): Promise<Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string }>> {
@@ -694,19 +707,34 @@ async function loadProfilesFromStorage(jobId: string): Promise<Array<BrightDataU
 }
 
 /**
- * Save profiles to Storage
+ * Generate a signed URL for a Storage file (7 days expiration)
+ */
+async function generateSignedUrl(filePath: string): Promise<string> {
+  const bucket = getBucket();
+  const file = bucket.file(filePath);
+
+  const [signedUrl] = await file.getSignedUrl({
+    action: 'read',
+    expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+
+  return signedUrl;
+}
+
+/**
+ * Save profiles to Storage and return signed URL for direct frontend access
  */
 async function saveProfilesToStorage(
   jobId: string,
   profiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string }>
-): Promise<string> {
+): Promise<{ path: string; signedUrl: string }> {
   const bucket = getBucket();
   const filePath = getProfilesStoragePath(jobId);
   const file = bucket.file(filePath);
-  
+
   const jsonContent = JSON.stringify(profiles, null, 2);
   const buffer = Buffer.from(jsonContent, 'utf-8');
-  
+
   await file.save(buffer, {
     contentType: 'application/json',
     metadata: {
@@ -718,14 +746,11 @@ async function saveProfilesToStorage(
       },
     },
   });
-  
-  // Note: With uniform bucket-level access enabled, we cannot use makePublic().
-  // Files are accessed server-side via admin credentials, so public access is not needed.
-  // If public access is required, use signed URLs or configure bucket IAM policy instead.
-  
-  const publicUrl = `https://storage.googleapis.com/${STORAGE_BUCKET_NAME}/${filePath}`;
-  
-  return publicUrl;
+
+  // Generate signed URL for direct frontend access (7 days expiration)
+  const signedUrl = await generateSignedUrl(filePath);
+
+  return { path: filePath, signedUrl };
 }
 
 /**
@@ -912,13 +937,13 @@ export async function mergeBatchResults(jobId: string, totalBatches: number): Pr
     }
   }
   
-  // Save merged results to main profiles.json
-  const storageUrl = await saveProfilesToStorage(jobId, allProfiles);
-  
-  // Update Firestore with final storage URL
+  // Save merged results to main profiles.json and get signed URL
+  const { path: storagePath, signedUrl } = await saveProfilesToStorage(jobId, allProfiles);
+
+  // Update Firestore with final storage URL (signed for direct frontend access)
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
-    profiles_storage_url: storageUrl,
-    profiles_storage_path: getProfilesStoragePath(jobId),
+    profiles_signed_url: signedUrl,
+    profiles_storage_path: storagePath,
     profiles_count: allProfiles.length,
     updated_at: Timestamp.now(),
   });
@@ -966,4 +991,86 @@ export async function finalizePipelineProgress(jobId: string): Promise<void> {
     updated_at: Timestamp.now(),
   });
   console.log(`[Firestore] Finalized pipeline job ${jobId} progress at 100%`);
+}
+
+/**
+ * Update progressive top-N profiles after each batch completes
+ * This merges all completed batches, sorts by fit_score, and saves the top N
+ * so the frontend can display evaluated results incrementally
+ */
+export async function updateProgressiveTopN(
+  jobId: string,
+  batchesCompleted: number,
+  topN: number
+): Promise<void> {
+  if (batchesCompleted === 0) {
+    console.log(`[Storage] No batches completed yet for job ${jobId}, skipping progressive update`);
+    return;
+  }
+
+  const allProfiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string; fit_summary?: string }> = [];
+
+  // Load all completed batch files
+  for (let batchIndex = 0; batchIndex < batchesCompleted; batchIndex++) {
+    const batchProfiles = await loadBatchFromStorage(jobId, batchIndex);
+    allProfiles.push(...batchProfiles);
+  }
+
+  if (allProfiles.length === 0) {
+    console.log(`[Storage] No profiles found in ${batchesCompleted} batch files for job ${jobId}`);
+    return;
+  }
+
+  // Sort by fit_score descending (highest first)
+  allProfiles.sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
+
+  // Take only top N profiles
+  const progressiveTopN = allProfiles.slice(0, topN);
+
+  // Save to progressive storage file
+  const bucket = getBucket();
+  const filePath = getProgressiveProfilesStoragePath(jobId);
+  const file = bucket.file(filePath);
+
+  const jsonContent = JSON.stringify(progressiveTopN, null, 2);
+  const buffer = Buffer.from(jsonContent, 'utf-8');
+
+  await file.save(buffer, {
+    contentType: 'application/json',
+    metadata: {
+      cacheControl: 'no-cache', // Don't cache progressive results
+      metadata: {
+        jobId,
+        profileCount: progressiveTopN.length.toString(),
+        batchesCompleted: batchesCompleted.toString(),
+        totalProfilesAnalyzed: allProfiles.length.toString(),
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  });
+
+  // Generate signed URL for direct frontend access
+  const signedUrl = await generateSignedUrl(filePath);
+
+  // Update Firestore with progressive profiles metadata
+  await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
+    progressive_profiles_signed_url: signedUrl,
+    progressive_profiles_storage_path: filePath,
+    progressive_profiles_count: progressiveTopN.length,
+    progressive_is_complete: false,
+    updated_at: Timestamp.now(),
+  });
+
+  console.log(`[Storage] Updated progressive top-${topN} for job ${jobId}: ${progressiveTopN.length} profiles from ${batchesCompleted} batches (${allProfiles.length} total analyzed)`);
+}
+
+/**
+ * Mark progressive results as complete (called when all batches finish)
+ */
+export async function finalizeProgressiveResults(jobId: string): Promise<void> {
+  await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
+    progressive_is_complete: true,
+    updated_at: Timestamp.now(),
+  });
+  console.log(`[Firestore] Marked progressive results as complete for job ${jobId}`);
 }

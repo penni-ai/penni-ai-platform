@@ -256,8 +256,7 @@ export interface CampaignRecord {
 	status: 'collecting' | 'ready' | 'searching' | 'complete' | 'needs_config' | 'error';
 	createdAt: number;
 	updatedAt: number;
-	pipeline_id?: string | null; // Current/latest pipeline job ID (legacy)
-	active_pipeline_id?: string | null; // Current active run (new)
+	pipeline_id?: string | null; // Current pipeline job ID
 	pipeline_runs?: PipelineRunRecord[]; // History of pipeline runs for this campaign
 	accumulated_profile_urls?: string[]; // Deprecated: use profiles collection
 }

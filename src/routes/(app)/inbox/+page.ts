@@ -1,6 +1,7 @@
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async () => {
+export const load: PageLoad = async ({ data }) => {
+	// Mock thread data for replies tab (to be replaced with real data later)
 	const threads = [
 		{
 			id: 'thr-001',
@@ -30,6 +31,9 @@ export const load: PageLoad = async () => {
 	];
 
 	return {
-		threads
+		threads,
+		// Merge server data (outreach emails and stats)
+		outreachEmails: data.outreachEmails,
+		outreachStats: data.outreachStats
 	};
 };

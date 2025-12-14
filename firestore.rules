@@ -79,6 +79,17 @@ service cloud.firestore {
       allow read, write: if false; // Admin SDK only
     }
 
+    // Pipeline jobs - users can read their own pipeline jobs
+    // The uid field in the document must match the authenticated user
+    match /pipeline_jobs/{pipelineId} {
+      allow read: if isSignedIn() && (
+        resource.data.uid == request.auth.uid ||
+        resource.data.user_id == request.auth.uid
+      );
+      // Writes are handled via Admin SDK only
+      allow write: if false;
+    }
+
     // Deny access to all other collections by default.
     match /{document=**} {
       allow read, write: if false;

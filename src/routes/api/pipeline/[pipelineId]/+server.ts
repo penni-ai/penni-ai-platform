@@ -31,6 +31,11 @@ interface PipelineJobDocument {
 	remaining_profiles_count?: number;
 	candidates_storage_url?: string;
 	candidates_storage_path?: string;
+	// Progressive results (updated after each batch)
+	progressive_profiles_storage_url?: string;
+	progressive_profiles_storage_path?: string;
+	progressive_profiles_count?: number;
+	progressive_is_complete?: boolean;
 	uid?: string | null;
 	campaign_id?: string | null;
 	query_expansion?: {
@@ -541,7 +546,33 @@ export const GET = handleApiRoute(async (event) => {
 	
 	// Load profiles from Storage if available (final LLM-analyzed profiles)
 	let profiles: any[] = [];
-	if (data.profiles_storage_path) {
+	let isProgressiveResults = false;
+
+	// Check if we should use progressive results (pipeline still running, has progressive data)
+	const shouldUseProgressiveResults =
+		data.status === 'running' &&
+		!data.profiles_storage_path &&
+		data.progressive_profiles_storage_path &&
+		(data.current_stage === 'brightdata_collection' || data.current_stage === 'llm_analysis');
+
+	if (shouldUseProgressiveResults && data.progressive_profiles_storage_path) {
+		// Load progressive results (best profiles found so far during analysis)
+		console.log(`[API] Loading progressive profiles from storage path: ${data.progressive_profiles_storage_path}`, {
+			pipelineId,
+			user_uid: user.uid,
+			campaign_id: data.campaign_id || null,
+			batches_completed: data.brightdata_collection?.batches_completed,
+			total_batches: data.brightdata_collection?.total_batches,
+			request_id: requestId
+		});
+		profiles = await loadProfilesFromStorage(data.progressive_profiles_storage_path);
+		profiles.sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
+		isProgressiveResults = true;
+		console.log(`[API] Loaded ${profiles.length} progressive profiles for pipeline ${pipelineId}`, {
+			request_id: requestId
+		});
+	} else if (data.profiles_storage_path) {
+		// Load final results
 		console.log(`[API] Loading profiles from storage path: ${data.profiles_storage_path}`, {
 			pipelineId,
 			user_uid: user.uid,
@@ -611,6 +642,10 @@ if (campaignId) {
 	}
 }
 	
+	// When we have progressive results, don't show preliminary candidates
+	// (they will be replaced by actual evaluated profiles)
+	const showPreliminaryCandidates = !isProgressiveResults && preliminaryCandidates.length > 0;
+
 	return apiOk({
 		pipeline_id: data.job_id,
 		status: data.status,
@@ -620,13 +655,16 @@ if (campaignId) {
 		start_time: timestampToMillis(data.start_time),
 		end_time: timestampToMillis(data.end_time),
 		error_message: data.error_message ?? null,
-		profiles_count: data.profiles_count ?? profiles.length,
-		profiles_storage_url: data.profiles_storage_url,
+		profiles_count: isProgressiveResults ? (data.progressive_profiles_count ?? profiles.length) : (data.profiles_count ?? profiles.length),
+		profiles_storage_url: isProgressiveResults ? data.progressive_profiles_storage_url : data.profiles_storage_url,
 		remaining_profiles_count: data.remaining_profiles_count ?? remainingProfiles.length,
 		remaining_profiles_storage_url: data.remaining_profiles_storage_url,
 		candidates_storage_url: data.candidates_storage_url,
 		profiles: profiles,
-		preliminary_candidates: preliminaryCandidates.length > 0 ? preliminaryCandidates : undefined,
+		// Flag to indicate these are progressive (partial) results
+		is_progressive: isProgressiveResults,
+		// Don't show preliminary candidates when we have progressive results
+		preliminary_candidates: showPreliminaryCandidates ? preliminaryCandidates : undefined,
 		remaining_profiles: remainingProfiles.length > 0 ? remainingProfiles : undefined,
 		stages: {
 			query_expansion: data.query_expansion ? {

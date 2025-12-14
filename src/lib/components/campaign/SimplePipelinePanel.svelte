@@ -1,8 +1,9 @@
 <script lang="ts">
 import { browser } from '$app/environment';
 import { fly, fade } from 'svelte/transition';
+import { tweened } from 'svelte/motion';
+import { cubicOut } from 'svelte/easing';
 import Button from '$lib/components/Button.svelte';
-import PipelineStatusComponent from './PipelineStatus.svelte';
 import InfluencersTable from './InfluencersTable.svelte';
 import SendOutreachPopupPanel from '$lib/components/outreach/SendOutreachPopupPanel.svelte';
 import EmailDraftPrompt from './EmailDraftPrompt.svelte';
@@ -32,10 +33,9 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     forceOpenForm?: boolean; // When true, opens the form panel immediately regardless of pipeline state
     onSubmit: (params: SearchParams) => void;
     onRerun?: () => void;
-    onFindMore?: (excludeProfileUrls: string[]) => void; // For "Find More Influencers" functionality
+    onFindMore?: (excludeProfileUrls: string[]) => void;
     onSendAll?: () => void;
-    onReopenWebsitePrefill?: () => void; // For reopening website prefill popup
-    onWebsitePrefill?: (websiteUrl: string) => Promise<{ brand?: string; website?: string; about?: string; influencerType?: string }>; // For website analysis
+    onWebsitePrefill?: (websiteUrl: string) => Promise<{ brand?: string; website?: string; about?: string; influencerType?: string }>;
   }
 
   let {
@@ -57,9 +57,20 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     onRerun,
     onFindMore,
     onSendAll,
-    onReopenWebsitePrefill,
     onWebsitePrefill
   }: Props = $props();
+
+  // Tweened progress for smooth animation
+  const tweenedProgress = tweened(0, {
+    duration: 800,
+    easing: cubicOut
+  });
+
+  // Update tweened progress when pipelineStatus changes
+  $effect(() => {
+    const targetProgress = pipelineStatus?.overall_progress ?? 0;
+    tweenedProgress.set(targetProgress);
+  });
 
   // Derived: Check if user has premium features (growth or event plan)
   const isPremiumUser = $derived(() => {
@@ -399,13 +410,14 @@ let showGmailTypeModal = $state(false);
 
   const platformOptions = ['TikTok', 'Instagram'];
   const previewProfiles = $derived((): InfluencerProfile[] => {
-    const candidates = pipelineStatus?.preliminary_candidates;
-    return Array.isArray(candidates) ? candidates.slice(0, 10) : [];
+    // Show profiles as they become available (progressive or final)
+    const profiles = pipelineStatus?.profiles;
+    return Array.isArray(profiles) ? profiles.slice(0, 10) : [];
   });
 
-  // Whether we're showing preliminary (pre-analysis) profiles
-  const isPreliminaryPreview = $derived(() => {
-    return !(pipelineStatus?.profiles && pipelineStatus.profiles.length > 0);
+  // Whether we're showing progressive (partial) results
+  const isProgressivePreview = $derived(() => {
+    return pipelineStatus?.is_progressive === true;
   });
 
   // Shuffle array using seeded random (consistent per session)
@@ -480,6 +492,16 @@ let showGmailTypeModal = $state(false);
   const isCompleted = $derived(() => {
     return pipelineStatus?.status === 'completed' && pipelineStatus?.profiles && pipelineStatus.profiles.length > 0;
   });
+
+  // Whether we have progressive results (evaluated profiles during analysis, before full completion)
+  const hasProgressiveResults = $derived(() => {
+    return pipelineStatus?.is_progressive === true && pipelineStatus?.profiles && pipelineStatus.profiles.length > 0;
+  });
+
+  // Whether to show the InfluencersTable (either completed OR has progressive results)
+  const shouldShowResults = $derived(() => {
+    return isCompleted() || hasProgressiveResults();
+  });
   
   // Get existing profile URLs for "Find More" exclusion
   const existingProfileUrls = $derived(() => {
@@ -497,7 +519,7 @@ let showGmailTypeModal = $state(false);
   }
 
   const recipientsForOutreach = $derived(() =>
-    (pipelineStatus?.profiles ?? pipelineStatus?.preliminary_candidates ?? []).filter(
+    (pipelineStatus?.profiles ?? []).filter(
       (p) => p?.email_address || p?.business_email
     )
   );
@@ -1185,7 +1207,17 @@ let showGmailTypeModal = $state(false);
     {#if isSearchFormSubmitting || hasPipeline}
       <!-- Show pipeline/loading content -->
       <div style="display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden;">
-        {#if !pipelineStatus}
+        {#if pipelineError}
+          <!-- Error state - show error instead of infinite loading -->
+          <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px;">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 8v4M12 16h.01"/>
+            </svg>
+            <p style="font-size: 16px; font-weight: 500; color: var(--color-text-secondary); margin: 0;">Failed to load pipeline</p>
+            <p style="font-size: 14px; color: var(--color-text-muted); margin: 0; text-align: center;">{pipelineError.message}</p>
+          </div>
+        {:else if !pipelineStatus}
           <!-- Loading state -->
           <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;">
             <div class="loading-spinner"></div>
@@ -1564,16 +1596,13 @@ let showGmailTypeModal = $state(false);
             {pipelineError.message}
           </div>
         {/if}
-        <div style="margin-bottom: 24px;">
-          <PipelineStatusComponent status={pipelineStatus} />
-        </div>
       </div>
 
-      {#if !isCompleted()}
-        <!-- Running/Preliminary: Show ghosty preview with cycling animation -->
+      {#if !shouldShowResults()}
+        <!-- Running/Preliminary: Show ghosty preview with cycling animation (only when no progressive results yet) -->
         <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px 32px 32px;">
           {#if previewDisplayProfiles().length > 0}
-            {@const isPreliminary = isPreliminaryPreview()}
+            {@const isProgressive = isProgressivePreview()}
             {@const list = previewDisplayProfiles()}
             <div style="display: flex; flex-direction: column; gap: 16px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -1627,32 +1656,55 @@ let showGmailTypeModal = $state(false);
                   Preliminary matches. Final results may differ after analysis.
                 </p>
             </div>
+          {:else}
+            <!-- No preview profiles yet - show "Starting Search" -->
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 48px;">
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 16px;">
+                <!-- Animated search icon -->
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)); display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite;">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                  </svg>
+                </div>
+                <!-- "Starting Search" with animated dots -->
+                <div style="font-size: 18px; font-weight: 600; color: var(--color-text);">
+                  Starting Search<span class="animated-dots"></span>
+                </div>
+                <p style="font-size: 14px; color: var(--color-text-muted); text-align: center; max-width: 320px; margin: 0;">
+                  We're generating search queries to find the best creators for your campaign.
+                </p>
+              </div>
+            </div>
           {/if}
         </div>
       {/if}
 
-      {#if isCompleted()}
-        <!-- Scrollable influencer table -->
-        <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px;">
-          <InfluencersTable
-            profiles={allProfiles()}
-            selectedIds={selectedInfluencerIds}
-            contactedIds={contactedInfluencerIds}
-            {showContacted}
-            status={pipelineStatus?.status ?? 'pending'}
-            isPreliminary={false}
-            {previousProfileIds}
-            isSearching={isSearchFormSubmitting}
-            onToggleSelection={toggleInfluencerSelection}
-            onToggleContacted={() => showContacted = !showContacted}
-            onFindMore={handleFindMore}
-          />
+      {#if shouldShowResults()}
+        <!-- Scrollable table area -->
+        <div style="flex: 1; min-height: 0; overflow-y: auto;">
+          <div style="padding: 0 32px 32px 32px;">
+            <InfluencersTable
+              profiles={allProfiles()}
+              selectedIds={selectedInfluencerIds}
+              contactedIds={contactedInfluencerIds}
+              {showContacted}
+              status={pipelineStatus?.status ?? 'pending'}
+              isPreliminary={false}
+              {previousProfileIds}
+              isSearching={isSearchFormSubmitting}
+              onToggleSelection={toggleInfluencerSelection}
+              onToggleContacted={() => showContacted = !showContacted}
+              onFindMore={handleFindMore}
+            />
+          </div>
         </div>
-
-        <!-- Bottom Action Bar (sticky outside scroll) -->
-          <div style="border-top: 1px solid var(--color-border); background: var(--color-bg-elevated); flex-shrink: 0; box-shadow: 0 -2px 10px color-mix(in srgb, var(--color-text) 5%, transparent); margin-top: auto;">
-            <!-- Selection row -->
-            <div style="padding: 16px 32px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between;">
+        <!-- Bottom Action Bar -->
+        <div style="border-top: 1px solid var(--color-border); background: var(--color-bg-elevated); flex-shrink: 0; box-shadow: 0 -2px 10px color-mix(in srgb, var(--color-text) 5%, transparent);">
+          <!-- Selection row / Pipeline status row -->
+          <div style="padding: 16px 32px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between;">
+            {#if isCompleted()}
+              <!-- Show selection controls when pipeline is completed -->
               <div style="display: flex; align-items: center; gap: 20px;">
                 <div style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)); border-radius: 8px;">
                   <span style="font-size: 14px; font-weight: 600; color: white;">
@@ -1693,7 +1745,38 @@ let showGmailTypeModal = $state(false);
                   </button>
                 {/if}
               </div>
-            </div>
+            {:else}
+              <!-- Show pipeline status when still running (progressive results) -->
+              {@const batchesCompleted = pipelineStatus?.stages?.brightdata_collection?.batches_completed ?? 0}
+              {@const totalBatches = pipelineStatus?.stages?.brightdata_collection?.total_batches ?? 0}
+              {@const progress = pipelineStatus?.overall_progress ?? 0}
+              <div style="flex: 1; display: flex; align-items: center; gap: 16px;">
+                <!-- Animated pulse indicator -->
+                <div style="width: 10px; height: 10px; background: var(--color-primary); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; flex-shrink: 0;"></div>
+
+                <!-- Progress bar and text -->
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 14px; font-weight: 500; color: var(--color-text);">
+                      Showing best {pipelineStatus?.profiles?.length ?? 0} matches so far
+                    </span>
+                    <span style="font-size: 12px; color: var(--color-text-muted);">
+                      {Math.round($tweenedProgress)}%
+                    </span>
+                  </div>
+                  <!-- Progress bar -->
+                  <div style="height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden;">
+                    <div style="height: 100%; width: {$tweenedProgress}%; background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover)); border-radius: 3px;"></div>
+                  </div>
+                  {#if batchesCompleted > 0 && totalBatches > 0}
+                    <span style="font-size: 11px; color: var(--color-text-muted);">
+                      {batchesCompleted} of {totalBatches} batches complete — results update as more finish
+                    </span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
             
             <!-- Status indicators & Action row -->
             <div style="padding: 20px 32px; display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
@@ -1807,16 +1890,51 @@ let showGmailTypeModal = $state(false);
               </div>
             </div>
           </div>
-        {:else if pipelineStatus?.status === 'running' || !pipelineStatus}
-          <!-- During search or loading: show simplified prompt bar -->
-          <div style="border-top: 1px solid var(--color-border); background: var(--color-bg-elevated); padding: 20px 32px; flex-shrink: 0; box-shadow: 0 -2px 10px color-mix(in srgb, var(--color-text) 5%, transparent); margin-top: auto;">
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
-              <span style="font-size: 13px; color: var(--color-text-muted);">
-                {#if !pipelineStatus}
-                  Prepare your outreach while we load...
-                {:else}
-                  Draft your email while you wait...
+        {:else}
+          {@const batchesCompleted = pipelineStatus?.stages?.brightdata_collection?.batches_completed ?? 0}
+          {@const totalBatches = pipelineStatus?.stages?.brightdata_collection?.total_batches ?? 0}
+          {@const progress = pipelineStatus?.overall_progress ?? 0}
+          <!-- During search or loading: show bottom bar with pipeline status -->
+          <div style="border-top: 1px solid var(--color-border); background: var(--color-bg-elevated); flex-shrink: 0; box-shadow: 0 -2px 10px color-mix(in srgb, var(--color-text) 5%, transparent); margin-top: auto;">
+            <!-- Pipeline status row -->
+            <div style="padding: 16px 32px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; gap: 16px;">
+              <!-- Animated pulse indicator -->
+              <div style="width: 10px; height: 10px; background: var(--color-primary); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; flex-shrink: 0;"></div>
+
+              <!-- Progress bar and text -->
+              <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <span style="font-size: 14px; font-weight: 500; color: var(--color-text);">
+                    {#if pipelineStatus?.current_stage === 'query_expansion'}
+                      Generating search queries...
+                    {:else if pipelineStatus?.current_stage === 'weaviate_search'}
+                      Searching for creators...
+                    {:else if pipelineStatus?.current_stage === 'brightdata_collection' || pipelineStatus?.current_stage === 'llm_analysis'}
+                      Analyzing profiles...
+                    {:else}
+                      Starting search...
+                    {/if}
+                  </span>
+                  <span style="font-size: 12px; color: var(--color-text-muted);">
+                    {Math.round($tweenedProgress)}%
+                  </span>
+                </div>
+                <!-- Progress bar -->
+                <div style="height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden;">
+                  <div style="height: 100%; width: {progress}%; background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover)); border-radius: 3px; transition: width 0.3s ease;"></div>
+                </div>
+                {#if batchesCompleted > 0 && totalBatches > 0}
+                  <span style="font-size: 11px; color: var(--color-text-muted);">
+                    {batchesCompleted} of {totalBatches} batches complete
+                  </span>
                 {/if}
+              </div>
+            </div>
+
+            <!-- Email drafting row -->
+            <div style="padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+              <span style="font-size: 13px; color: var(--color-text-muted);">
+                Draft your email while you wait...
               </span>
 
               <div style="display: flex; align-items: center; gap: 16px;">
@@ -1867,7 +1985,7 @@ let showGmailTypeModal = $state(false);
               </div>
             </div>
           </div>
-      {/if}
+        {/if}
     </div>
   {/if}
 </div>
@@ -2010,6 +2128,19 @@ let showGmailTypeModal = $state(false);
      EDITORIAL DESIGN SYSTEM
      Matching landing page aesthetics
      ======================================== */
+
+  /* Animated dots for "Starting Search..." */
+  .animated-dots::after {
+    content: '';
+    animation: dots 1.5s steps(4, end) infinite;
+  }
+
+  @keyframes dots {
+    0%, 20% { content: ''; }
+    40% { content: '.'; }
+    60% { content: '..'; }
+    80%, 100% { content: '...'; }
+  }
 
   /* CSS Variables for editorial design */
   .sliding-panel {

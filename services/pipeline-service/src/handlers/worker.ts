@@ -25,6 +25,8 @@ import {
   finalizePipelineProgress,
   saveWeaviateCandidates,
   updateProgress,
+  updateProgressiveTopN,
+  finalizeProgressiveResults,
 } from '../utils/firestore-tracker.js';
 import { PipelineTimingTracker } from '../utils/timing-tracker.js';
 import type { BrightDataUnifiedProfile } from '../types/brightdata.js';
@@ -619,7 +621,15 @@ export async function handlePipelineExecution(messageData: {
             batchesCompleted++;
             const batchesProcessing = totalBatches - batchesCompleted - batchesFailed;
             await updateBatchCounters(jobId, batchesCompleted, batchesProcessing, batchesFailed, totalBatches);
-            
+
+            // Update progressive top-N so frontend can show best results found so far
+            try {
+              await updateProgressiveTopN(jobId, batchesCompleted, llmTopN);
+            } catch (progressiveError) {
+              // Don't fail the pipeline if progressive update fails - it's a nice-to-have
+              console.warn(`[Worker] Failed to update progressive top-N for batch ${batchResult.batchIndex + 1}:`, progressiveError);
+            }
+
             // Update progress after each batch completes (incremental from 50%)
             await updateProgress(jobId, 'brightdata_collection', undefined, {
               completed: batchesCompleted,
@@ -660,7 +670,14 @@ export async function handlePipelineExecution(messageData: {
 
       // Merge all batch files into final profiles.json
       const mergedProfiles = await mergeBatchResults(jobId, totalBatches);
-      
+
+      // Mark progressive results as complete
+      try {
+        await finalizeProgressiveResults(jobId);
+      } catch (progressiveError) {
+        console.warn(`[Worker] Failed to finalize progressive results:`, progressiveError);
+      }
+
       // Sort all analyzed profiles by fit score (descending - highest fit_score first)
       mergedProfiles.sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
       

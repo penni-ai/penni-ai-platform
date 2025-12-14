@@ -62,6 +62,24 @@ function followerBound(value: unknown): number | null {
 	return Math.round(value);
 }
 
+// Firestore read timeout (3 seconds) - prevents page loads from hanging
+const FIRESTORE_READ_TIMEOUT_MS = 3000;
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+	let timeoutId: ReturnType<typeof setTimeout>;
+	const timeoutPromise = new Promise<T>((resolve) => {
+		timeoutId = setTimeout(() => resolve(fallback), timeoutMs);
+	});
+	try {
+		const result = await Promise.race([promise, timeoutPromise]);
+		clearTimeout(timeoutId!);
+		return result;
+	} catch (error) {
+		clearTimeout(timeoutId!);
+		throw error;
+	}
+}
+
 export async function serializeCampaignRecord(
 	data: Record<string, unknown>,
 	docId: string,
@@ -70,12 +88,17 @@ export async function serializeCampaignRecord(
 	const id = docId;
 
 	// Read collected data from new structure if uid and id are available
+	// Uses timeout to prevent hanging page loads when Firestore is slow
 	let collectedData: ChatCollectedData | null = null;
 	if (uid && id) {
 		try {
 			const collectedRef = chatCollectedDocRef(uid, id);
-			const collectedDoc = await collectedRef.get();
-			if (collectedDoc.exists) {
+			const collectedDoc = await withTimeout(
+				collectedRef.get(),
+				FIRESTORE_READ_TIMEOUT_MS,
+				null as any // Timeout returns null, handled below
+			);
+			if (collectedDoc && collectedDoc.exists) {
 				collectedData = collectedDoc.data() as ChatCollectedData;
 			}
 		} catch (error) {

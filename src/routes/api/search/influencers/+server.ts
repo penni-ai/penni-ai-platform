@@ -50,14 +50,14 @@ async function bindCampaignPipelineId(options: {
 					// This handles rerunning pipelines - the new pipeline_id should replace the old one
 					tx.set(
 						campaignRef,
-						{ pipeline_id: pipelineId, active_pipeline_id: pipelineId, status: 'searching', updatedAt: serverTimestamp() },
+						{ pipeline_id: pipelineId, status: 'searching', updatedAt: serverTimestamp() },
 						{ merge: true }
 					);
 					return { status: 'updated' as const, existingPipelineId };
 				}
 				tx.set(
 				campaignRef,
-				{ pipeline_id: pipelineId, active_pipeline_id: pipelineId, status: 'searching', updatedAt: serverTimestamp() },
+				{ pipeline_id: pipelineId, status: 'searching', updatedAt: serverTimestamp() },
 				{ merge: true }
 			);
 				return { status: 'updated' as const };
@@ -152,9 +152,9 @@ async function createPipelineDoc(options: {
 			},
 			{ merge: true }
 		);
-		// Mark campaign active pipeline for quick lookup and set status to searching
+		// Mark campaign pipeline for quick lookup and set status to searching
 		await campaignDocRef(uid, campaignId).set(
-			{ active_pipeline_id: pipelineId, status: 'searching', updatedAt: serverTimestamp() },
+			{ pipeline_id: pipelineId, status: 'searching', updatedAt: serverTimestamp() },
 			{ merge: true }
 		);
 		logger?.info('Pipeline doc created', { pipelineId, campaignId, exclusionCount });

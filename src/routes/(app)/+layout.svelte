@@ -10,6 +10,7 @@ import SimplePipelinePanel from '$lib/components/campaign/SimplePipelinePanel.sv
 	import { upgradeModal } from '$lib/stores/upgrade';
 import { firebaseAuth, firebaseFirestore } from '$lib/firebase/client';
 import { ensureFirebaseAuthSession } from '$lib/firebase/auth-sync';
+import { setFirebaseAuthReady, resetFirebaseAuth } from '$lib/stores/firebase-auth';
 import { campaignPanel } from '$lib/stores/campaign-panel';
 import type { LayoutData } from './$types';
 import type { SerializedCampaign } from '$lib/server/campaigns';
@@ -273,24 +274,36 @@ async function subscribeToCampaigns(uid: string) {
 
 onMount(() => {
 	const uid = data?.user?.uid;
-	if (!uid) return;
+	if (!uid) {
+		// No user, but still mark auth as "ready" (just not authenticated)
+		setFirebaseAuthReady();
+		return;
+	}
 
 	let unsubscribe: (() => void) | null = null;
 	ensureFirebaseAuthSession(uid)
 		.then(async () => {
+			// Firebase client auth is now synced with server session
+			console.log('[layout] Firebase auth synced for uid:', uid);
+			setFirebaseAuthReady();
+
 			const unsubscribeFn = await subscribeToCampaigns(uid);
 			if (unsubscribeFn) {
 				unsubscribe = unsubscribeFn;
 			}
 		})
 		.catch((error) => {
-			console.error('[sidebar] unable to start campaign listener due to auth sync failure', error);
+			console.error('[layout] Firebase auth sync failed', error);
+			// Still mark as ready so pages don't hang forever
+			setFirebaseAuthReady();
 		});
 
 	return () => {
 		if (unsubscribe && typeof unsubscribe === 'function') {
 			unsubscribe();
 		}
+		// Reset auth state on unmount (e.g., logout)
+		resetFirebaseAuth();
 	};
 });
 

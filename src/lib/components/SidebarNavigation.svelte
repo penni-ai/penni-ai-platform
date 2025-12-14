@@ -31,7 +31,7 @@ import { theme, type Theme } from '$lib/stores/theme';
 
 	const navItems: NavItem[] = [
 		{ label: 'Dashboard', href: '/dashboard', icon: 'dashboard' },
-		{ label: 'Inbox', href: '/inbox', icon: 'inbox', badge: 2 },
+		{ label: 'Inbox', href: '/inbox', icon: 'inbox' },
 		{ label: 'Settings', href: '/my-account', icon: 'settings' }
 	];
 

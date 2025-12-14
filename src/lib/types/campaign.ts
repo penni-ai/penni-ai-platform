@@ -74,7 +74,9 @@ export type PipelineStatus = {
 	overall_progress: number;
 	profiles_count: number;
 	profiles: InfluencerProfile[];
-	preliminary_candidates?: InfluencerProfile[]; // Low-fidelity candidates from Weaviate search (before LLM analysis)
+	profiles_signed_url?: string; // Signed URL for direct profile fetch
+	progressive_profiles_signed_url?: string; // Signed URL for progressive results
+	is_progressive?: boolean; // True when profiles are partial results from completed batches
 	stages: PipelineStages;
 	error_message?: string | null;
 };

@@ -83,14 +83,15 @@ export async function serializeCampaignRecord(
 		}
 	}
 
-	const typeOfInfluencer = collectedData?.type_of_influencer ?? null;
-	const website = collectedData?.website ?? null;
-	const businessName = collectedData?.business_name ?? null;
-	const locations = collectedData?.influencer_location ?? null;
-	const platform = collectedData?.platform ?? null;
-	const followersMin = collectedData?.min_followers ?? null;
-	const followersMax = collectedData?.max_followers ?? null;
-	const businessSummary = collectedData?.business_about ?? null;
+	// Read from collected data first, then fall back to campaign document fields
+	const typeOfInfluencer = collectedData?.type_of_influencer ?? (typeof data.type_of_influencer === 'string' ? data.type_of_influencer : null);
+	const website = collectedData?.website ?? (typeof data.website === 'string' ? data.website : null);
+	const businessName = collectedData?.business_name ?? (typeof data.business_name === 'string' ? data.business_name : null);
+	const locations = collectedData?.influencer_location ?? (typeof data.locations === 'string' ? data.locations : null);
+	const platform = collectedData?.platform ?? (typeof data.platform === 'string' ? data.platform : null);
+	const followersMin = collectedData?.min_followers ?? (typeof data.followersMin === 'number' ? data.followersMin : null);
+	const followersMax = collectedData?.max_followers ?? (typeof data.followersMax === 'number' ? data.followersMax : null);
+	const businessSummary = collectedData?.business_about ?? (typeof data.businessSummary === 'string' ? data.businessSummary : null);
 
 	// Build collected record for backward compatibility
 	const collected: Record<string, string | undefined> = {};

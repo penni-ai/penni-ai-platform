@@ -29,11 +29,13 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     maxInfluencers: number;
     user?: { uid: string; email: string | null; currentPlan: any; capabilities: any } | null;
     prefilledData?: { brand?: string; website?: string; about?: string; influencerType?: string } | null;
+    forceOpenForm?: boolean; // When true, opens the form panel immediately regardless of pipeline state
     onSubmit: (params: SearchParams) => void;
     onRerun?: () => void;
     onFindMore?: (excludeProfileUrls: string[]) => void; // For "Find More Influencers" functionality
     onSendAll?: () => void;
     onReopenWebsitePrefill?: () => void; // For reopening website prefill popup
+    onWebsitePrefill?: (websiteUrl: string) => Promise<{ brand?: string; website?: string; about?: string; influencerType?: string }>; // For website analysis
   }
 
   let {
@@ -50,11 +52,13 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     campaignId,
     user = null,
     prefilledData = null,
+    forceOpenForm = false,
     onSubmit,
     onRerun,
     onFindMore,
     onSendAll,
-    onReopenWebsitePrefill
+    onReopenWebsitePrefill,
+    onWebsitePrefill
   }: Props = $props();
 
   // Derived: Check if user has premium features (growth or event plan)
@@ -69,13 +73,88 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
   let influencerType = $state('');
   let platforms = $state('Instagram, TikTok');
   let selectedPlatforms = $state<string[]>(['Instagram', 'TikTok']);
-  let location = $state('US');
+  let location = $state('');
 
   let minFollowersLocal = $state<number | null>(10000);
   let maxFollowersLocal = $state<number | null>(500000);
   let topNLocal = $state(searchFormTopN || 10);
   let strictLocationMatching = $state(true);
   let hasAutoAdvanced = $state(false); // Track if we've auto-advanced from website prefill
+
+  // Website entry step state (step 0)
+  let websiteUrl = $state('');
+  let isAnalyzingWebsite = $state(false);
+  let websiteError = $state<string | null>(null);
+
+  // Locked slider interaction state
+  let sliderLockedError = $state(false);
+  let sliderErrorTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Form validation state
+  let fieldErrors = $state<Record<string, string | null>>({
+    brand: null,
+    about: null,
+    influencerType: null,
+    location: null
+  });
+
+  // Validate fields for a specific step
+  function validateStep(stepNum: number): boolean {
+    const errors: Record<string, string | null> = { ...fieldErrors };
+    let isValid = true;
+
+    if (stepNum === 1) {
+      // Step 1: Brand Details - brand and about are required
+      if (!brand.trim()) {
+        errors.brand = 'Brand name is required';
+        isValid = false;
+      } else {
+        errors.brand = null;
+      }
+      if (!about.trim()) {
+        errors.about = 'Please describe what you sell';
+        isValid = false;
+      } else {
+        errors.about = null;
+      }
+    } else if (stepNum === 2) {
+      // Step 2: Influencer Details - type and location are required
+      if (!influencerType.trim()) {
+        errors.influencerType = 'Creator type is required';
+        isValid = false;
+      } else {
+        errors.influencerType = null;
+      }
+      if (!location.trim()) {
+        errors.location = 'Location is required';
+        isValid = false;
+      } else {
+        errors.location = null;
+      }
+    }
+
+    fieldErrors = errors;
+    return isValid;
+  }
+
+  // Clear error when user starts typing
+  function clearFieldError(field: string) {
+    if (fieldErrors[field]) {
+      fieldErrors = { ...fieldErrors, [field]: null };
+    }
+  }
+
+  function handleLockedSliderClick() {
+    sliderLockedError = true;
+    // Clear any existing timeout
+    if (sliderErrorTimeout) {
+      clearTimeout(sliderErrorTimeout);
+    }
+    // Auto-dismiss after 3 seconds
+    sliderErrorTimeout = setTimeout(() => {
+      sliderLockedError = false;
+    }, 3000);
+  }
 
   // Non-linear slider position (0-100)
   let sliderPosition = $state(0);
@@ -262,12 +341,41 @@ let showGmailTypeModal = $state(false);
   // Multi-step navigation
   let step = $state(0);
   const steps = [
-    'Brand basics',
-    'Targets & reach',
-    'Premium features'
+    'Website',        // Step 0: Website entry
+    'Brand basics',   // Step 1: Brand details
+    'Targets & reach', // Step 2: Creator targeting
+    'Premium features' // Step 3: Premium options
   ];
   const isLastStep = $derived(step === steps.length - 1);
   const isFirstStep = $derived(step === 0);
+  const isWebsiteStep = $derived(step === 0); // Used to hide navigation on website step
+
+  // Sliding panel state - starts closed, opens after mount for animation
+  let showFormPanel = $state(false);
+  let panelMounted = $state(false);
+
+  // Open panel after mount (with slight delay for animation)
+  $effect(() => {
+    // Open form panel if:
+    // 1. forceOpenForm is true (editing mode from sidebar), OR
+    // 2. No pipeline and not submitting (normal new campaign flow)
+    const shouldOpen = forceOpenForm || (!hasPipeline && !isSearchFormSubmitting);
+
+    if (!panelMounted && browser && shouldOpen) {
+      panelMounted = true;
+      // Small delay to ensure CSS transition triggers
+      setTimeout(() => {
+        showFormPanel = true;
+      }, 50);
+    }
+  });
+
+  // Close panel when form is submitted (only if not in forced mode)
+  $effect(() => {
+    if (isSearchFormSubmitting) {
+      showFormPanel = false;
+    }
+  });
 
   // Autosave state
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -571,6 +679,21 @@ let showGmailTypeModal = $state(false);
 
   function submitMinimal(event?: Event) {
     event?.preventDefault();
+
+    // Validate all required steps before submission
+    const step1Valid = validateStep(1);
+    const step2Valid = validateStep(2);
+
+    if (!step1Valid || !step2Valid) {
+      // Go to the first step with errors
+      if (!step1Valid) {
+        step = 1;
+      } else if (!step2Valid) {
+        step = 2;
+      }
+      return;
+    }
+
     const description = buildDescription() || influencerSummary || 'Find relevant influencers for my campaign.';
     onSubmit({
       business_description: description,
@@ -965,6 +1088,10 @@ let showGmailTypeModal = $state(false);
   }
 
   function nextStep() {
+    // Validate current step before proceeding
+    if (!validateStep(step)) {
+      return;
+    }
     if (step < steps.length - 1) {
       step += 1;
     }
@@ -975,145 +1102,349 @@ let showGmailTypeModal = $state(false);
       step -= 1;
     }
   }
+
+  // Website entry step handlers
+  async function handleWebsiteSubmit() {
+    if (!websiteUrl.trim()) {
+      websiteError = 'Please enter a website URL';
+      return;
+    }
+
+    websiteError = null;
+    isAnalyzingWebsite = true;
+
+    try {
+      // Normalize URL
+      let url = websiteUrl.trim();
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
+
+      let data: { brand?: string; website?: string; about?: string; influencerType?: string };
+
+      // Use the prop handler if provided, otherwise call API directly
+      if (onWebsitePrefill) {
+        data = await onWebsitePrefill(url);
+      } else {
+        // Call website prefill API directly
+        const response = await fetch('/api/campaigns/prefill-from-website', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ websiteUrl: url })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to analyze website');
+        }
+
+        data = await response.json();
+      }
+
+      // Populate form fields with extracted data
+      if (data.brand) brand = data.brand;
+      if (data.about) about = data.about;
+      if (data.website) website = data.website;
+      if (data.influencerType) influencerType = data.influencerType;
+
+      // Move to next step
+      step = 1;
+      hasAutoAdvanced = true;
+    } catch (err: any) {
+      console.error('Website analysis error:', err);
+      websiteError = err?.message || 'Failed to analyze website. Please try again or enter details manually.';
+    } finally {
+      isAnalyzingWebsite = false;
+    }
+  }
+
+  function handleSkipWebsite() {
+    // Skip website entry and go directly to brand details
+    step = 1;
+  }
 </script>
 
-<div style="display: flex; flex-direction: column; width: 100%; height: 100%; background: {hasPipeline && isCompleted() ? 'var(--color-bg-elevated)' : 'linear-gradient(145deg, var(--color-bg) 0%, var(--color-bg-subtle) 50%, var(--color-bg-subtle) 100%)'}; position: relative; overflow: hidden;">
-  <!-- Subtle grid pattern (only show for form and preliminary) -->
-  {#if !hasPipeline || !isCompleted()}
-    <div style="position: absolute; inset: 0; background-image: linear-gradient(var(--color-border) 1px, transparent 1px), linear-gradient(90deg, var(--color-border) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none; opacity: 0.3;"></div>
+<div class="panel-container" class:inline-mode={forceOpenForm}>
+  {#if !forceOpenForm}
+  <!-- Main content area - always visible behind the panel (only when not in inline mode) -->
+  <div class="main-content-area">
+    {#if isSearchFormSubmitting || hasPipeline}
+      <!-- Show pipeline/loading content -->
+      <div style="display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden;">
+        {#if !pipelineStatus}
+          <!-- Loading state -->
+          <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;">
+            <div class="loading-spinner"></div>
+            <p style="font-size: 16px; font-weight: 500; color: var(--color-text-secondary); margin: 0;">Loading</p>
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <!-- Empty state when form panel is open -->
+      <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+        <p style="font-size: 16px; color: var(--color-text-muted);">Complete the form to search for creators</p>
+      </div>
+    {/if}
+  </div>
 
-    <!-- Soft gradient orbs for depth -->
-    <div style="position: absolute; top: -15%; right: -5%; width: 500px; height: 500px; background: radial-gradient(circle, color-mix(in srgb, var(--color-primary) 8%, transparent) 0%, transparent 70%); pointer-events: none; filter: blur(80px);"></div>
-    <div style="position: absolute; bottom: -20%; left: -10%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(147,112,219,0.06) 0%, transparent 70%); pointer-events: none; filter: blur(100px);"></div>
+  <!-- Backdrop with blur effect -->
+  {#if showFormPanel}
+    <button
+      type="button"
+      class="panel-backdrop"
+      transition:fade={{ duration: 300 }}
+      onclick={() => showFormPanel = false}
+      aria-label="Close form panel"
+    ></button>
+  {/if}
   {/if}
 
-  {#if !hasPipeline && !isSearchFormSubmitting}
-    <!-- Form mode: Full screen with glass effect -->
-    <div style="flex: 1; display: flex; flex-direction: column; width: 100%; height: 100%; padding: 32px; overflow-y: auto; position: relative; z-index: 1;">
-      <!-- Top bar with usage -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 11px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.1em;">Step {step + 1} of {steps.length}</span>
-          <span style="font-size: 11px; color: var(--color-border-strong);">·</span>
-          <span style="font-size: 11px; color: var(--color-primary); font-weight: 500;">{steps[step]}</span>
-        </div>
+  <!-- Sliding Form Panel (or inline form when forceOpenForm is true) -->
+  <div class="sliding-panel" class:panel-open={showFormPanel || forceOpenForm} class:inline-panel={forceOpenForm}>
+    <!-- Grid pattern inside panel -->
+    <div class="panel-grid-pattern"></div>
+
+    <!-- Soft gradient orbs for depth -->
+    <div class="panel-orb panel-orb-top"></div>
+    <div class="panel-orb panel-orb-bottom"></div>
+
+    <!-- Close button (hidden in inline mode since parent provides close) -->
+    {#if !forceOpenForm}
+    <button
+      type="button"
+      class="panel-close-btn"
+      onclick={() => showFormPanel = false}
+      aria-label="Close panel"
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </svg>
+    </button>
+    {/if}
+
+    <!-- Panel content wrapper -->
+    <div class="panel-content-wrapper">
+      <!-- Top bar with step indicator -->
+      <div class="panel-top-bar">
+        <span class="step-label">Step {step + 1} of {steps.length}</span>
+        <span class="step-divider"></span>
+        <span class="step-name">{steps[step]}</span>
       </div>
 
       <!-- Progress bar -->
-      <div style="width: 100%; height: 3px; background: var(--color-border); border-radius: 2px; margin-bottom: 48px; position: relative; overflow: hidden;">
-        <div style="height: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover)); border-radius: 2px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: {((step + 1) / steps.length) * 100}%;"></div>
+      <div class="panel-progress-bar">
+        <div class="panel-progress-fill" style="width: {((step + 1) / steps.length) * 100}%;"></div>
       </div>
 
       <!-- Main content area -->
-      <div style="flex: 1; display: flex; flex-direction: column; width: 100%;">
-        <form style="display: flex; flex-direction: column; flex: 1; width: 100%;" onsubmit={submitMinimal}>
+      <div class="panel-form-container">
+        <form class="editorial-form" onsubmit={submitMinimal}>
           {#if step === 0}
-            <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
-              <div style="margin-bottom: 16px;">
-                <h1 style="font-size: 38px; font-weight: 700; color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.02em;">Tell us about your brand</h1>
-                <p style="font-size: 16px; color: var(--color-text-secondary); margin: 0;">We'll use this to find the perfect creators for you.</p>
-              </div>
-              
-              <div style="display: flex; flex-direction: column; gap: 24px;">
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-brand" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Brand / Company name</label>
-                  <input id="simple-brand" class="light-input" bind:value={brand} oninput={scheduleAutosave} placeholder="e.g., Dune Skincare" />
+            <!-- Step 0: Website Entry - Centered hero view -->
+            <div class="form-step website-step">
+              <div class="website-hero">
+                <h1 class="website-hero-title">Enter your website</h1>
+                <p class="website-hero-subtitle">We'll automatically extract your brand details</p>
+
+                <div class="website-input-wrapper">
+                  <input
+                    type="text"
+                    class="website-hero-input"
+                    bind:value={websiteUrl}
+                    placeholder="yourcompany.com"
+                    disabled={isAnalyzingWebsite}
+                    onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), handleWebsiteSubmit())}
+                  />
+                  <button
+                    type="button"
+                    class="website-hero-btn"
+                    onclick={handleWebsiteSubmit}
+                    disabled={isAnalyzingWebsite}
+                  >
+                    {#if isAnalyzingWebsite}
+                      <span class="btn-spinner"></span>
+                    {:else}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                      </svg>
+                    {/if}
+                  </button>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-about" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">What do you sell?</label>
-                  <textarea id="simple-about" rows="3" class="light-input" bind:value={about} oninput={scheduleAutosave} placeholder="Describe your product and what makes it special..."></textarea>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-website" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Website <span style="color: var(--color-text-muted);">(optional)</span></label>
-                  <input id="simple-website" class="light-input" bind:value={website} oninput={scheduleAutosave} placeholder="https://yoursite.com" />
-                </div>
+
+                {#if websiteError}
+                  <p class="website-error">{websiteError}</p>
+                {/if}
+
+                <button
+                  type="button"
+                  class="website-manual-link"
+                  onclick={handleSkipWebsite}
+                  disabled={isAnalyzingWebsite}
+                >
+                  Enter company details manually
+                </button>
               </div>
             </div>
           {:else if step === 1}
-            <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
-              <div style="margin-bottom: 16px;">
-                <h1 style="font-size: 38px; font-weight: 700; color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.02em;">Who are you looking for?</h1>
-                <p style="font-size: 16px; color: var(--color-text-secondary); margin: 0;">Define the type of creators you need.</p>
+            <!-- Step 1: Brand Details -->
+            <div class="form-step">
+              <div class="step-header">
+                <span class="step-number-large">01</span>
+                <h1 class="step-title">Tell us about your brand</h1>
+                <p class="step-subtitle">We'll use this to find the perfect creators for you.</p>
               </div>
 
-              <div style="display: flex; flex-direction: column; gap: 24px;">
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-type" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Creator niche or type</label>
-                  <input id="simple-type" class="light-input" bind:value={influencerType} oninput={scheduleAutosave} placeholder="e.g., beauty reviewers, fitness coaches, food bloggers" />
+              <hr class="section-divider" />
+
+              <div class="form-fields">
+                <div class="field-group">
+                  <label for="simple-brand" class="field-label">Brand / Company name <span class="field-required">*</span></label>
+                  <input id="simple-brand" class="editorial-input" class:input-error={fieldErrors.brand} bind:value={brand} oninput={() => { scheduleAutosave(); clearFieldError('brand'); }} placeholder="e.g., Dune Skincare" />
+                  {#if fieldErrors.brand}
+                    <p class="field-error-message">{fieldErrors.brand}</p>
+                  {/if}
+                </div>
+                <div class="field-group">
+                  <label for="simple-about" class="field-label">What do you sell? <span class="field-required">*</span></label>
+                  <textarea id="simple-about" rows="3" class="editorial-input editorial-textarea" class:input-error={fieldErrors.about} bind:value={about} oninput={() => { scheduleAutosave(); clearFieldError('about'); }} placeholder="Describe your product and what makes it special..."></textarea>
+                  {#if fieldErrors.about}
+                    <p class="field-error-message">{fieldErrors.about}</p>
+                  {/if}
+                </div>
+                <div class="field-group">
+                  <label for="simple-website" class="field-label">Website <span class="field-optional">(optional)</span></label>
+                  <input id="simple-website" class="editorial-input" bind:value={website} oninput={scheduleAutosave} placeholder="https://yoursite.com" />
+                </div>
+              </div>
+            </div>
+          {:else if step === 2}
+            <div class="form-step">
+              <div class="step-header">
+                <span class="step-number-large">02</span>
+                <h1 class="step-title">Who are you looking for?</h1>
+                <p class="step-subtitle">Define the type of creators you need.</p>
+              </div>
+
+              <hr class="section-divider" />
+
+              <div class="form-fields">
+                <div class="field-group">
+                  <label for="simple-type" class="field-label">Creator niche or type <span class="field-required">*</span></label>
+                  <input id="simple-type" class="editorial-input" class:input-error={fieldErrors.influencerType} bind:value={influencerType} oninput={() => { scheduleAutosave(); clearFieldError('influencerType'); }} placeholder="e.g., beauty reviewers, fitness coaches, food bloggers" />
+                  {#if fieldErrors.influencerType}
+                    <p class="field-error-message">{fieldErrors.influencerType}</p>
+                  {/if}
                 </div>
 
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <label for="simple-location" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Location of Influencers</label>
-                  <input id="simple-location" class="light-input" bind:value={location} oninput={scheduleAutosave} placeholder="e.g., NYC, New York, US, Remote" />
+                <div class="field-group">
+                  <label for="simple-location" class="field-label">Location of Influencers <span class="field-required">*</span></label>
+                  <input id="simple-location" class="editorial-input" class:input-error={fieldErrors.location} bind:value={location} oninput={() => { scheduleAutosave(); clearFieldError('location'); }} placeholder="e.g., NYC, New York, US, Remote" />
+                  {#if fieldErrors.location}
+                    <p class="field-error-message">{fieldErrors.location}</p>
+                  {/if}
                 </div>
 
-                <div style="display: flex; flex-direction: column; gap: 12px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <label for="simple-topn" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">How many creators do you want?</label>
-                    <span style="font-size: 16px; font-weight: 600; color: var(--color-primary);">{topNLocal}</span>
-                  </div>
-                  {#if !shouldHideSlider}
+                <!-- Creators count - minimal locked slider -->
+                <div class="field-group">
+                  <button
+                    type="button"
+                    class="creators-count-minimal"
+                    class:creators-count-minimal-error={sliderLockedError}
+                    onclick={handleLockedSliderClick}
+                  >
+                    <div class="slider-header">
+                      <label for="simple-topn" class="field-label">How many creators do you want?</label>
+                      <span class="slider-value">{topNLocal}</span>
+                    </div>
                     <input
                       id="simple-topn"
                       type="range"
                       min="0"
                       max="100"
                       step="1"
-                      class="slider"
+                      class="editorial-slider editorial-slider-locked"
                       value={sliderPosition}
-                      oninput={handleSliderChange}
-                      style="width: 100%; height: 6px; border-radius: 999px; background: linear-gradient(to right, var(--color-primary) 0%, var(--color-primary) {sliderPosition}%, var(--color-border) {sliderPosition}%, var(--color-border) 100%); outline: none; -webkit-appearance: none; appearance: none; cursor: pointer;"
+                      disabled
+                      tabindex="-1"
+                      style="--slider-percent: {sliderPosition}%;"
                     />
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                      <p style="font-size: 11px; color: var(--color-text-muted); margin: 0;">Min: 10</p>
-                      <p style="font-size: 11px; color: var(--color-text-muted); margin: 0;">
+                    <div class="slider-range-labels">
+                      <span>Min: 10</span>
+                      <span>
                         {#if searchUsage?.remaining !== undefined}
-                          Max: {effectiveMaxInfluencers} {searchUsage.remaining < maxInfluencers ? '(remaining searches)' : '(per-search limit)'}
+                          Max: {effectiveMaxInfluencers} {searchUsage.remaining < maxInfluencers ? '(remaining)' : '(limit)'}
                         {:else}
-                          Max: {maxInfluencers} (per-search limit)
+                          Max: {maxInfluencers}
                         {/if}
-                      </p>
+                      </span>
                     </div>
-                  {/if}
+                    {#if sliderLockedError}
+                      <div class="creators-count-error">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <circle cx="12" cy="12" r="10"/>
+                          <path d="M12 8v4M12 16h.01"/>
+                        </svg>
+                        <span>Upgrade to customize</span>
+                        <button
+                          type="button"
+                          class="creators-count-upgrade-btn"
+                          onclick={(e) => { e.stopPropagation(); upgradeModal.open('Upgrade to customize creator count', 'Get access to search for more creators per campaign.'); }}
+                        >
+                          View Plans
+                        </button>
+                      </div>
+                    {/if}
+                  </button>
                 </div>
               </div>
             </div>
           {:else}
-            <div style="display: flex; flex-direction: column; gap: 32px; flex: 1;">
-              <div style="margin-bottom: 16px;">
-                <h1 style="font-size: 38px; font-weight: 700; color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.02em;">Premium features</h1>
-                <p style="font-size: 16px; color: var(--color-text-secondary); margin: 0;">Fine-tune your search with advanced filters.</p>
-              </div>
-
+            <div class="form-step" class:premium-locked={!isPremiumUser()}>
+              <!-- Premium overlay for non-premium users -->
               {#if !isPremiumUser()}
-                <div style="padding: 20px 24px; background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 8%, transparent), color-mix(in srgb, var(--color-primary-hover) 5%, transparent)); border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent); border-radius: 12px; box-shadow: 0 2px 12px color-mix(in srgb, var(--color-primary) 10%, transparent);">
-                  <div style="display: flex; align-items: flex-start; gap: 16px;">
-                    <div style="font-size: 24px; line-height: 1;">✨</div>
-                    <div style="flex: 1;">
-                      <h3 style="font-size: 16px; font-weight: 600; color: var(--color-primary-hover); margin: 0 0 8px 0;">Upgrade to unlock Premium Features</h3>
-                      <p style="font-size: 14px; color: var(--color-text-secondary); margin: 0 0 16px 0;">Get access to advanced platform selection, custom follower ranges, and strict location matching to find the perfect influencers for your campaign.</p>
-                      <button
-                        type="button"
-                        onclick={() => upgradeModal.open('Upgrade to unlock Premium Features', 'Get access to advanced platform selection, custom follower ranges, and strict location matching.')}
-                        style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; font-size: 14px; font-weight: 600; border-radius: 8px; background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)); color: white; text-decoration: none; transition: all 0.2s; box-shadow: var(--shadow-primary); border: none; cursor: pointer;"
-                      >
-                        View Plans →
-                      </button>
+                <div class="premium-overlay">
+                  <div class="premium-overlay-content">
+                    <div class="premium-badge">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+                      </svg>
+                      Premium
                     </div>
+                    <h2 class="premium-overlay-title">Unlock Premium Features</h2>
+                    <p class="premium-overlay-text">Get access to advanced platform selection, custom follower ranges, and strict location matching.</p>
+                    <button
+                      type="button"
+                      onclick={() => upgradeModal.open('Upgrade to unlock Premium Features', 'Get access to advanced platform selection, custom follower ranges, and strict location matching.')}
+                      class="premium-overlay-btn"
+                    >
+                      View Plans
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                      </svg>
+                    </button>
                   </div>
                 </div>
               {/if}
 
-              <div style="display: flex; flex-direction: column; gap: 24px;">
-                <div style="display: flex; flex-direction: column; gap: 12px;">
-                  <div id="platforms-label" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Platforms</div>
-                  <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+              <div class="step-header">
+                <span class="step-number-large">03</span>
+                <h1 class="step-title">Premium features</h1>
+                <p class="step-subtitle">Fine-tune your search with advanced filters.</p>
+              </div>
+
+              <hr class="section-divider" />
+
+              <div class="form-fields">
+                <div class="field-group">
+                  <span id="platforms-label" class="field-label">Platforms</span>
+                  <div class="platform-options">
                     {#each platformOptions as option}
                       <button
                         type="button"
-                        class="platform-btn"
+                        class="platform-chip"
+                        class:platform-chip-selected={selectedPlatforms.includes(option)}
+                        class:platform-chip-disabled={!isPremiumUser()}
                         disabled={!isPremiumUser()}
-                        style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid {selectedPlatforms.includes(option) ? 'color-mix(in srgb, var(--color-primary) 40%, transparent)' : 'var(--color-border)'}; background: {selectedPlatforms.includes(option) ? 'linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 12%, transparent), color-mix(in srgb, var(--color-primary-hover) 8%, transparent))' : 'color-mix(in srgb, var(--color-bg-elevated) 70%, transparent)'}; backdrop-filter: blur(10px); color: {selectedPlatforms.includes(option) ? 'var(--color-primary-hover)' : 'var(--color-text-secondary)'}; cursor: {isPremiumUser() ? 'pointer' : 'not-allowed'}; opacity: {isPremiumUser() ? '1' : '0.5'}; transition: all 0.2s; box-shadow: {selectedPlatforms.includes(option) ? '0 2px 12px color-mix(in srgb, var(--color-primary) 15%, transparent)' : 'var(--shadow-sm)'};"
                         onclick={() => togglePlatform(option)}
                         aria-labelledby="platforms-label"
                       >
@@ -1123,114 +1454,108 @@ let showGmailTypeModal = $state(false);
                   </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                  <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label for="simple-min" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Min followers</label>
-                    <input id="simple-min" type="number" class="light-input" bind:value={minFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="10,000" disabled={!isPremiumUser()} style="opacity: {isPremiumUser() ? '1' : '0.5'}; cursor: {isPremiumUser() ? 'text' : 'not-allowed'};" />
+                <div class="field-row">
+                  <div class="field-group">
+                    <label for="simple-min" class="field-label">Min followers</label>
+                    <input id="simple-min" type="number" class="editorial-input" class:input-disabled={!isPremiumUser()} bind:value={minFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="10,000" disabled={!isPremiumUser()} />
                   </div>
-                  <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label for="simple-max" style="font-size: 13px; font-weight: 500; color: var(--color-text-secondary);">Max followers</label>
-                    <input id="simple-max" type="number" class="light-input" bind:value={maxFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="500,000" disabled={!isPremiumUser()} style="opacity: {isPremiumUser() ? '1' : '0.5'}; cursor: {isPremiumUser() ? 'text' : 'not-allowed'};" />
+                  <div class="field-group">
+                    <label for="simple-max" class="field-label">Max followers</label>
+                    <input id="simple-max" type="number" class="editorial-input" class:input-disabled={!isPremiumUser()} bind:value={maxFollowersLocal} oninput={scheduleAutosave} min="0" step="1000" placeholder="500,000" disabled={!isPremiumUser()} />
                   </div>
                 </div>
 
-                <div style="display: flex; align-items: center; gap: 16px; padding: 16px 20px; background: color-mix(in srgb, var(--color-bg-elevated) 60%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-sm); opacity: {isPremiumUser() ? '1' : '0.5'};">
+                <hr class="section-divider section-divider-light" />
+
+                <div class="toggle-row" class:toggle-disabled={!isPremiumUser()}>
                   <button
                     type="button"
                     disabled={!isPremiumUser()}
                     onclick={() => strictLocationMatching = !strictLocationMatching}
                     id="simple-strict-location"
-                    style="position: relative; width: 48px; height: 26px; border-radius: 999px; border: none; cursor: {isPremiumUser() ? 'pointer' : 'not-allowed'}; transition: background 0.2s; background: {strictLocationMatching ? 'linear-gradient(90deg, var(--color-primary), var(--color-primary-hover))' : 'var(--color-border-strong)'};"
+                    class="toggle-switch"
+                    class:toggle-active={strictLocationMatching}
                     role="switch"
                     aria-checked={strictLocationMatching}
                     aria-label="Toggle strict location matching"
                   >
-                    <span style="position: absolute; top: 3px; left: {strictLocationMatching ? '25px' : '3px'}; width: 20px; height: 20px; background: var(--color-bg-elevated); border-radius: 50%; transition: left 0.2s; box-shadow: 0 2px 4px color-mix(in srgb, var(--color-text) 15%, transparent);"></span>
+                    <span class="toggle-knob"></span>
                   </button>
-                  <div style="flex: 1;">
-                    <label id="simple-strict-location-label" style="font-size: 14px; font-weight: 500; color: var(--color-text);" for="simple-strict-location">Strict location matching</label>
-                    <p style="font-size: 12px; color: var(--color-text-muted); margin: 4px 0 0 0;">Only show creators with verified locations</p>
+                  <div class="toggle-content">
+                    <label id="simple-strict-location-label" class="toggle-label" for="simple-strict-location">Strict location matching</label>
+                    <p class="toggle-description">Only show creators with verified locations</p>
                   </div>
                 </div>
               </div>
             </div>
           {/if}
 
-          <!-- Navigation buttons - sticky at bottom -->
-          <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 32px; margin-top: auto; border-top: 1px solid var(--color-border);">
-            {#if isFirstStep}
-              <button
-                type="button"
-                onclick={() => onReopenWebsitePrefill?.()}
-                class="nav-btn-back-light"
-                style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent); backdrop-filter: blur(10px); color: var(--color-text-secondary); cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm);"
-              >
-                I have a website
-              </button>
-            {:else}
-              <button
-                type="button"
-                onclick={prevStep}
-                class="nav-btn-back-light"
-                style="padding: 14px 28px; font-size: 14px; font-weight: 500; border-radius: 10px; border: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent); backdrop-filter: blur(10px); color: var(--color-text-secondary); cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm);"
-              >
-                ← Back
-              </button>
-            {/if}
-            
+          <!-- Navigation buttons - sticky at bottom (hidden on website step) -->
+          {#if !isWebsiteStep}
+          <div class="form-navigation">
+            <button
+              type="button"
+              onclick={prevStep}
+              class="nav-btn-secondary"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+              Back
+            </button>
+
             {#if isLastStep}
               <button
                 type="submit"
                 disabled={isSearchFormSubmitting}
-                class="nav-btn-primary-light"
-                style="padding: 16px 40px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%); color: var(--color-text-inverse); cursor: {isSearchFormSubmitting ? 'not-allowed' : 'pointer'}; transition: all 0.2s; box-shadow: var(--shadow-primary); opacity: {isSearchFormSubmitting ? '0.7' : '1'};"
+                class="nav-btn-primary"
+                class:nav-btn-loading={isSearchFormSubmitting}
               >
                 {#if isSearchFormSubmitting}
-                  <span style="display: inline-flex; align-items: center; gap: 8px;">
-                    <span style="width: 16px; height: 16px; border: 2px solid color-mix(in srgb, var(--color-text-inverse) 30%, transparent); border-top-color: var(--color-text-inverse); border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
-                    Launching...
-                  </span>
+                  <span class="btn-spinner"></span>
+                  Launching...
                 {:else}
-                  Launch search →
+                  Launch search
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                  </svg>
                 {/if}
               </button>
             {:else}
               <button
                 type="button"
                 onclick={nextStep}
-                class="nav-btn-primary-light"
-                style="padding: 16px 40px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%); color: var(--color-text-inverse); cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-primary);"
+                class="nav-btn-primary"
               >
-                Continue →
+                Continue
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
               </button>
             {/if}
           </div>
+          {/if}
         </form>
       </div>
     </div>
-  {:else}
-    <!-- Pipeline mode: Full-width light layout with glass effect -->
-    <div style="display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden;">
-      {#if !pipelineStatus}
-        <!-- Loading state: Show centered animated loading indicator -->
-        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;">
-          <div class="loading-spinner"></div>
-          <p style="font-size: 16px; font-weight: 500; color: var(--color-text-secondary); margin: 0;">Loading</p>
-        </div>
-      {:else}
-        <div style="flex-shrink: 0; padding: 32px 32px 0 32px;">
-          {#if pipelineError}
-            <div style="padding: 16px 20px; background: color-mix(in srgb, var(--color-error) 8%, transparent); backdrop-filter: blur(10px); border: 1px solid color-mix(in srgb, var(--color-error) 20%, transparent); border-radius: 12px; color: var(--color-error); font-size: 14px; margin-bottom: 24px;">
-              {pipelineError.message}
-            </div>
-          {/if}
-          <div style="margin-bottom: 24px;">
-            <PipelineStatusComponent status={pipelineStatus} />
-          </div>
-        </div>
-      {/if}
+  </div>
+  <!-- End of Sliding Panel -->
 
-      {#if pipelineStatus && !isCompleted()}
+  <!-- Pipeline status content (shown in main-content-area when pipelineStatus exists) -->
+  {#if pipelineStatus}
+    <div class="pipeline-overlay">
+      <div style="flex-shrink: 0; padding: 32px 32px 0 32px;">
+        {#if pipelineError}
+          <div style="padding: 16px 20px; background: color-mix(in srgb, var(--color-error) 8%, transparent); backdrop-filter: blur(10px); border: 1px solid color-mix(in srgb, var(--color-error) 20%, transparent); border-radius: 12px; color: var(--color-error); font-size: 14px; margin-bottom: 24px;">
+            {pipelineError.message}
+          </div>
+        {/if}
+        <div style="margin-bottom: 24px;">
+          <PipelineStatusComponent status={pipelineStatus} />
+        </div>
+      </div>
+
+      {#if !isCompleted()}
         <!-- Running/Preliminary: Show ghosty preview with cycling animation -->
         <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px 32px 32px;">
           {#if previewDisplayProfiles().length > 0}
@@ -1292,7 +1617,7 @@ let showGmailTypeModal = $state(false);
         </div>
       {/if}
 
-      {#if pipelineStatus && isCompleted()}
+      {#if isCompleted()}
         <!-- Scrollable influencer table -->
         <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px;">
           <InfluencersTable
@@ -1309,10 +1634,8 @@ let showGmailTypeModal = $state(false);
             onFindMore={handleFindMore}
           />
         </div>
-      {/if}
 
         <!-- Bottom Action Bar (sticky outside scroll) -->
-        {#if pipelineStatus && isCompleted()}
           <div style="border-top: 1px solid var(--color-border); background: var(--color-bg-elevated); flex-shrink: 0; box-shadow: 0 -2px 10px color-mix(in srgb, var(--color-text) 5%, transparent); margin-top: auto;">
             <!-- Selection row -->
             <div style="padding: 16px 32px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between;">
@@ -1514,9 +1837,9 @@ let showGmailTypeModal = $state(false);
               </div>
             </div>
           </div>
-        {/if}
-      </div>
-    {/if}
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <SendOutreachPopupPanel
@@ -1653,6 +1976,944 @@ let showGmailTypeModal = $state(false);
 />
 
 <style>
+  /* ========================================
+     EDITORIAL DESIGN SYSTEM
+     Matching landing page aesthetics
+     ======================================== */
+
+  /* CSS Variables for editorial design */
+  .sliding-panel {
+    --coral: #FF6F61;
+    --coral-dark: #e85d50;
+    --ink: #1a1a1a;
+    --ink-light: #4a4a4a;
+    --ink-muted: #8a8a8a;
+    --paper: #fafaf9;
+    --paper-warm: #f5f4f2;
+    --border-light: #e8e6e3;
+  }
+
+  /* ========================================
+     SLIDING PANEL STYLES
+     ======================================== */
+  .panel-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    background: var(--color-bg-elevated);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .main-content-area {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    z-index: 1;
+  }
+
+  .panel-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 10;
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .sliding-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 80%;
+    background: var(--paper);
+    box-shadow: -20px 0 60px rgba(0, 0, 0, 0.2);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translateX(100%);
+    transition: transform 500ms cubic-bezier(0.4, 0, 0.2, 1);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    will-change: transform;
+  }
+
+  .sliding-panel.panel-open {
+    transform: translateX(0);
+  }
+
+  /* Inline mode - when rendered inside another panel overlay */
+  .sliding-panel.inline-panel {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    transform: none;
+    box-shadow: none;
+    z-index: 1;
+  }
+
+  .panel-container.inline-mode {
+    height: 100%;
+  }
+
+  /* Panel decorative elements */
+  .panel-grid-pattern {
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(var(--border-light) 1px, transparent 1px), linear-gradient(90deg, var(--border-light) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    opacity: 0.3;
+  }
+
+  .panel-orb {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 50%;
+  }
+
+  .panel-orb-top {
+    top: -15%;
+    right: -5%;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(255, 111, 97, 0.08) 0%, transparent 70%);
+    filter: blur(80px);
+  }
+
+  .panel-orb-bottom {
+    bottom: -20%;
+    left: -10%;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(147, 112, 219, 0.06) 0%, transparent 70%);
+    filter: blur(100px);
+  }
+
+  /* Close button */
+  .panel-close-btn {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--ink-muted);
+    cursor: pointer;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    z-index: 10;
+  }
+
+  .panel-close-btn:hover {
+    background: var(--border-light);
+    color: var(--ink);
+  }
+
+  /* Panel content wrapper */
+  .panel-content-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding: 48px 56px;
+    overflow-y: auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Top bar with step indicator */
+  .panel-top-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .step-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+  }
+
+  .step-divider {
+    width: 4px;
+    height: 4px;
+    background: var(--border-light);
+    border-radius: 50%;
+  }
+
+  .step-name {
+    font-size: 0.7rem;
+    color: var(--coral);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  /* Progress bar */
+  .panel-progress-bar {
+    width: 100%;
+    height: 2px;
+    background: var(--border-light);
+    margin-bottom: 56px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .panel-progress-fill {
+    height: 100%;
+    background: var(--coral);
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Form container */
+  .panel-form-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .editorial-form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    width: 100%;
+  }
+
+  .form-step {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  /* Website Hero Step */
+  .website-step {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 2rem;
+  }
+
+  .website-hero {
+    max-width: 500px;
+    width: 100%;
+  }
+
+  .website-hero-title {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: clamp(2.5rem, 5vw, 3.5rem);
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 0.75rem 0;
+    line-height: 1.1;
+  }
+
+  .website-hero-subtitle {
+    font-size: 1.1rem;
+    color: var(--ink-muted);
+    margin: 0 0 2.5rem 0;
+    line-height: 1.5;
+  }
+
+  .website-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: white;
+    border: 2px solid var(--border-light);
+    border-radius: 3rem;
+    padding: 0.25rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .website-input-wrapper:focus-within {
+    border-color: var(--coral);
+    box-shadow: 0 0 0 4px rgba(255, 111, 97, 0.1);
+  }
+
+  .website-hero-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 1rem 1.5rem;
+    font-size: 1.1rem;
+    color: var(--ink);
+    outline: none;
+  }
+
+  .website-hero-input::placeholder {
+    color: var(--ink-muted);
+  }
+
+  .website-hero-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    background: var(--coral);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .website-hero-btn:hover:not(:disabled) {
+    background: var(--coral-dark);
+    transform: scale(1.05);
+  }
+
+  .website-hero-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .btn-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .website-error {
+    color: #ef4444;
+    font-size: 0.875rem;
+    margin: 1rem 0 0 0;
+  }
+
+  .website-manual-link {
+    display: inline-block;
+    margin-top: 2rem;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--ink-muted);
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 0.2s ease;
+  }
+
+  .website-manual-link:hover:not(:disabled) {
+    color: var(--coral);
+  }
+
+  .website-manual-link:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Step header */
+  .step-header {
+    margin-bottom: 8px;
+  }
+
+  .step-number-large {
+    display: block;
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 4rem;
+    color: var(--coral);
+    line-height: 1;
+    margin-bottom: 16px;
+    opacity: 0.9;
+  }
+
+  .step-title {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: clamp(1.75rem, 3vw, 2.25rem);
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 12px 0;
+    line-height: 1.2;
+  }
+
+  .step-subtitle {
+    font-size: 1rem;
+    color: var(--ink-light);
+    margin: 0;
+    line-height: 1.6;
+  }
+
+  /* Section divider */
+  .section-divider {
+    border: none;
+    height: 1px;
+    background: var(--border-light);
+    margin: 32px 0;
+  }
+
+  .section-divider-light {
+    margin: 24px 0;
+    opacity: 0.6;
+  }
+
+  /* Form fields */
+  .form-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  .field-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .field-optional {
+    font-weight: 400;
+    color: var(--ink-muted);
+    opacity: 0.7;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .field-required {
+    color: var(--color-error, #dc2626);
+    font-weight: 500;
+  }
+
+  .field-error-message {
+    margin: 6px 0 0 0;
+    font-size: 0.85rem;
+    color: var(--color-error, #dc2626);
+  }
+
+  .input-error {
+    border-bottom-color: var(--color-error, #dc2626) !important;
+  }
+
+  /* Editorial input - bottom border only */
+  .editorial-input {
+    width: 100%;
+    padding: 16px 0;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--ink);
+    font-size: 1.1rem;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    outline: none;
+    transition: border-color 0.2s ease;
+    resize: none;
+  }
+
+  .editorial-input::placeholder {
+    color: var(--ink-muted);
+    opacity: 0.6;
+  }
+
+  .editorial-input:focus {
+    border-bottom-color: var(--coral);
+  }
+
+  .editorial-textarea {
+    min-height: 80px;
+    line-height: 1.6;
+  }
+
+  .input-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Premium locked state */
+  .form-step.premium-locked {
+    position: relative;
+  }
+
+  .form-step.premium-locked > *:not(.premium-overlay) {
+    filter: blur(3px);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .premium-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 111, 97, 0.15) 0%, rgba(255, 111, 97, 0.25) 100%);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+  }
+
+  .premium-overlay-content {
+    text-align: center;
+    padding: 2rem;
+    max-width: 400px;
+  }
+
+  .premium-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--coral);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-radius: 2rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .premium-badge svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .premium-overlay-title {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 1.75rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 0.75rem;
+  }
+
+  .premium-overlay-text {
+    font-size: 0.9rem;
+    color: var(--ink-light);
+    line-height: 1.6;
+    margin: 0 0 1.5rem;
+  }
+
+  .premium-overlay-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1.75rem;
+    background: var(--coral);
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 2rem;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    box-shadow: 0 4px 16px rgba(255, 111, 97, 0.35);
+  }
+
+  .premium-overlay-btn:hover {
+    background: var(--coral-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 111, 97, 0.45);
+  }
+
+  /* Slider styles */
+  .slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .slider-value {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 1.5rem;
+    color: var(--coral);
+  }
+
+  .editorial-slider {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right, var(--coral) 0%, var(--coral) var(--slider-percent, 0%), var(--border-light) var(--slider-percent, 0%), var(--border-light) 100%);
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+    margin: 12px 0;
+  }
+
+  .editorial-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--coral);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(255, 111, 97, 0.3);
+    transition: all 0.2s;
+  }
+
+  .editorial-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 4px 12px rgba(255, 111, 97, 0.4);
+  }
+
+  .editorial-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--coral);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 8px rgba(255, 111, 97, 0.3);
+    transition: all 0.2s;
+  }
+
+  .slider-range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--ink-muted);
+  }
+
+  .slider-range-labels-muted {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  /* Locked slider state */
+  .editorial-slider-locked {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .editorial-slider-locked::-webkit-slider-thumb {
+    cursor: not-allowed;
+  }
+
+  .editorial-slider-locked::-moz-range-thumb {
+    cursor: not-allowed;
+  }
+
+  /* Minimal creators count wrapper */
+  .creators-count-minimal {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .creators-count-minimal-error .editorial-slider-locked {
+    background: linear-gradient(to right, #ef4444 0%, #ef4444 var(--slider-percent, 0%), var(--border-light) var(--slider-percent, 0%), var(--border-light) 100%);
+  }
+
+  .creators-count-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 8px;
+    color: #ef4444;
+    font-size: 0.8rem;
+  }
+
+  .creators-count-error svg {
+    flex-shrink: 0;
+  }
+
+  .creators-count-error span {
+    flex: 1;
+  }
+
+  .creators-count-upgrade-btn {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    background: #ef4444;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .creators-count-upgrade-btn:hover {
+    background: #dc2626;
+  }
+
+  /* Platform chips */
+  .platform-options {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .platform-chip {
+    padding: 12px 24px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border-radius: 999px;
+    border: 1px solid var(--border-light);
+    background: transparent;
+    color: var(--ink-light);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+
+  .platform-chip:hover:not(:disabled) {
+    border-color: var(--coral);
+    color: var(--coral);
+  }
+
+  .platform-chip-selected {
+    border-color: var(--coral);
+    background: rgba(255, 111, 97, 0.08);
+    color: var(--coral);
+  }
+
+  .platform-chip-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Toggle switch */
+  .toggle-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 8px 0;
+  }
+
+  .toggle-disabled {
+    opacity: 0.5;
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    background: var(--border-light);
+    flex-shrink: 0;
+  }
+
+  .toggle-switch.toggle-active {
+    background: var(--coral);
+  }
+
+  .toggle-switch:disabled {
+    cursor: not-allowed;
+  }
+
+  .toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: left 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  }
+
+  .toggle-active .toggle-knob {
+    left: 22px;
+  }
+
+  .toggle-content {
+    flex: 1;
+  }
+
+  .toggle-label {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--ink);
+    display: block;
+  }
+
+  .toggle-description {
+    font-size: 0.8rem;
+    color: var(--ink-muted);
+    margin: 4px 0 0 0;
+  }
+
+  /* Premium upsell */
+  .premium-upsell {
+    padding: 24px 0;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border-light);
+  }
+
+  .premium-upsell-content {
+    max-width: 100%;
+  }
+
+  .premium-upsell-title {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 1.25rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin: 0 0 8px 0;
+  }
+
+  .premium-upsell-text {
+    font-size: 0.9rem;
+    color: var(--ink-light);
+    margin: 0 0 20px 0;
+    line-height: 1.6;
+  }
+
+  .premium-upsell-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border-radius: 999px;
+    background: var(--coral);
+    color: white;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+
+  .premium-upsell-btn:hover {
+    background: var(--coral-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(255, 111, 97, 0.3);
+  }
+
+  /* Form navigation */
+  .form-navigation {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 40px;
+    margin-top: auto;
+    border-top: 1px solid var(--border-light);
+  }
+
+  .nav-btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 28px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border-radius: 999px;
+    border: 1px solid var(--border-light);
+    background: transparent;
+    color: var(--ink-light);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+
+  .nav-btn-secondary:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .nav-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 32px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: 999px;
+    border: none;
+    background: var(--coral);
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+
+  .nav-btn-primary:hover:not(:disabled) {
+    background: var(--coral-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(255, 111, 97, 0.3);
+  }
+
+  .nav-btn-primary:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .nav-btn-loading {
+    pointer-events: none;
+  }
+
+  .btn-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ========================================
+     ORIGINAL STYLES (preserved)
+     ======================================== */
+  .pipeline-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    z-index: 5;
+  }
+
   @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
@@ -1689,50 +2950,6 @@ let showGmailTypeModal = $state(false);
     animation: spin 1s linear infinite;
   }
 
-  /* Light mode input styling */
-  .light-input {
-    width: 100%;
-    padding: 16px 20px;
-    background: color-mix(in srgb, var(--color-bg-elevated) 70%, transparent);
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
-    color: var(--color-text);
-    font-size: 16px;
-    outline: none;
-    transition: all 0.2s;
-    resize: none;
-    box-shadow: var(--shadow-sm);
-  }
-
-  .light-input::placeholder {
-    color: var(--color-text-muted);
-  }
-
-  .light-input:focus {
-    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
-    background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent);
-    box-shadow: 0 2px 12px color-mix(in srgb, var(--color-primary) 10%, transparent);
-  }
-
-  /* Light mode navigation buttons */
-  .nav-btn-back-light:not(:disabled):hover {
-    border-color: var(--color-border-strong) !important;
-    background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent) !important;
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-text) 8%, transparent) !important;
-  }
-
-  .nav-btn-primary-light:not(:disabled):hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 25px color-mix(in srgb, var(--color-primary) 35%, transparent) !important;
-  }
-
-  /* Platform button hover */
-  .platform-btn:hover {
-    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent) !important;
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 10%, transparent) !important;
-  }
-
   /* Light mode selection links */
   .select-link-btn-light {
     font-size: 13px;
@@ -1757,40 +2974,6 @@ let showGmailTypeModal = $state(false);
 
   .select-link-btn-light.clear-selection-light:hover {
     color: var(--color-text-secondary);
-  }
-
-  /* Slider thumb styling */
-  .slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--color-primary);
-    cursor: pointer;
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 30%, transparent);
-    transition: all 0.2s;
-  }
-
-  .slider::-webkit-slider-thumb:hover {
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 40%, transparent);
-  }
-
-  .slider::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--color-primary);
-    cursor: pointer;
-    border: none;
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 30%, transparent);
-    transition: all 0.2s;
-  }
-
-  .slider::-moz-range-thumb:hover {
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 40%, transparent);
   }
 
   /* Chat bubble prompts */
@@ -1933,6 +3116,56 @@ let showGmailTypeModal = $state(false);
     }
     50% {
       opacity: 0.6;
+    }
+  }
+
+  /* ========================================
+     RESPONSIVE STYLES
+     ======================================== */
+  @media (max-width: 768px) {
+    .sliding-panel {
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .panel-content-wrapper {
+      padding: 32px 24px;
+    }
+
+    .panel-close-btn {
+      top: 16px;
+      right: 16px;
+    }
+
+    .step-number-large {
+      font-size: 3rem;
+    }
+
+    .step-title {
+      font-size: 1.5rem;
+    }
+
+    .field-row {
+      grid-template-columns: 1fr;
+    }
+
+    .form-navigation {
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .nav-btn-secondary,
+    .nav-btn-primary {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .nav-btn-secondary {
+      order: 2;
+    }
+
+    .nav-btn-primary {
+      order: 1;
     }
   }
 </style>

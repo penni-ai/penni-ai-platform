@@ -325,18 +325,32 @@ let showGmailTypeModal = $state(false);
     selectedInfluencerIds = new Set();
   }
   
-  // Auto-select all influencers when pipeline completes
-  let autoSelectedPipelineId: string | null = $state(null);
+  // Show select all hint popup when pipeline completes (one-time)
+  let showSelectAllHint = $state(false);
+  let hintShownForPipelineId: string | null = $state(null);
+
   $effect(() => {
     const pipelineId = effectiveCampaign?.pipeline_id ?? null;
     const completed = isCompleted();
     const profiles = allProfiles();
-    
-    if (completed && pipelineId && autoSelectedPipelineId !== pipelineId && profiles.length > 0) {
-      autoSelectedPipelineId = pipelineId;
-      selectAllInfluencers();
+
+    // Show hint when pipeline completes (if not already shown for this pipeline and not dismissed globally)
+    if (completed && pipelineId && hintShownForPipelineId !== pipelineId && profiles.length > 0) {
+      hintShownForPipelineId = pipelineId;
+      // Check if user has dismissed this hint before
+      const dismissed = typeof localStorage !== 'undefined' && localStorage.getItem('selectAllHintDismissed') === 'true';
+      if (!dismissed) {
+        showSelectAllHint = true;
+      }
     }
   });
+
+  function dismissSelectAllHint() {
+    showSelectAllHint = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('selectAllHintDismissed', 'true');
+    }
+  }
 
   // Multi-step navigation
   let step = $state(0);
@@ -1646,13 +1660,29 @@ let showGmailTypeModal = $state(false);
                   </span>
                 </div>
                 {#if selectedCount === 0}
-                  <button
-                    type="button"
-                    class="select-link-btn-light select-all-light"
-                    onclick={selectAllInfluencers}
-                  >
-                    Select all
-                  </button>
+                  <div style="position: relative;">
+                    <button
+                      type="button"
+                      class="select-link-btn-light select-all-light"
+                      onclick={() => { selectAllInfluencers(); dismissSelectAllHint(); }}
+                    >
+                      Select all
+                    </button>
+                    {#if showSelectAllHint}
+                      <div class="select-all-hint" transition:fly={{ y: -10, duration: 200 }}>
+                        <div class="hint-arrow"></div>
+                        <div class="hint-content">
+                          <span class="hint-icon">👆</span>
+                          <span class="hint-text">Now, select influencers to send outreach to!</span>
+                          <button type="button" class="hint-dismiss" onclick={dismissSelectAllHint}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M18 6L6 18M6 6l12 12"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
                 {:else}
                   <button
                     type="button"
@@ -2974,6 +3004,73 @@ let showGmailTypeModal = $state(false);
 
   .select-link-btn-light.clear-selection-light:hover {
     color: var(--color-text-secondary);
+  }
+
+  /* Select All hint popup */
+  .select-all-hint {
+    position: absolute;
+    top: calc(100% + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    animation: hint-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes hint-pulse {
+    0%, 100% { transform: translateX(-50%) scale(1); }
+    50% { transform: translateX(-50%) scale(1.02); }
+  }
+
+  .hint-arrow {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-bottom: 10px solid var(--color-primary);
+  }
+
+  .hint-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--color-primary);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    white-space: nowrap;
+  }
+
+  .hint-icon {
+    font-size: 18px;
+  }
+
+  .hint-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+  }
+
+  .hint-dismiss {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .hint-dismiss:hover {
+    background: rgba(255, 255, 255, 0.3);
   }
 
   /* Chat bubble prompts */

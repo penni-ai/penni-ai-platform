@@ -11,7 +11,8 @@
         "functions",
         "penni-chatbot",
         "chatbot-function"
-      ]
+      ],
+      "alwaysDeployFromSource": false
     }
   ],
   "emulators": {
@@ -36,9 +37,11 @@
   },
   "firestore": {
     "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "indexes": "firestore.indexes.json",
+    "database": "(default)"
   },
   "storage": {
-    "rules": "storage.rules"
+    "rules": "storage.rules",
+    "bucket": "penni-ai-platform.firebasestorage.app"
   }
 }

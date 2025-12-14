@@ -1390,57 +1390,89 @@ let showGmailTypeModal = $state(false);
                   {/if}
                 </div>
 
-                <!-- Creators count - minimal locked slider -->
+                <!-- Creators count slider - unlocked for premium, locked for free -->
                 <div class="field-group">
-                  <button
-                    type="button"
-                    class="creators-count-minimal"
-                    class:creators-count-minimal-error={sliderLockedError}
-                    onclick={handleLockedSliderClick}
-                  >
-                    <div class="slider-header">
-                      <label for="simple-topn" class="field-label">How many creators do you want?</label>
-                      <span class="slider-value">{topNLocal}</span>
-                    </div>
-                    <input
-                      id="simple-topn"
-                      type="range"
-                      min="0"
-                      max="100"
-                      step="1"
-                      class="editorial-slider editorial-slider-locked"
-                      value={sliderPosition}
-                      disabled
-                      tabindex="-1"
-                      style="--slider-percent: {sliderPosition}%;"
-                    />
-                    <div class="slider-range-labels">
-                      <span>Min: 10</span>
-                      <span>
-                        {#if searchUsage?.remaining !== undefined}
-                          Max: {effectiveMaxInfluencers} {searchUsage.remaining < maxInfluencers ? '(remaining)' : '(limit)'}
-                        {:else}
-                          Max: {maxInfluencers}
-                        {/if}
-                      </span>
-                    </div>
-                    {#if sliderLockedError}
-                      <div class="creators-count-error">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <circle cx="12" cy="12" r="10"/>
-                          <path d="M12 8v4M12 16h.01"/>
-                        </svg>
-                        <span>Upgrade to customize</span>
-                        <button
-                          type="button"
-                          class="creators-count-upgrade-btn"
-                          onclick={(e) => { e.stopPropagation(); upgradeModal.open('Upgrade to customize creator count', 'Get access to search for more creators per campaign.'); }}
-                        >
-                          View Plans
-                        </button>
+                  {#if isPremiumUser()}
+                    <!-- Unlocked slider for premium users -->
+                    <div class="creators-count-minimal">
+                      <div class="slider-header">
+                        <label for="simple-topn" class="field-label">How many creators do you want?</label>
+                        <span class="slider-value">{topNLocal}</span>
                       </div>
-                    {/if}
-                  </button>
+                      <input
+                        id="simple-topn"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        class="editorial-slider"
+                        value={sliderPosition}
+                        oninput={handleSliderChange}
+                        style="--slider-percent: {sliderPosition}%;"
+                      />
+                      <div class="slider-range-labels">
+                        <span>Min: 10</span>
+                        <span>
+                          {#if searchUsage?.remaining !== undefined}
+                            Max: {effectiveMaxInfluencers} {searchUsage.remaining < maxInfluencers ? '(remaining)' : '(limit)'}
+                          {:else}
+                            Max: {maxInfluencers}
+                          {/if}
+                        </span>
+                      </div>
+                    </div>
+                  {:else}
+                    <!-- Locked slider for free users -->
+                    <button
+                      type="button"
+                      class="creators-count-minimal"
+                      class:creators-count-minimal-error={sliderLockedError}
+                      onclick={handleLockedSliderClick}
+                    >
+                      <div class="slider-header">
+                        <label for="simple-topn-locked" class="field-label">How many creators do you want?</label>
+                        <span class="slider-value">{topNLocal}</span>
+                      </div>
+                      <input
+                        id="simple-topn-locked"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        class="editorial-slider editorial-slider-locked"
+                        value={sliderPosition}
+                        disabled
+                        tabindex="-1"
+                        style="--slider-percent: {sliderPosition}%;"
+                      />
+                      <div class="slider-range-labels">
+                        <span>Min: 10</span>
+                        <span>
+                          {#if searchUsage?.remaining !== undefined}
+                            Max: {effectiveMaxInfluencers} {searchUsage.remaining < maxInfluencers ? '(remaining)' : '(limit)'}
+                          {:else}
+                            Max: {maxInfluencers}
+                          {/if}
+                        </span>
+                      </div>
+                      {#if sliderLockedError}
+                        <div class="creators-count-error">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 8v4M12 16h.01"/>
+                          </svg>
+                          <span>Upgrade to customize</span>
+                          <button
+                            type="button"
+                            class="creators-count-upgrade-btn"
+                            onclick={(e) => { e.stopPropagation(); upgradeModal.open('Upgrade to customize creator count', 'Get access to search for more creators per campaign.'); }}
+                          >
+                            View Plans
+                          </button>
+                        </div>
+                      {/if}
+                    </button>
+                  {/if}
                 </div>
               </div>
             </div>

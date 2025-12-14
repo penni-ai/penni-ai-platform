@@ -128,6 +128,7 @@ export interface PipelineJobDocument {
     batches_processing?: number;
     batches_failed?: number;
     total_batches?: number;
+    completed_batch_indices?: number[]; // Track which batch indices have completed (for out-of-order completion)
     completed_at?: Timestamp | null;
     error?: string | null;
   };
@@ -902,10 +903,14 @@ export async function appendBatchResults(
     const currentProfilesCollected = data.brightdata_collection?.profiles_collected || 0;
     const currentProfilesAnalyzed = data.llm_analysis?.profiles_analyzed || 0;
     
-    // Update counters atomically
+    // Get current completed batch indices array
+    const currentCompletedIndices = data.brightdata_collection?.completed_batch_indices || [];
+
+    // Update counters atomically, including the batch index
     transaction.update(jobRef, {
       [`brightdata_collection.batches_completed`]: currentBatchesCompleted + 1,
       [`brightdata_collection.profiles_collected`]: currentProfilesCollected + newProfiles.length,
+      [`brightdata_collection.completed_batch_indices`]: [...currentCompletedIndices, batchIndex],
       [`llm_analysis.profiles_analyzed`]: currentProfilesAnalyzed + newProfiles.filter(p => p.fit_score !== undefined).length,
       updated_at: Timestamp.now(),
     });
@@ -1008,12 +1013,31 @@ export async function updateProgressiveTopN(
     return;
   }
 
+  // Get the actual completed batch indices from Firestore
+  const jobDoc = await db.collection(PIPELINE_COLLECTION).doc(jobId).get();
+  if (!jobDoc.exists) {
+    console.error(`[Storage] Job ${jobId} not found when updating progressive top-N`);
+    return;
+  }
+
+  const jobData = jobDoc.data() as PipelineJobDocument;
+  const completedBatchIndices: number[] = jobData.brightdata_collection?.completed_batch_indices || [];
+
+  if (completedBatchIndices.length === 0) {
+    console.log(`[Storage] No completed batch indices found for job ${jobId}, skipping progressive update`);
+    return;
+  }
+
   const allProfiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string; fit_summary?: string }> = [];
 
-  // Load all completed batch files
-  for (let batchIndex = 0; batchIndex < batchesCompleted; batchIndex++) {
-    const batchProfiles = await loadBatchFromStorage(jobId, batchIndex);
-    allProfiles.push(...batchProfiles);
+  // Load only the actually completed batch files (handles out-of-order completion)
+  for (const batchIndex of completedBatchIndices) {
+    try {
+      const batchProfiles = await loadBatchFromStorage(jobId, batchIndex);
+      allProfiles.push(...batchProfiles);
+    } catch (err) {
+      console.warn(`[Storage] Could not load batch ${batchIndex} for job ${jobId}:`, err);
+    }
   }
 
   if (allProfiles.length === 0) {

@@ -1,67 +1,49 @@
 import { writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
 
-export type Theme = 'light' | 'dark' | 'system';
+export type Theme = 'light' | 'dark' | 'mixed';
 
-function getSystemTheme(): 'light' | 'dark' {
-  if (!browser) return 'light';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+const DEFAULT_THEME: Theme = 'mixed';
+
+function getStoredTheme(): Theme {
+  if (!browser) return DEFAULT_THEME;
+  return (localStorage.getItem('theme') as Theme | null) || DEFAULT_THEME;
 }
 
 function applyTheme(theme: Theme) {
   if (!browser) return;
+  document.documentElement.setAttribute('data-theme', theme);
+}
 
-  const resolved = theme === 'system' ? getSystemTheme() : theme;
-  document.documentElement.setAttribute('data-theme', resolved);
+function persistTheme(theme: Theme) {
+  if (!browser) return;
+  localStorage.setItem('theme', theme);
+  applyTheme(theme);
 }
 
 function createThemeStore() {
-  const stored = browser ? (localStorage.getItem('theme') as Theme | null) : null;
-  const initial: Theme = stored || 'system';
-
-  const { subscribe, set, update } = writable<Theme>(initial);
-
-  // Apply initial theme
-  if (browser) {
-    applyTheme(initial);
-  }
+  const { subscribe, set, update } = writable<Theme>(getStoredTheme());
 
   return {
     subscribe,
     set: (theme: Theme) => {
-      if (browser) {
-        localStorage.setItem('theme', theme);
-        applyTheme(theme);
-      }
+      persistTheme(theme);
       set(theme);
     },
     toggle: () => {
       update(current => {
-        const resolved = current === 'system' ? getSystemTheme() : current;
-        const next: Theme = resolved === 'dark' ? 'light' : 'dark';
-        if (browser) {
-          localStorage.setItem('theme', next);
-          applyTheme(next);
-        }
+        // Cycle through: light -> dark -> mixed -> light
+        const next: Theme = current === 'light' ? 'dark' : current === 'dark' ? 'mixed' : 'light';
+        persistTheme(next);
         return next;
       });
     },
-    init: () => {
+    // Sync store with localStorage (useful after hydration)
+    sync: () => {
       if (!browser) return;
-
-      // Apply stored theme
-      const stored = localStorage.getItem('theme') as Theme | null;
-      const theme = stored || 'system';
-      applyTheme(theme);
-      set(theme);
-
-      // Listen for system preference changes
-      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-        const current = get({ subscribe });
-        if (current === 'system') {
-          applyTheme('system');
-        }
-      });
+      const stored = getStoredTheme();
+      applyTheme(stored);
+      set(stored);
     }
   };
 }

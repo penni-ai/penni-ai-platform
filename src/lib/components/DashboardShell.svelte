@@ -2,23 +2,36 @@
 	import Logo from '$lib/components/Logo.svelte';
 	import SidebarNavigation from '$lib/components/SidebarNavigation.svelte';
 	import { sidebarState } from '$lib/stores/sidebar';
+	import { theme } from '$lib/stores/theme';
 
-export let sidebarWidthClass = 'w-72';
+export let sidebarWidthClass = 'w-52';
 export let mainTag: keyof HTMLElementTagNameMap = 'main';
 export let mainClass = 'relative flex-1 overflow-y-auto';
 export let showToggleControls = false;
-export let campaigns: Array<{ id: string; name: string; href?: string } > = [];
+export let campaigns: Array<{ id: string; name: string; href?: string; isIncomplete?: boolean }> = [];
 export let activeCampaignId: string | null = null;
 export let onUpgrade: (() => void) | undefined = undefined;
+export let onCreateCampaign: ((campaignId: string) => void) | undefined = undefined;
+export let onSelectIncompleteCampaign: ((campaignId: string) => void) | undefined = undefined;
+export let showCampaignHint: boolean = false;
+export let onDismissCampaignHint: (() => void) | undefined = undefined;
+
+// Reactive styles based on theme
+$: sidebarBg = $theme === 'light' ? '#fafaf9' : '#1a1a1a';
+$: sidebarBorder = $theme === 'light' ? '#e5e5e5' : '#2a2a2a';
+$: contentBg = $theme === 'dark' ? '#1a1a1a' : '#fafaf9';
+$: textColor = $theme === 'light' ? '#525252' : '#a3a3a3';
+$: hoverBg = $theme === 'light' ? '#f5f5f4' : '#2a2a2a';
 </script>
 
-<div class="flex h-screen overflow-hidden" style="background: var(--color-bg-elevated)">
+<div class="flex h-screen overflow-hidden">
+	<!-- Sidebar -->
 	<aside class={`relative transition-all duration-300 ${$sidebarState ? sidebarWidthClass : 'w-0'} overflow-hidden`}>
-		<div class={`h-full flex flex-col overflow-hidden transition-transform duration-300 ${$sidebarState ? 'translate-x-0' : '-translate-x-full'}`} style="background: var(--color-bg-elevated); border-right: 1px solid var(--color-border)">
-			<div class="px-2 py-2 flex items-center justify-between shrink-0" style="border-bottom: 1px solid var(--color-border)">
+		<div class={`h-full flex flex-col overflow-hidden transition-transform duration-300 ${$sidebarState ? 'translate-x-0' : '-translate-x-full'}`} style="background: {sidebarBg}; border-right: 1px solid {sidebarBorder};">
+			<div class="px-2 py-2 flex items-center justify-between shrink-0" style="border-bottom: 1px solid {sidebarBorder};">
 				<slot name="sidebar-header">
 					<a href="/dashboard" aria-label="Penny dashboard">
-						<Logo size="md" />
+						<Logo size="sm" />
 					</a>
 				</slot>
 				<slot name="sidebar-controls" />
@@ -26,8 +39,8 @@ export let onUpgrade: (() => void) | undefined = undefined;
 					<button
 						type="button"
 						class="p-2 rounded-lg transition"
-						style="color: var(--color-text-secondary)"
-						onmouseenter={(e) => e.currentTarget.style.background = 'var(--color-bg)'}
+						style="color: {textColor};"
+						onmouseenter={(e) => e.currentTarget.style.background = hoverBg}
 						onmouseleave={(e) => e.currentTarget.style.background = 'transparent'}
 						aria-label="Hide sidebar"
 						onclick={() => sidebarState.close()}
@@ -40,11 +53,12 @@ export let onUpgrade: (() => void) | undefined = undefined;
 					</button>
 				{/if}
 			</div>
-			<SidebarNavigation campaigns={campaigns} selectedCampaignId={activeCampaignId} onUpgrade={onUpgrade} />
+			<SidebarNavigation campaigns={campaigns} selectedCampaignId={activeCampaignId} onUpgrade={onUpgrade} onCreateCampaign={onCreateCampaign} onSelectIncompleteCampaign={onSelectIncompleteCampaign} showCampaignHint={showCampaignHint} onDismissCampaignHint={onDismissCampaignHint} />
 		</div>
 	</aside>
 
-	<svelte:element this={mainTag} class={mainClass}>
+	<!-- Main Content Area -->
+	<svelte:element this={mainTag} class="{mainClass} bg-grid-texture" style="background: {contentBg};">
 		<slot />
 	</svelte:element>
 </div>
@@ -52,10 +66,10 @@ export let onUpgrade: (() => void) | undefined = undefined;
 {#if showToggleControls && !$sidebarState}
 	<button
 		type="button"
-		class="fixed left-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-lg shadow-sm transition"
-		style="border: 1px solid var(--color-border); background: var(--color-bg-elevated); color: var(--color-text-secondary)"
-		onmouseenter={(e) => e.currentTarget.style.background = 'var(--color-bg)'}
-		onmouseleave={(e) => e.currentTarget.style.background = 'var(--color-bg-elevated)'}
+		class="fixed left-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-lg shadow-lg transition"
+		style="border: 1px solid {sidebarBorder}; background: {sidebarBg}; color: {textColor};"
+		onmouseenter={(e) => e.currentTarget.style.background = hoverBg}
+		onmouseleave={(e) => e.currentTarget.style.background = sidebarBg}
 		onclick={() => sidebarState.open()}
 		aria-label="Show sidebar"
 	>

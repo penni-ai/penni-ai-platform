@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { fade, scale } from 'svelte/transition';
-	import { elasticOut } from 'svelte/easing';
+	import { fade, fly } from 'svelte/transition';
 
 	interface Props {
 		open: boolean;
@@ -46,49 +45,32 @@
 </script>
 
 {#if open}
-	<!-- Backdrop -->
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+		class="popup-overlay"
 		onclick={handleBackdropClick}
 		onkeydown={(e) => e.key === 'Escape' && onCancel()}
-		role="button"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="find-more-title"
 		tabindex="-1"
-		aria-label="Close popup"
 		transition:fade={{ duration: 200 }}
 	>
-		<!-- Modal -->
 		<div
-			class="relative w-full max-w-xs overflow-hidden rounded-2xl bg-white shadow-2xl"
+			class="popup-content"
 			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.key === 'Escape' && onCancel()}
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="find-more-title"
-			tabindex="-1"
-			transition:scale={{ duration: 300, start: 0.95, easing: elasticOut }}
+			transition:fly={{ y: 20, duration: 300 }}
 		>
-			<!-- Content -->
-			<div class="px-6 pt-6 pb-5 text-center">
-				<!-- Icon -->
-				<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#FFF1ED]">
-					<svg class="h-6 w-6 text-[#FF6F61]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-					</svg>
-				</div>
-				
-				<!-- Title -->
-				<h3 id="find-more-title" class="text-lg font-semibold text-gray-900 mb-1">
-					Find More Influencers
-				</h3>
-				<p class="text-sm text-gray-500 mb-5">
-					You currently have {currentCount} influencer{currentCount !== 1 ? 's' : ''}. Remaining search slots: {maxRemaining}
-				</p>
-				
-				<!-- Single slider -->
-				<label for="additional-count-slider" class="block text-sm font-medium text-gray-700 mb-3 text-left">
+			<h3 id="find-more-title" class="popup-title">Find More Influencers</h3>
+			<p class="popup-description">
+				You currently have {currentCount} influencer{currentCount !== 1 ? 's' : ''}.
+				Remaining search slots: <span class="highlight">{maxRemaining}</span>
+			</p>
+
+			<div class="slider-section">
+				<label for="additional-count-slider" class="slider-label">
 					How many more to find?
 				</label>
-				<div class="space-y-2">
+				<div class="slider-container">
 					<input
 						id="additional-count-slider"
 						type="range"
@@ -96,24 +78,23 @@
 						max={Math.max(1, Math.floor(maxRemaining) || 1)}
 						bind:value={additionalCount}
 						disabled={maxRemaining <= 0}
-						class="w-full accent-[#FF6F61]"
+						class="slider"
 					/>
-					<div class="flex items-center justify-between text-xs text-gray-600">
-						<span>1</span>
-						<span class="font-semibold text-gray-800">{additionalCount}</span>
-						<span>{Math.max(1, Math.floor(maxRemaining) || 1)}</span>
+					<div class="slider-values">
+						<span class="slider-min">1</span>
+						<span class="slider-current">{additionalCount}</span>
+						<span class="slider-max">{Math.max(1, Math.floor(maxRemaining) || 1)}</span>
 					</div>
-					{#if maxRemaining <= 0}
-						<p class="text-xs text-red-600 text-center">No searches remaining. Upgrade to unlock more.</p>
-					{/if}
 				</div>
+				{#if maxRemaining <= 0}
+					<p class="warning-text">No searches remaining. Upgrade to unlock more.</p>
+				{/if}
 			</div>
 
-			<!-- Footer -->
-			<div class="border-t border-gray-100 bg-gray-50/50 px-6 py-4 flex gap-3">
+			<div class="popup-footer">
 				<button
 					type="button"
-					class="flex-1 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+					class="cancel-btn"
 					onclick={onCancel}
 					disabled={isSearching}
 				>
@@ -121,15 +102,12 @@
 				</button>
 				<button
 					type="button"
-					class="flex-1 py-2.5 bg-[#FF6F61] text-white font-semibold rounded-lg hover:bg-[#FF5A4A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+					class="confirm-btn"
 					onclick={handleConfirm}
 					disabled={isSearching || additionalCount < 1 || maxRemaining <= 0}
 				>
 					{#if isSearching}
-						<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-						</svg>
+						<span class="spinner"></span>
 						Searching...
 					{:else}
 						Find +{additionalCount}
@@ -139,3 +117,199 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	.popup-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.4);
+		backdrop-filter: blur(4px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 9999;
+		padding: 24px;
+	}
+
+	.popup-content {
+		background: var(--color-bg-elevated);
+		border-radius: 0;
+		box-shadow: 0 24px 80px rgba(0, 0, 0, 0.2);
+		max-width: 400px;
+		width: 100%;
+		padding: 40px;
+	}
+
+	.popup-title {
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 24px;
+		font-weight: 400;
+		color: var(--color-text);
+		margin: 0 0 12px 0;
+		letter-spacing: -0.01em;
+	}
+
+	.popup-description {
+		font-size: 14px;
+		color: var(--color-text-secondary);
+		margin: 0 0 32px 0;
+		line-height: 1.5;
+	}
+
+	.highlight {
+		color: #FF6F61;
+		font-weight: 600;
+	}
+
+	.slider-section {
+		margin-bottom: 32px;
+	}
+
+	.slider-label {
+		display: block;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--color-text);
+		margin-bottom: 16px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.slider-container {
+		padding: 0;
+	}
+
+	.slider {
+		width: 100%;
+		height: 2px;
+		background: var(--color-border);
+		outline: none;
+		appearance: none;
+		cursor: pointer;
+	}
+
+	.slider::-webkit-slider-thumb {
+		appearance: none;
+		width: 20px;
+		height: 20px;
+		background: #FF6F61;
+		cursor: pointer;
+		border: none;
+		margin-top: -9px;
+	}
+
+	.slider::-moz-range-thumb {
+		width: 20px;
+		height: 20px;
+		background: #FF6F61;
+		cursor: pointer;
+		border: none;
+	}
+
+	.slider::-webkit-slider-runnable-track {
+		height: 2px;
+		background: var(--color-border);
+	}
+
+	.slider::-moz-range-track {
+		height: 2px;
+		background: var(--color-border);
+	}
+
+	.slider:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.slider-values {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-top: 12px;
+		font-size: 12px;
+		color: var(--color-text-muted);
+	}
+
+	.slider-current {
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 24px;
+		color: #FF6F61;
+	}
+
+	.warning-text {
+		font-size: 13px;
+		color: #dc2626;
+		margin: 16px 0 0 0;
+		padding-left: 12px;
+		border-left: 2px solid #dc2626;
+	}
+
+	.popup-footer {
+		display: flex;
+		gap: 16px;
+		padding-top: 24px;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.cancel-btn {
+		flex: 1;
+		padding: 14px 24px;
+		font-size: 14px;
+		font-weight: 500;
+		border: none;
+		background: transparent;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: color 0.2s;
+	}
+
+	.cancel-btn:hover:not(:disabled) {
+		color: var(--color-text);
+	}
+
+	.cancel-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.confirm-btn {
+		flex: 1;
+		padding: 14px 24px;
+		font-size: 14px;
+		font-weight: 500;
+		letter-spacing: 0.02em;
+		border: none;
+		background: #FF6F61;
+		color: white;
+		cursor: pointer;
+		transition: background 0.2s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 10px;
+	}
+
+	.confirm-btn:hover:not(:disabled) {
+		background: #E85A4F;
+	}
+
+	.confirm-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.spinner {
+		width: 14px;
+		height: 14px;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+		border-top-color: white;
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+</style>

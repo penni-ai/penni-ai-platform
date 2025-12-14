@@ -13,28 +13,24 @@
 
   const steps = [
     {
-      title: 'Welcome to Penni!',
-      icon: '👋',
+      title: 'Welcome to Penni',
       description: "Let's get you set up to find the perfect influencers for your brand. This quick guide will walk you through creating your first campaign.",
-      tip: "You'll be finding influencers in no time!"
+      tip: "You'll be finding influencers in no time."
     },
     {
       title: 'Name Your Campaign',
-      icon: '📝',
       description: 'Start by giving your campaign a memorable name. This helps you organize multiple campaigns as your influencer marketing grows.',
       tip: 'Example: "Summer Product Launch" or "Q1 Brand Awareness"'
     },
     {
       title: 'Add Your Website',
-      icon: '🌐',
       description: "Enter your brand's website URL. Penni will analyze your business to understand your niche and find the most relevant influencers.",
-      tip: 'We use AI to match influencers who align with your brand'
+      tip: 'We use AI to match influencers who align with your brand.'
     },
     {
       title: 'Start Your Search',
-      icon: '🔍',
-      description: 'Tell us what kind of influencers you\'re looking for — their niche, follower range, and location. Then click "Find Influencers" to start!',
-      tip: 'Our AI will score each influencer based on fit with your brand'
+      description: 'Tell us what kind of influencers you\'re looking for - their niche, follower range, and location. Then click "Find Influencers" to begin.',
+      tip: 'Our AI will score each influencer based on fit with your brand.'
     }
   ];
 
@@ -73,29 +69,26 @@
     transition:fade={{ duration: 200 }}
   >
     <div class="popup-content" transition:fly={{ y: 20, duration: 300 }}>
-      <!-- Progress dots -->
-      <div class="progress-dots">
-        {#each steps as _, index}
-          <button
-            type="button"
-            class="dot"
-            class:active={index === currentStep}
-            class:completed={index < currentStep}
-            onclick={() => currentStep = index}
-            aria-label="Step {index + 1}"
-          ></button>
-        {/each}
+      <!-- Step indicator -->
+      <div class="step-indicator">
+        <span class="step-number">{currentStep + 1}</span>
+        <span class="step-divider">/</span>
+        <span class="step-total">{totalSteps}</span>
       </div>
 
       <!-- Step content -->
       <div class="step-content">
-        <div class="step-icon">{steps[currentStep].icon}</div>
         <h2 id="tutorial-title" class="step-title">{steps[currentStep].title}</h2>
         <p class="step-description">{steps[currentStep].description}</p>
+
         <div class="step-tip">
-          <span class="tip-icon">💡</span>
           <span class="tip-text">{steps[currentStep].tip}</span>
         </div>
+      </div>
+
+      <!-- Progress bar -->
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {((currentStep + 1) / totalSteps) * 100}%"></div>
       </div>
 
       <!-- Actions -->
@@ -113,14 +106,9 @@
         </div>
         <div class="actions-right">
           <button type="button" class="next-btn" onclick={nextStep}>
-            {currentStep === totalSteps - 1 ? "Let's Go!" : 'Next'}
+            {currentStep === totalSteps - 1 ? "Let's Go" : 'Continue'}
           </button>
         </div>
-      </div>
-
-      <!-- Step counter -->
-      <div class="step-counter">
-        Step {currentStep + 1} of {totalSteps}
       </div>
     </div>
   </div>
@@ -130,170 +118,136 @@
   .popup-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 9999;
-    padding: 20px;
+    padding: 24px;
   }
 
   .popup-content {
     background: var(--color-bg-elevated);
-    border-radius: 24px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-    max-width: 440px;
+    border-radius: 0;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.2);
+    max-width: 480px;
     width: 100%;
-    padding: 32px;
+    padding: 48px;
     position: relative;
   }
 
-  .progress-dots {
+  .step-indicator {
     display: flex;
-    justify-content: center;
-    gap: 8px;
-    margin-bottom: 28px;
+    align-items: baseline;
+    gap: 4px;
+    margin-bottom: 32px;
+    font-family: 'Instrument Serif', Georgia, serif;
   }
 
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(0, 0, 0, 0.1);
-    cursor: pointer;
-    transition: all 0.3s;
-    padding: 0;
+  .step-number {
+    font-size: 32px;
+    color: #FF6F61;
+    font-weight: 400;
   }
 
-  .dot:hover {
-    background: rgba(0, 0, 0, 0.2);
+  .step-divider {
+    font-size: 20px;
+    color: var(--color-text-muted);
   }
 
-  .dot.active {
-    background: linear-gradient(135deg, var(--color-primary), #FF8A80);
-    width: 24px;
-    border-radius: 5px;
-  }
-
-  .dot.completed {
-    background: var(--color-primary);
+  .step-total {
+    font-size: 20px;
+    color: var(--color-text-muted);
   }
 
   .step-content {
-    text-align: center;
-    margin-bottom: 28px;
-  }
-
-  .step-icon {
-    font-size: 56px;
-    margin-bottom: 16px;
-    animation: bounce 0.6s ease-out;
-  }
-
-  @keyframes bounce {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-8px);
-    }
+    margin-bottom: 40px;
   }
 
   .step-title {
-    font-size: 24px;
-    font-weight: 700;
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 28px;
+    font-weight: 400;
     color: var(--color-text);
-    margin: 0 0 12px 0;
+    margin: 0 0 16px 0;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
   }
 
   .step-description {
     font-size: 15px;
-    line-height: 1.6;
+    line-height: 1.7;
     color: var(--color-text-secondary);
-    margin: 0 0 20px 0;
+    margin: 0 0 24px 0;
   }
 
   .step-tip {
-    display: inline-flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 12px 16px;
-    background: rgba(255, 111, 97, 0.08);
-    border-radius: 12px;
-    text-align: left;
-  }
-
-  .tip-icon {
-    font-size: 16px;
-    flex-shrink: 0;
+    padding-left: 16px;
+    border-left: 2px solid #FF6F61;
   }
 
   .tip-text {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--color-text-muted);
-    line-height: 1.4;
+    line-height: 1.5;
+    font-style: italic;
+  }
+
+  .progress-bar {
+    height: 2px;
+    background: rgba(0, 0, 0, 0.08);
+    margin-bottom: 32px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: #FF6F61;
+    transition: width 0.3s ease;
   }
 
   .popup-actions {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
   }
 
   .actions-left,
   .actions-right {
-    flex: 1;
-  }
-
-  .actions-right {
-    display: flex;
-    justify-content: flex-end;
+    flex-shrink: 0;
   }
 
   .back-btn,
   .skip-btn {
-    padding: 12px 20px;
+    padding: 12px 0;
     font-size: 14px;
     font-weight: 500;
-    border-radius: 10px;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg-elevated);
+    border: none;
+    background: transparent;
     color: var(--color-text-muted);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: color 0.2s;
   }
 
   .back-btn:hover,
   .skip-btn:hover {
-    background: rgba(0, 0, 0, 0.03);
-    border-color: rgba(0, 0, 0, 0.2);
+    color: var(--color-text);
   }
 
   .next-btn {
-    padding: 12px 28px;
-    font-size: 15px;
-    font-weight: 600;
-    border-radius: 10px;
+    padding: 14px 32px;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
     border: none;
-    background: linear-gradient(135deg, var(--color-primary), #FF8A80);
+    background: #FF6F61;
     color: white;
     cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 4px 16px rgba(255, 111, 97, 0.3);
+    transition: background 0.2s;
   }
 
   .next-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(255, 111, 97, 0.4);
-  }
-
-  .step-counter {
-    text-align: center;
-    margin-top: 20px;
-    font-size: 12px;
-    color: rgba(0, 0, 0, 0.35);
+    background: #E85A4F;
   }
 </style>

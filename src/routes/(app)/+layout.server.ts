@@ -24,10 +24,10 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	let campaigns: SerializedCampaign[] = [];
 
 	try {
-		// Use updatedAt for ordering (always present in new structure)
+		// Fetch campaigns without orderBy to include older campaigns that may not have updatedAt
+		// We'll sort them client-side after serialization
 		const snapshot = await userDocRef(user.uid)
 			.collection('campaigns')
-			.orderBy('updatedAt', 'desc')
 			.limit(SIDEBAR_CAMPAIGN_LIMIT)
 			.get();
 
@@ -39,13 +39,15 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		locals.logger?.warn('Failed to load sidebar campaigns', { error });
 	}
 
-	// Get user's current plan and feature capabilities
+	// Get user's current plan, feature capabilities, and onboarding status
 	let currentPlan = null;
 	let capabilities = null;
+	let onboardingCompleted = false;
 	try {
 		const userSnap = await userDocRef(user.uid).get();
 		const userData = userSnap.data() as UserStripeState | undefined;
 		currentPlan = userData?.currentPlan ?? null;
+		onboardingCompleted = (userData as any)?.onboarding?.tutorialCompleted ?? (userData as any)?.onboarding?.tutorialSkipped ?? false;
 
 		// Fetch feature capabilities
 		capabilities = await getUserFeatureCapabilities(user.uid);
@@ -60,6 +62,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 			currentPlan,
 			capabilities
 		},
-		campaigns
+		campaigns,
+		onboardingCompleted
 	};
 };

@@ -3,8 +3,8 @@
 	export let className = '';
 </script>
 
-	{#if active}
-	<div class={`h-full flex items-center justify-center px-8 py-12 ${className}`}>
+{#if active}
+	<div class={`h-full flex ${className}`}>
 		<slot />
 	</div>
 {/if}

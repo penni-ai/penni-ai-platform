@@ -4,6 +4,69 @@
 
 export type PlanKey = 'free' | 'starter' | 'growth' | 'event';
 
+/**
+ * Plan limits - SINGLE SOURCE OF TRUTH for all numeric limits
+ * Use this constant everywhere instead of hardcoding values
+ */
+export const PLAN_LIMITS = {
+	free: {
+		influencerProfiles: 10,
+		outreachEmails: 10,
+		connectedInboxes: 1,
+		csvExport: false
+	},
+	starter: {
+		influencerProfiles: 300,
+		outreachEmails: 200,
+		connectedInboxes: 1,
+		csvExport: false
+	},
+	growth: {
+		influencerProfiles: 1000,
+		outreachEmails: 700,
+		connectedInboxes: 3,
+		csvExport: true
+	},
+	event: {
+		influencerProfiles: 5000,
+		outreachEmails: 5000,
+		connectedInboxes: 5,
+		csvExport: true
+	}
+} as const;
+
+/**
+ * Event Boost credit amounts - one-time credits added on top of any subscription
+ */
+export const EVENT_BOOST_CREDITS = {
+	influencers: PLAN_LIMITS.event.influencerProfiles,
+	outreach: PLAN_LIMITS.event.outreachEmails,
+	inboxes: 4, // Additional inboxes (added to current plan)
+	csvExport: true
+} as const;
+
+/**
+ * Get plan limits for a given plan key
+ */
+export function getPlanLimits(planKey: PlanKey | string | null | undefined) {
+	if (!planKey || planKey === 'free') return PLAN_LIMITS.free;
+	if (planKey === 'starter') return PLAN_LIMITS.starter;
+	if (planKey === 'growth') return PLAN_LIMITS.growth;
+	if (planKey === 'event') return PLAN_LIMITS.event;
+	return PLAN_LIMITS.free;
+}
+
+/**
+ * Event credits structure stored in user document
+ */
+export interface EventCredits {
+	influencersRemaining: number;
+	outreachRemaining: number;
+	additionalInboxes: number;
+	purchasedAt: number;
+	paymentIntentId: string;
+}
+
 export interface Plan {
 	key: PlanKey;
 	name: string;
@@ -24,62 +87,61 @@ export interface Plan {
 export const plans: Plan[] = [
 	{
 		key: 'free',
-		name: 'Free Plan',
+		name: 'Free',
 		price: '$0',
 		cadence: 'forever',
-		description: 'Perfect for trying out Penny with basic features.',
+		description: 'Try Penny with basic features.',
 		estimatedAttendance: 'Great for testing',
 		features: [
-			'Access to 10 influencer profiles',
-			'Up to 10 influencer searches per month',
-			'10 outreach emails & 1 connected inbox'
+			'10 influencer profiles',
+			'10 searches per month',
+			'10 outreach emails',
+			'1 connected inbox'
 		],
 		oneTime: false
 	},
 	{
 		key: 'starter',
-		name: 'Starter Plan',
+		name: 'Starter',
 		price: '$99',
-		cadence: 'per month after trial',
+		cadence: 'per month',
 		description: 'Local businesses and pop-ups who need a fast boost of RSVPs.',
-		badge: 'Includes free trial',
-		estimatedAttendance: 'Estimated 10-60 attendees',
-		trialCopy: '3-day free trial • 20 influencers • 10 emails • paywall on CSV export',
+		estimatedAttendance: '10-60 attendees',
 		features: [
-			'Access to 300 influencer profiles per month',
-			'1 connected outreach inbox',
-			'Send up to 200 outreach emails per month'
+			'300 influencer profiles',
+			'1 connected inbox',
+			'200 outreach emails'
 		],
 		oneTime: false
 	},
 	{
 		key: 'growth',
-		name: 'Growth Plan',
+		name: 'Growth',
 		price: '$299',
 		cadence: 'per month',
 		description: 'Agencies and scaling brands managing several concurrent launches.',
-		badge: 'Most popular',
-		estimatedAttendance: 'Estimated 50-120 attendees',
+		badge: 'recommended',
+		estimatedAttendance: '50-120 attendees',
 		features: [
-			'Access to 1,000 influencer profiles per month',
-			'3 connected outreach inboxes',
-			'Send up to 700 outreach emails per month',
-			'CSV export capabilities'
+			'1,000 influencer profiles',
+			'3 connected inboxes',
+			'700 outreach emails',
+			'CSV export'
 		],
 		oneTime: false
 	},
 	{
 		key: 'event',
-		name: 'Event Special',
+		name: 'Event Boost',
 		price: '$999',
-		cadence: 'one-time activation',
-		description: 'Festivals, launches, or venue takeovers that need instant reach and concierge help.',
-		estimatedAttendance: 'Designed for 500-1,500 attendees / interest',
+		cadence: 'one-time',
+		description: 'One-time credit boost for your current plan. Perfect for launches and events.',
+		estimatedAttendance: 'Add to any plan',
 		features: [
-			'Access to 5,000 influencer profiles (one-time)',
-			'5 connected outreach inboxes',
-			'Send up to 5,000 outreach messages',
-			'Full CSV export + CRM sync included'
+			'+5,000 influencer credits',
+			'+5,000 outreach credits',
+			'+4 connected inboxes',
+			'CSV export enabled'
 		],
 		oneTime: true
 	}

@@ -735,18 +735,9 @@ $effect(() => {
   }
 });
 
-// Show website prefill popup for new campaigns (ones without brand/about data)
-$effect(() => {
-  if (effectiveCampaign && browser) {
-    const hasBrandInfo = effectiveCampaign.business_name || effectiveCampaign.website;
-    const hasSearched = effectiveCampaign.pipeline_id;
-
-    // Only show popup if campaign has no brand info, hasn't been searched yet, and user hasn't skipped it
-    if (!hasBrandInfo && !hasSearched && !websitePrefillPopupOpen && !prefilledData && !websitePrefillSkipped) {
-      websitePrefillPopupOpen = true;
-    }
-  }
-});
+// Website prefill is now handled inline in SimplePipelinePanel step 0
+// The popup is kept for legacy "I have a website" button in the old flow
+// but no longer auto-opens for new campaigns
 </script>
 
 <svelte:head>
@@ -777,6 +768,31 @@ $effect(() => {
         websitePrefillSkipped = false;
         websitePrefillPopupOpen = true;
       }}
+      onWebsitePrefill={async (websiteUrl: string) => {
+        const response = await fetch('/api/campaigns/prefill-from-website', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ websiteUrl })
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || 'Failed to analyze website');
+        }
+
+        const data = await response.json();
+        const result = {
+          brand: data.brand || '',
+          website: data.website || '',
+          about: data.about || '',
+          influencerType: data.influencerType || ''
+        };
+
+        // Update prefilledData state for consistency
+        prefilledData = result;
+
+        return result;
+      }}
     />
   </div>
 
@@ -784,10 +800,11 @@ $effect(() => {
     open={upgradePanelOpen}
     onClose={closeUpgradePanel}
     returnUrl={`/campaign/${routeCampaignId ?? ''}`}
-    title={upgradePanelTitle ?? 'Upgrade to send more outreach'}
-    description={upgradePanelDescription ?? 'Free includes 10 outreach emails. Upgrade to unlock higher limits and more inboxes.'}
-    showFreePlan={false}
+    title={upgradePanelTitle ?? 'Choose your plan'}
+    description={upgradePanelDescription ?? 'Scale your influencer outreach with the right plan for your needs.'}
+    showFreePlan={true}
     dismissible={true}
+    currentPlanKey={($page.data as any).user?.currentPlan?.planKey ?? 'free'}
   />
 
   <SearchLimitExceededPanel

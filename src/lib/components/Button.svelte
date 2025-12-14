@@ -1,15 +1,15 @@
 <script lang="ts">
-interface Props {
-	variant?: 'primary' | 'secondary' | 'outline';
-	size?: 'sm' | 'md' | 'lg';
-	href?: string;
-	onclick?: () => void;
-	type?: 'button' | 'submit' | 'reset';
-	class?: string;
-	children?: any;
-	disabled?: boolean;
-	fullWidth?: boolean;
-}
+	interface Props {
+		variant?: 'primary' | 'secondary' | 'outline';
+		size?: 'sm' | 'md' | 'lg';
+		href?: string;
+		onclick?: () => void;
+		type?: 'button' | 'submit' | 'reset';
+		class?: string;
+		children?: any;
+		disabled?: boolean;
+		fullWidth?: boolean;
+	}
 
 	let {
 		variant = 'primary',
@@ -17,18 +17,18 @@ interface Props {
 		href,
 		onclick,
 		type = 'button',
-	class: className = '',
-	children,
-	disabled = false,
-	fullWidth = false
-}: Props = $props();
+		class: className = '',
+		children,
+		disabled = false,
+		fullWidth = false
+	}: Props = $props();
 
-	const baseStyles = 'font-medium rounded-full transition-all duration-200 inline-block text-center';
+	const baseStyles = 'font-medium inline-block text-center transition-all';
 
 	const variantStyles = {
-		primary: 'shadow-sm',
+		primary: '',
 		secondary: '',
-		outline: 'border-2'
+		outline: ''
 	};
 
 	const sizeStyles = {
@@ -45,7 +45,7 @@ interface Props {
 			variantStyles[variant],
 			sizeStyles[size],
 			widthStyles,
-			disabled ? 'opacity-60 pointer-events-none' : '',
+			disabled ? 'opacity-50 pointer-events-none' : '',
 			`variant-${variant}`,
 			className
 		]
@@ -71,35 +71,47 @@ interface Props {
 {/if}
 
 <style>
-	/* Primary variant - using CSS variables */
+	/* Primary variant */
 	:global(.variant-primary) {
 		background-color: var(--color-primary);
-		color: var(--color-text-inverse);
+		color: white;
 	}
 
 	:global(.variant-primary:hover:not(:disabled)) {
-		background-color: var(--color-primary-hover);
+		opacity: 0.9;
 	}
 
-	/* Secondary variant - using CSS variables */
+	:global(.variant-primary:active:not(:disabled)) {
+		opacity: 0.95;
+	}
+
+	/* Secondary variant */
 	:global(.variant-secondary) {
 		background-color: var(--color-text);
-		color: var(--color-text-inverse);
+		color: white;
 	}
 
 	:global(.variant-secondary:hover:not(:disabled)) {
-		background-color: var(--color-text-secondary, #374151);
+		opacity: 0.9;
 	}
 
-	/* Outline variant - using CSS variables */
+	:global(.variant-secondary:active:not(:disabled)) {
+		opacity: 0.95;
+	}
+
+	/* Outline variant */
 	:global(.variant-outline) {
-		border-color: var(--color-text);
+		border-bottom: 1px solid var(--color-text);
 		color: var(--color-text);
 		background-color: transparent;
 	}
 
 	:global(.variant-outline:hover:not(:disabled)) {
-		background-color: var(--color-text);
-		color: var(--color-text-inverse);
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+	}
+
+	:global(.variant-outline:active:not(:disabled)) {
+		opacity: 0.8;
 	}
 </style>

@@ -12,14 +12,15 @@
 
 <div class="mx-auto w-full max-w-6xl space-y-6">
 	{#if status.status !== 'completed'}
-		<div>
-			<h2 class="text-2xl font-semibold text-gray-900">Influencer Search</h2>
+		<div class="border-b border-gray-100 pb-4">
+			<h2 class="text-xl font-semibold text-gray-900 tracking-tight">Influencer Search</h2>
 			<p class="mt-1 text-sm text-gray-500">
-				Pipeline Status: <span class="font-medium capitalize text-gray-900">{status.status}</span>
+				<span class="uppercase text-[10px] tracking-wider text-gray-400">Status</span>
+				<span class="ml-2 font-medium capitalize text-gray-900">{status.status}</span>
 				{#if status.status === 'running'}
-					<span class="ml-2 inline-flex items-center gap-1">
-						<span class="h-2 w-2 animate-pulse rounded-full bg-green-500"></span>
-						<span class="text-xs text-gray-500">Processing...</span>
+					<span class="ml-2 inline-flex items-center gap-1.5">
+						<span class="h-1.5 w-1.5 animate-pulse bg-[#FF6F61]"></span>
+						<span class="text-xs text-gray-500">Processing</span>
 					</span>
 				{/if}
 			</p>
@@ -41,7 +42,7 @@
 				{@const isInAnalysisPhase = isBrightDataRunning || isLLMRunning || status.overall_progress > 50}
 				{@const shouldShowQueries = (isQueryExpansionRunning || isWeaviateSearchRunning) && !isInAnalysisPhase}
 				{#if shouldShowQueries}
-					<div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+					<div class="border border-gray-100 bg-white p-4">
 						<QuerySearchAnimation
 							queries={status.stages.query_expansion.queries}
 							stage={isWeaviateSearchRunning ? 'weaviate_search' : 'query_expansion'}
@@ -52,8 +53,8 @@
 			{/if}
 
 			{#if status.error_message}
-				<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-					<strong>Error:</strong> {status.error_message}
+				<div class="border-l-2 border-red-400 bg-red-50/50 px-4 py-3 text-sm text-gray-700">
+					<span class="font-medium text-gray-900">Error:</span> {status.error_message}
 				</div>
 			{/if}
 		</div>

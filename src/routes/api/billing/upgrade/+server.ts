@@ -2,12 +2,13 @@ import { createHash } from 'crypto';
 import type Stripe from 'stripe';
 import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { getPlanConfig, getStripeClient } from '$lib/server/billing';
-import { userDocRef } from '$lib/server/core';
+import { userDocRef, subscriptionDocRef, firestore } from '$lib/server/core';
 
 type UpgradeBody = {
 	plan?: string;
 	confirm?: boolean;
 	idempotencyKey?: string;
+	immediate?: boolean; // For downgrades: if true, apply immediately; if false (default), schedule at period end
 };
 
 const summarizeInvoice = (invoice: Stripe.Invoice) => ({
@@ -178,7 +179,54 @@ export const POST = handleApiRoute(async (event) => {
 	};
 
 	const idempotencyKey = deriveIdempotencyKey(payload, subscription.id, plan.priceId, quantity, changeType);
+	const now = Date.now();
 
+	// Handle downgrades: schedule at period end by default (best practice)
+	if (changeType === 'downgrade' && !payload.immediate) {
+		// For downgrades, use Stripe's subscription schedule to change at period end
+		// First, record the scheduled change in our database
+		const periodEnd = (subscription as any).current_period_end as number ?? 0;
+		const cancelAt = periodEnd * 1000;
+
+		await firestore.runTransaction(async (tx) => {
+			const subRef = subscriptionDocRef(user.uid, subscription.id);
+			tx.update(subRef, {
+				scheduledPlanChange: plan.plan,
+				changeAt: cancelAt,
+				updatedAt: now
+			});
+
+			tx.set(userDocRef(user.uid), {
+				currentPlan: {
+					...currentPlan,
+					scheduledPlanChange: plan.plan,
+					changeAt: cancelAt
+				},
+				updatedAt: now
+			}, { merge: true });
+		});
+
+		// Create a subscription schedule for the change
+		// Note: In production, you might want to use Stripe subscription schedules
+		// For now, we'll handle this via webhook when subscription renews
+		logger.info('Downgrade scheduled for period end', {
+			subscriptionId: subscription.id,
+			newPlan: plan.plan,
+			changeAt: new Date(cancelAt).toISOString()
+		});
+
+		return apiOk({
+			status: 'scheduled',
+			subscriptionId: subscription.id,
+			currentPlan: currentPlanKey,
+			newPlan: plan.plan,
+			changeType,
+			changeAt: cancelAt,
+			message: `Your plan will change to ${plan.plan} on ${new Date(cancelAt).toLocaleDateString()}. You can continue using your current plan until then.`
+		});
+	}
+
+	// For upgrades (or immediate downgrades), apply immediately
 	const updatedSubscription = await stripe.subscriptions.update(
 		subscription.id,
 		{
@@ -203,7 +251,7 @@ export const POST = handleApiRoute(async (event) => {
 		invoiceSummary = summarizeInvoice(latestInvoice);
 	}
 
-	logger.info('Subscription updated', { idempotencyKey });
+	logger.info('Subscription updated', { idempotencyKey, changeType });
 
 	return apiOk({
 		status: 'updated',

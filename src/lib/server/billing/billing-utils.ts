@@ -1,4 +1,5 @@
 import type { PlanKey } from './stripe';
+import { PLAN_LIMITS } from '$lib/billing/plans';
 
 export interface PlanEntitlements {
 	maxProfiles: number;
@@ -43,104 +44,30 @@ export interface FeatureCapabilities {
  */
 export function buildFeatureCapabilities(planKey: PlanKey | null | undefined): FeatureCapabilities {
 	const now = Date.now();
-	
-	if (planKey === 'free') {
-		return {
-			outreach: true, // Free plan allows limited outreach
-			search: true,
-			csvExport: false,
-			connectedInboxes: 1,
-			influencerSearchResults: 10,
-			monthlyOutreachEmails: 10,
-			planKey: 'free',
-			updatedAt: now
-		};
-	}
+	const key = planKey ?? 'free';
+	const limits = PLAN_LIMITS[key as keyof typeof PLAN_LIMITS] ?? PLAN_LIMITS.free;
 
-	if (planKey === 'starter') {
-		return {
-			outreach: true,
-			search: true,
-			csvExport: false,
-			connectedInboxes: 1,
-			influencerSearchResults: 300,
-			monthlyOutreachEmails: 200,
-			planKey: 'starter',
-			updatedAt: now
-		};
-	}
-
-	if (planKey === 'growth') {
-		return {
-			outreach: true,
-			search: true,
-			csvExport: true,
-			connectedInboxes: 3,
-			influencerSearchResults: 1000,
-			monthlyOutreachEmails: 700,
-			planKey: 'growth',
-			updatedAt: now
-		};
-	}
-
-	if (planKey === 'event') {
-		return {
-			outreach: true,
-			search: true,
-			csvExport: true,
-			connectedInboxes: 5,
-			influencerSearchResults: 5000,
-			monthlyOutreachEmails: 5000,
-			planKey: 'event',
-			updatedAt: now
-		};
-	}
-
-	// Default to free plan capabilities if plan key is invalid
 	return {
-		outreach: true, // Free plan allows limited outreach
+		outreach: true,
 		search: true,
-		csvExport: false,
-		connectedInboxes: 1,
-		influencerSearchResults: 10,
-		monthlyOutreachEmails: 10,
-		planKey: 'free',
+		csvExport: limits.csvExport,
+		connectedInboxes: limits.connectedInboxes,
+		influencerSearchResults: limits.influencerProfiles,
+		monthlyOutreachEmails: limits.outreachEmails,
+		planKey: key === 'event' ? 'event' : key as PlanKey,
 		updatedAt: now
 	};
 }
 
 export function buildEntitlements(planKey: PlanKey | null | undefined): PlanEntitlements | undefined {
-	if (planKey === 'free') {
-		return {
-			maxProfiles: 10,
-			connectedInboxes: 1,
-			monthlyOutreachEmails: 10,
-			csvExportEnabled: false
-		};
-	}
-	if (planKey === 'starter') {
-		return {
-			maxProfiles: 300,
-			connectedInboxes: 1,
-			monthlyOutreachEmails: 200,
-			csvExportEnabled: false
-		};
-	}
-	if (planKey === 'growth') {
-		return {
-			maxProfiles: 1000,
-			connectedInboxes: 3,
-			monthlyOutreachEmails: 700,
-			csvExportEnabled: true
-		};
-	}
-	if (planKey === 'event') {
-		return {
-			maxProfiles: 5000,
-			connectedInboxes: 5,
-			monthlyOutreachEmails: 5000,
-			csvExportEnabled: true
-		};
-	}
-	return undefined;
+	if (!planKey) return undefined;
+	const limits = PLAN_LIMITS[planKey as keyof typeof PLAN_LIMITS];
+	if (!limits) return undefined;
+
+	return {
+		maxProfiles: limits.influencerProfiles,
+		connectedInboxes: limits.connectedInboxes,
+		monthlyOutreachEmails: limits.outreachEmails,
+		csvExportEnabled: limits.csvExport
+	};
 }

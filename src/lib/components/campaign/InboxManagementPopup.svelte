@@ -1,5 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/environment';
+  import { fly, fade } from 'svelte/transition';
 
   interface GmailConnection {
     id: string;
@@ -65,17 +66,21 @@
     aria-modal="true"
     aria-labelledby="inbox-popup-title"
     tabindex="-1"
+    transition:fade={{ duration: 200 }}
   >
-    <div class="popup-content">
+    <div class="popup-content" transition:fly={{ y: 20, duration: 300 }}>
       <div class="popup-header">
         <h3 id="inbox-popup-title" class="popup-title">Connected Inboxes</h3>
-        <button class="close-btn" onclick={onClose} aria-label="Close">×</button>
+        <button class="close-btn" onclick={onClose} aria-label="Close">
+          <svg class="close-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
       <div class="popup-body">
         {#if connections.length === 0}
           <div class="empty-state">
-            <div class="empty-icon">📬</div>
             <p class="empty-text">No inboxes connected yet</p>
             <p class="empty-subtext">Connect your Gmail to send outreach emails</p>
           </div>
@@ -90,7 +95,7 @@
                       <span class="primary-badge">Primary</span>
                     {/if}
                   </div>
-                  <div class="connection-id">ID: {connection.id.slice(0, 8)}...</div>
+                  <div class="connection-id">{connection.id.slice(0, 8)}...</div>
                 </div>
 
                 <div class="connection-actions">
@@ -127,7 +132,7 @@
 
         <div class="popup-footer">
           <button class="connect-btn" onclick={onConnect}>
-            + Connect New Inbox
+            Connect New Inbox
           </button>
         </div>
       </div>
@@ -139,88 +144,70 @@
   .popup-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 9998;
-    padding: 20px;
+    padding: 24px;
   }
 
   .popup-content {
     background: var(--color-bg-elevated);
-    border-radius: 16px;
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15);
-    max-width: 500px;
+    border-radius: 0;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.2);
+    max-width: 520px;
     width: 100%;
-    animation: slideIn 0.2s ease-out;
-  }
-
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
   }
 
   .popup-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 20px 24px;
+    padding: 32px 40px 24px;
     border-bottom: 1px solid var(--color-border);
   }
 
   .popup-title {
-    font-size: 18px;
-    font-weight: 600;
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 24px;
+    font-weight: 400;
     color: var(--color-text);
     margin: 0;
+    letter-spacing: -0.01em;
   }
 
   .close-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+    padding: 8px;
     border: none;
     background: transparent;
     color: var(--color-text-muted);
-    font-size: 28px;
-    line-height: 1;
     cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    transition: color 0.2s;
   }
 
   .close-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: var(--color-text-secondary);
+    color: var(--color-text);
+  }
+
+  .close-icon {
+    width: 20px;
+    height: 20px;
   }
 
   .popup-body {
-    padding: 24px;
+    padding: 32px 40px;
   }
 
   .empty-state {
     text-align: center;
-    padding: 32px 16px;
-  }
-
-  .empty-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
+    padding: 40px 20px;
   }
 
   .empty-text {
-    font-size: 16px;
-    font-weight: 600;
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 18px;
     color: var(--color-text);
     margin: 0 0 8px 0;
   }
@@ -234,24 +221,21 @@
   .connections-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-bottom: 16px;
+    gap: 0;
+    margin-bottom: 32px;
   }
 
   .connection-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px;
-    background: rgba(0, 0, 0, 0.02);
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
-    transition: all 0.2s;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--color-border);
+    transition: background 0.2s;
   }
 
-  .connection-item:hover {
-    background: rgba(0, 0, 0, 0.04);
-    border-color: rgba(0, 0, 0, 0.12);
+  .connection-item:last-child {
+    border-bottom: none;
   }
 
   .connection-info {
@@ -260,37 +244,36 @@
   }
 
   .connection-email {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     color: var(--color-text);
     margin-bottom: 4px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
 
   .primary-badge {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
-    background: var(--color-primary);
+    padding: 3px 8px;
+    background: #FF6F61;
     color: white;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
-    border-radius: 4px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.05em;
   }
 
   .connection-id {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--color-text-muted);
     font-family: monospace;
   }
 
   .connection-actions {
     display: flex;
-    gap: 8px;
+    gap: 12px;
     align-items: center;
     flex-shrink: 0;
   }
@@ -299,23 +282,21 @@
     padding: 8px 16px;
     font-size: 13px;
     font-weight: 500;
-    border-radius: 8px;
-    border: 1px solid;
+    border: none;
+    background: transparent;
     cursor: pointer;
     transition: all 0.2s;
     white-space: nowrap;
   }
 
   .set-primary-btn {
-    background: transparent;
-    border-color: var(--color-border);
     color: var(--color-text-secondary);
+    border-bottom: 1px solid transparent;
   }
 
   .set-primary-btn:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.03);
-    border-color: rgba(0, 0, 0, 0.25);
     color: var(--color-text);
+    border-bottom-color: var(--color-text);
   }
 
   .set-primary-btn:disabled {
@@ -324,8 +305,6 @@
   }
 
   .disconnect-btn {
-    background: transparent;
-    border-color: rgba(239, 68, 68, 0.2);
     color: #dc2626;
     display: flex;
     align-items: center;
@@ -333,8 +312,7 @@
   }
 
   .disconnect-btn:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.08);
-    border-color: rgba(239, 68, 68, 0.3);
+    color: #b91c1c;
   }
 
   .disconnect-btn:disabled {
@@ -358,26 +336,24 @@
   }
 
   .popup-footer {
-    padding-top: 16px;
+    padding-top: 24px;
     border-top: 1px solid var(--color-border);
   }
 
   .connect-btn {
     width: 100%;
-    padding: 14px 20px;
-    font-size: 15px;
-    font-weight: 600;
-    border-radius: 10px;
+    padding: 16px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
     border: none;
-    background: var(--color-primary);
+    background: #FF6F61;
     color: white;
     cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 4px 16px rgba(255, 111, 97, 0.25);
+    transition: background 0.2s;
   }
 
   .connect-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(255, 111, 97, 0.35);
+    background: #E85A4F;
   }
 </style>

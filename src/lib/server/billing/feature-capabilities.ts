@@ -8,6 +8,7 @@
 import { userDocRef, type UserUsage } from '../core';
 import { buildFeatureCapabilities, getRefreshDate, type FeatureCapabilities } from './billing-utils';
 import type { PlanKey } from './stripe';
+import { PLAN_LIMITS } from '$lib/billing/plans';
 
 /**
  * Get user's feature capabilities from Firestore
@@ -15,13 +16,13 @@ import type { PlanKey } from './stripe';
  */
 function normalizeFreeCapabilities(cap: FeatureCapabilities): FeatureCapabilities {
 	if (cap.planKey !== 'free') return cap;
-	// Enforce new free defaults
+	// Enforce free plan limits from centralized source
 	return {
 		...cap,
 		outreach: true,
-		connectedInboxes: Math.max(cap.connectedInboxes, 1),
-		influencerSearchResults: 10,
-		monthlyOutreachEmails: 10
+		connectedInboxes: Math.max(cap.connectedInboxes, PLAN_LIMITS.free.connectedInboxes),
+		influencerSearchResults: PLAN_LIMITS.free.influencerProfiles,
+		monthlyOutreachEmails: PLAN_LIMITS.free.outreachEmails
 	};
 }
 
@@ -176,10 +177,11 @@ export async function getFeatureLimits(uid: string): Promise<{
 } | null> {
 	const capabilities = await getUserFeatureCapabilities(uid);
 	if (!capabilities) {
+		// Return free plan defaults from centralized source
 		return {
-			influencerSearchResults: 10,
-			monthlyOutreachEmails: 10,
-			connectedInboxes: 1
+			influencerSearchResults: PLAN_LIMITS.free.influencerProfiles,
+			monthlyOutreachEmails: PLAN_LIMITS.free.outreachEmails,
+			connectedInboxes: PLAN_LIMITS.free.connectedInboxes
 		};
 	}
 

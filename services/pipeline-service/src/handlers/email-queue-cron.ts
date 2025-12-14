@@ -15,7 +15,8 @@ import { FieldValue } from 'firebase-admin/firestore';
 const DAILY_INBOX_LIMIT = 50;
 const PROCESSING_DELAY_MS = 200;
 const MAX_EMAILS_PER_INBOX_PER_RUN = 50;
-const GMAIL_ENCRYPTION_KEY = process.env.GMAIL_ENCRYPTION_KEY || '';
+// Support both env var names for backwards compatibility
+const GMAIL_ENCRYPTION_KEY = process.env.GMAIL_TOKEN_ENCRYPTION_KEY || process.env.GMAIL_ENCRYPTION_KEY || '';
 
 // Types
 interface QueuedEmail {
@@ -90,23 +91,30 @@ function delay(ms: number): Promise<void> {
 
 /**
  * Decrypt refresh token using AES-256-GCM
+ * Note: Tokens are stored in base64 format by the main app (gmail-auth.ts)
  */
 function decryptRefreshToken(encrypted: string, iv: string, tag: string): string {
 	if (!GMAIL_ENCRYPTION_KEY) {
 		throw new Error('GMAIL_ENCRYPTION_KEY not configured');
 	}
 
+	// The encryption key should be base64-encoded (matching gmail-auth.ts)
+	const encryptionKey = Buffer.from(GMAIL_ENCRYPTION_KEY, 'base64');
+	if (encryptionKey.length !== 32) {
+		throw new Error('GMAIL_ENCRYPTION_KEY must be a base64-encoded 32-byte key');
+	}
+
 	const decipher = crypto.createDecipheriv(
 		'aes-256-gcm',
-		Buffer.from(GMAIL_ENCRYPTION_KEY, 'hex'),
-		Buffer.from(iv, 'hex')
+		encryptionKey,
+		Buffer.from(iv, 'base64')
 	);
-	decipher.setAuthTag(Buffer.from(tag, 'hex'));
+	decipher.setAuthTag(Buffer.from(tag, 'base64'));
 
-	let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-	decrypted += decipher.final('utf8');
+	let decrypted = decipher.update(Buffer.from(encrypted, 'base64'));
+	decrypted = Buffer.concat([decrypted, decipher.final()]);
 
-	return decrypted;
+	return decrypted.toString('utf8');
 }
 
 /**
@@ -335,24 +343,62 @@ async function sendEmailViaGmail(
 
 /**
  * Process a single queued email
+ *
+ * Uses a transaction to atomically claim the email (prevent race conditions
+ * where multiple processes try to send the same email).
  */
 async function processQueuedEmail(
 	db: FirebaseFirestore.Firestore,
 	uid: string,
 	queueDoc: FirebaseFirestore.QueryDocumentSnapshot
 ): Promise<{ success: boolean; error?: string }> {
-	const email = queueDoc.data() as QueuedEmail;
 	const queueRef = queueDoc.ref;
 	const now = Date.now();
 
-	// Mark as processing
-	await queueRef.update({
-		status: 'processing',
-		processedAt: now,
-		attempts: FieldValue.increment(1),
-		lastAttemptAt: now,
-		updatedAt: now
-	});
+	// Use a transaction to atomically claim the email
+	// This prevents race conditions where two processes pick up the same email
+	let email: QueuedEmail;
+	let currentAttempts: number;
+
+	try {
+		const claimResult = await db.runTransaction(async (tx) => {
+			const doc = await tx.get(queueRef);
+
+			if (!doc.exists) {
+				return { claimed: false, reason: 'Queue item not found' };
+			}
+
+			const data = doc.data() as QueuedEmail;
+
+			// Check if already claimed by another process
+			if (data.status !== 'queued') {
+				return { claimed: false, reason: `Invalid status for processing: ${data.status}` };
+			}
+
+			// Atomically claim the email by updating status to 'processing'
+			const newAttempts = data.attempts + 1;
+			tx.update(queueRef, {
+				status: 'processing',
+				processedAt: now,
+				attempts: newAttempts,
+				lastAttemptAt: now,
+				updatedAt: now
+			});
+
+			return { claimed: true, email: data, attempts: newAttempts };
+		});
+
+		if (!claimResult.claimed) {
+			return { success: false, error: claimResult.reason };
+		}
+
+		email = claimResult.email!;
+		currentAttempts = claimResult.attempts!;
+	} catch (txError) {
+		// Transaction failed (likely due to contention)
+		const errorMsg = txError instanceof Error ? txError.message : 'Transaction failed';
+		return { success: false, error: `Failed to claim email: ${errorMsg}` };
+	}
 
 	try {
 		// Get Gmail connection
@@ -369,41 +415,44 @@ async function processQueuedEmail(
 			from: connection.email
 		});
 
-		// Success - update queue item
-		await queueRef.update({
-			status: 'sent',
-			sentAt: Date.now(),
-			updatedAt: Date.now()
+		// Success - update queue item and contact status
+		await db.runTransaction(async (tx) => {
+			tx.update(queueRef, {
+				status: 'sent',
+				sentAt: Date.now(),
+				updatedAt: Date.now()
+			});
+
+			// Update campaign contact if applicable
+			if (email.campaignId && email.influencerId) {
+				const contactRef = db
+					.collection('users')
+					.doc(uid)
+					.collection('campaigns')
+					.doc(email.campaignId)
+					.collection('contacts')
+					.doc(email.influencerId);
+
+				tx.set(
+					contactRef,
+					{
+						sendStatus: 'sent',
+						sentAt: Date.now(),
+						updatedAt: Date.now()
+					},
+					{ merge: true }
+				);
+			}
 		});
 
-		// Update campaign contact if applicable
-		if (email.campaignId && email.influencerId) {
-			const contactRef = db
-				.collection('users')
-				.doc(uid)
-				.collection('campaigns')
-				.doc(email.campaignId)
-				.collection('contacts')
-				.doc(email.influencerId);
-
-			await contactRef.set(
-				{
-					sendStatus: 'sent',
-					sentAt: Date.now(),
-					updatedAt: Date.now()
-				},
-				{ merge: true }
-			);
-		}
-
-		// Increment usage counters
-		await incrementDailyUsage(db, uid, email.senderConnectionId, 1);
+		// Increment usage counters (outside transaction for simplicity)
+		// Note: Daily inbox usage is already counted when emails are queued
+		// Only increment monthly outreach usage here
 		await incrementMonthlyUsage(db, uid, 1);
 
 		return { success: true };
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-		const currentAttempts = email.attempts + 1;
 		const shouldRetry = currentAttempts < email.maxAttempts && isRetryableError(error);
 
 		if (shouldRetry) {
@@ -455,12 +504,45 @@ function isRetryableError(error: unknown): boolean {
 	if (!(error instanceof Error)) return false;
 	const message = error.message.toLowerCase();
 
-	if (message.includes('rate limit') || message.includes('429')) return true;
-	if (message.includes('5') && message.includes('error')) return true;
-	if (message.includes('access denied') || message.includes('401') || message.includes('403'))
+	// Auth errors are NOT retryable (check these first)
+	if (
+		message.includes('access denied') ||
+		message.includes('401') ||
+		message.includes('403') ||
+		message.includes('reconnect') ||
+		message.includes('permission')
+	) {
 		return false;
-	if (message.includes('invalid') || message.includes('400')) return false;
+	}
 
+	// Invalid email/request errors are NOT retryable
+	if (message.includes('invalid') || message.includes('400')) {
+		return false;
+	}
+
+	// Rate limit errors ARE retryable
+	if (message.includes('rate limit') || message.includes('429') || message.includes('too many')) {
+		return true;
+	}
+
+	// Server errors (5xx) ARE retryable - use regex to match status codes 500-599
+	if (/\b5\d{2}\b/.test(message) || message.includes('server error') || message.includes('internal error')) {
+		return true;
+	}
+
+	// Network/timeout errors ARE retryable
+	if (
+		message.includes('timeout') ||
+		message.includes('timed out') ||
+		message.includes('econnreset') ||
+		message.includes('econnrefused') ||
+		message.includes('network') ||
+		message.includes('socket')
+	) {
+		return true;
+	}
+
+	// Default to not retrying for unknown errors
 	return false;
 }
 

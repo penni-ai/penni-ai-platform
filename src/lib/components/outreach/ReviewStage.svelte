@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { slideFade } from './transitions';
 	import type { ContactMethod, GmailConnection, ReviewRecipient } from './types';
-	
+
 	interface Props {
 		navigationDirection?: 'forward' | 'backward';
 		reviewData: ReviewRecipient[];
@@ -19,7 +19,7 @@
 		onPreviewEmail: (content: string, recipient: { name?: string; email?: string }) => void;
 		onPreviewMessage: (content: string, platform: 'instagram' | 'tiktok', recipient: { name?: string }) => void;
 	}
-	
+
 	let {
 		reviewData,
 		reviewCounts,
@@ -37,7 +37,7 @@
 		onPreviewMessage,
 		navigationDirection = 'forward'
 	}: Props = $props();
-	
+
 	async function handleSendInstagram() {
 		const instagramRecipients = reviewData.filter(r => r.methods.includes('instagram'));
 		try {
@@ -82,7 +82,7 @@
 			}
 		}
 	}
-	
+
 	async function handleSendTikTok() {
 		const tiktokRecipients = reviewData.filter(r => r.methods.includes('tiktok'));
 		try {
@@ -131,151 +131,166 @@
 
 <div class="absolute inset-0 h-full flex" transition:slideFade={{ axis: 'x', duration: 300, direction: navigationDirection }}>
 	<!-- Left: Recipients Table -->
-	<div class="flex-1 overflow-y-auto px-8 py-6">
-		<div class="overflow-x-auto">
-			<table class="w-full border-collapse">
-				<thead>
+	<div class="flex-1 overflow-y-auto">
+		<table class="w-full">
+			<thead class="sticky top-0" style="background: var(--color-bg-elevated);">
+				<tr style="border-bottom: 1px solid var(--color-border);">
+					<th class="text-left py-3 px-6 text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);">Recipient</th>
+					<th class="text-left py-3 px-6 text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);">Method</th>
+					<th class="text-left py-3 px-6 text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);">Message</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each reviewData as recipient}
 					<tr style="border-bottom: 1px solid var(--color-border);">
-						<th class="text-left py-3 px-4 text-sm font-semibold" style="color: var(--color-text);">Recipient</th>
-						<th class="text-left py-3 px-4 text-sm font-semibold" style="color: var(--color-text);">Contact Methods</th>
-						<th class="text-left py-3 px-4 text-sm font-semibold" style="color: var(--color-text);">Message</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each reviewData as recipient}
-						<tr style="border-bottom: 1px solid var(--color-border);">
-							<td class="py-4 px-4">
-								<div>
-									<p class="text-sm font-medium" style="color: var(--color-text);">{recipient.influencer.display_name ?? 'N/A'}</p>
-									{#if recipient.influencer.platform}
-										<p class="text-xs capitalize" style="color: var(--color-text-muted);">{recipient.influencer.platform}</p>
+						<td class="py-4 px-6">
+							<p class="text-sm font-medium" style="color: var(--color-text);">{recipient.influencer.display_name ?? 'N/A'}</p>
+							{#if recipient.influencer.platform}
+								<p class="text-xs capitalize mt-0.5" style="color: var(--color-text-muted);">{recipient.influencer.platform}</p>
+							{/if}
+						</td>
+						<td class="py-4 px-6">
+							<div class="flex flex-wrap gap-1.5">
+								{#each recipient.methods as method}
+									{#if method === 'email' && recipient.emailAccountId}
+										{@const emailAccount = gmailConnections.find(c => c.id === recipient.emailAccountId)}
+										<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs" style="color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border);" title={emailAccount?.email || ''}>
+											{@html getMethodIcon(method)}
+											{emailAccount ? emailAccount.email : getMethodLabel(method)}
+										</span>
+									{:else}
+										<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs {
+											method === 'instagram' ? 'text-[#E4405F]' :
+											method === 'tiktok' ? 'text-black' : ''
+										}" style="{method === 'email' ? 'color: var(--color-text-secondary);' : ''} border-bottom: 1px solid {method === 'instagram' ? '#E4405F' : method === 'tiktok' ? '#000' : 'var(--color-border)'};">
+											{@html getMethodIcon(method)}
+											{getMethodLabel(method)}
+										</span>
 									{/if}
-								</div>
-							</td>
-							<td class="py-4 px-4">
-								<div class="flex flex-wrap gap-2">
-									{#each recipient.methods as method}
-										{#if method === 'email' && recipient.emailAccountId}
-											{@const emailAccount = gmailConnections.find(c => c.id === recipient.emailAccountId)}
-											<span class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium" style="background: var(--color-bg-elevated); color: var(--color-text-secondary);" title={emailAccount?.email || ''}>
-												{@html getMethodIcon(method)}
-												{emailAccount ? emailAccount.email : getMethodLabel(method)}
-											</span>
-										{:else}
-											<span class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium {
-												method === 'instagram' ? 'bg-[#E4405F]/10 text-[#E4405F]' :
-												method === 'tiktok' ? 'bg-black/10 text-black' : ''
-											}" style="{method === 'email' ? 'background: var(--color-bg-elevated); color: var(--color-text-secondary);' : ''}">
-												{@html getMethodIcon(method)}
-												{getMethodLabel(method)}
-											</span>
-										{/if}
-									{/each}
-								</div>
-							</td>
-							<td class="py-4 px-4">
-								<div class="space-y-2 max-w-md">
-									{#each recipient.methods as method}
-										<div class="text-xs">
-											<div class="flex items-center justify-between mb-1">
-												<p class="font-medium" style="color: var(--color-text-secondary);">{getMethodLabel(method)}:</p>
-												{#if recipient.messages[method]}
-													{#if method === 'email'}
-														<button
-															type="button"
-															onclick={() => {
-																onPreviewEmail(recipient.messages[method], {
-																	name: recipient.influencer.display_name,
-																	email: recipient.influencer.email_address || recipient.influencer.business_email
-																});
-															}}
-															class="text-xs font-medium flex items-center gap-1"
-															style="color: var(--color-primary);"
-														>
-															<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7Z" />
-															</svg>
-															Preview
-														</button>
-													{:else if method === 'instagram' || method === 'tiktok'}
-														<button
-															type="button"
-															onclick={() => {
-																onPreviewMessage(recipient.messages[method], method, {
-																	name: recipient.influencer.display_name
-																});
-															}}
-															class="text-xs font-medium flex items-center gap-1"
-															style="color: var(--color-primary);"
-														>
-															<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7Z" />
-															</svg>
-															Preview
-														</button>
-													{/if}
+								{/each}
+							</div>
+						</td>
+						<td class="py-4 px-6">
+							<div class="space-y-2 max-w-md">
+								{#each recipient.methods as method}
+									<div class="text-xs">
+										<div class="flex items-center justify-between mb-1">
+											<p class="font-medium" style="color: var(--color-text-secondary);">{getMethodLabel(method)}</p>
+											{#if recipient.messages[method]}
+												{#if method === 'email'}
+													<button
+														type="button"
+														onclick={() => {
+															onPreviewEmail(recipient.messages[method], {
+																name: recipient.influencer.display_name,
+																email: recipient.influencer.email_address || recipient.influencer.business_email
+															});
+														}}
+														class="text-xs font-medium flex items-center gap-1 transition-opacity"
+														style="color: var(--color-primary);"
+														onmouseenter={(e) => e.currentTarget.style.opacity = '0.7'}
+														onmouseleave={(e) => e.currentTarget.style.opacity = '1'}
+													>
+														<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7Z" />
+														</svg>
+														Preview
+													</button>
+												{:else if method === 'instagram' || method === 'tiktok'}
+													<button
+														type="button"
+														onclick={() => {
+															onPreviewMessage(recipient.messages[method], method, {
+																name: recipient.influencer.display_name
+															});
+														}}
+														class="text-xs font-medium flex items-center gap-1 transition-opacity"
+														style="color: var(--color-primary);"
+														onmouseenter={(e) => e.currentTarget.style.opacity = '0.7'}
+														onmouseleave={(e) => e.currentTarget.style.opacity = '1'}
+													>
+														<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7Z" />
+														</svg>
+														Preview
+													</button>
 												{/if}
-											</div>
-											<div class="line-clamp-3 whitespace-pre-wrap" style="color: var(--color-text-secondary);">{recipient.messages[method] || '(No message)'}</div>
+											{/if}
 										</div>
-									{/each}
-								</div>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
+										<div class="line-clamp-2 whitespace-pre-wrap" style="color: var(--color-text-muted);">{recipient.messages[method] || '(No message)'}</div>
+									</div>
+								{/each}
+							</div>
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
 	</div>
 
 	<!-- Right: Send Messages Buttons -->
-	<div class="w-[20%] p-6 flex flex-col gap-4" style="border-left: 1px solid var(--color-border);">
-		<h3 class="text-sm font-semibold" style="color: var(--color-text);">Send Messages</h3>
+	<div class="w-64 p-6 flex flex-col gap-4 shrink-0" style="border-left: 1px solid var(--color-border);">
+		<h3 class="text-xs font-medium uppercase tracking-wide" style="color: var(--color-text-muted);">Send Messages</h3>
+
 		{#if createDraftSuccess}
-			<div class="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+			<div class="p-3 text-sm" style="background: #f0fdf4; border-bottom: 2px solid #22c55e; color: #166534;">
 				{createDraftSuccess}
 			</div>
 		{/if}
 		{#if createDraftError}
-			<div class="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+			<div class="p-3 text-sm" style="background: #fef2f2; border-bottom: 2px solid #ef4444; color: #991b1b;">
 				{createDraftError}
 			</div>
 		{/if}
+
 		{#if reviewCounts.email > 0}
 			<button
 				type="button"
 				disabled={isCreatingDrafts}
 				onclick={() => onCreateDrafts('email')}
-				class="w-full px-4 py-3 text-white font-medium rounded-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+				class="w-full px-4 py-3 text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
 				style="background: var(--color-primary);"
+				onmouseenter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.opacity = '0.9'; }}
+				onmouseleave={(e) => e.currentTarget.style.opacity = '1'}
 			>
-				{isCreatingDrafts ? 'Creating Drafts...' : `Create Gmail Drafts (${reviewCounts.email})`}
+				{isCreatingDrafts ? 'Creating...' : `Create Gmail Drafts (${reviewCounts.email})`}
 			</button>
 		{/if}
+
 		{#if reviewCounts.instagram > 0}
 			<button
 				type="button"
 				disabled={isCreatingDrafts}
 				onclick={handleSendInstagram}
-				class="w-full px-4 py-3 font-medium rounded-none hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-				style="background: var(--color-bg-elevated); border: 2px solid var(--color-border); color: var(--color-text-secondary);"
+				class="w-full px-4 py-3 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+				style="color: var(--color-text); border: 1px solid var(--color-border);"
+				onmouseenter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.borderColor = 'var(--color-text)'; }}
+				onmouseleave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}
 			>
-				Send Instagram Messages ({reviewCounts.instagram})
+				Open Instagram ({reviewCounts.instagram})
 			</button>
 		{/if}
+
 		{#if reviewCounts.tiktok > 0}
 			<button
 				type="button"
 				disabled={isCreatingDrafts}
 				onclick={handleSendTikTok}
-				class="w-full px-4 py-3 font-medium rounded-none hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-				style="background: var(--color-bg-elevated); border: 2px solid var(--color-border); color: var(--color-text-secondary);"
+				class="w-full px-4 py-3 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+				style="color: var(--color-text); border: 1px solid var(--color-border);"
+				onmouseenter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.borderColor = 'var(--color-text)'; }}
+				onmouseleave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}
 			>
-				Send TikTok Messages ({reviewCounts.tiktok})
+				Open TikTok ({reviewCounts.tiktok})
 			</button>
 		{/if}
+
+		<div class="mt-auto pt-4" style="border-top: 1px solid var(--color-border);">
+			<p class="text-xs" style="color: var(--color-text-muted);">
+				Gmail drafts will be created in your inbox. Instagram and TikTok will open profiles in new tabs.
+			</p>
+		</div>
 	</div>
 </div>
-

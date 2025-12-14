@@ -15,6 +15,7 @@ import {
 	userDocRef,
 	webhookEventDocRef
 } from '$lib/server/core';
+import { EVENT_BOOST_CREDITS, type EventCredits } from '$lib/billing/plans';
 
 const timestamp = () => Date.now();
 
@@ -228,15 +229,43 @@ async function recordAddon(uid: string, params: {
 
 	await addonDocRef(uid, addonId).set(payload, { merge: true });
 
-	await userDocRef(uid).set(
-		{
-			addons: {
-				eventAccess: true
+	// When payment is fulfilled, add event credits to the user
+	// These are one-time credits added on top of their existing subscription
+	const userRef = userDocRef(uid);
+
+	if (params.status === 'fulfilled') {
+		// Get current event credits (if any) and add to them
+		const userSnap = await userRef.get();
+		const userData = userSnap.data();
+		const existingCredits = userData?.eventCredits as EventCredits | undefined;
+
+		// Add new credits on top of existing credits (stacking purchases)
+		const newEventCredits: EventCredits = {
+			influencersRemaining: (existingCredits?.influencersRemaining ?? 0) + EVENT_BOOST_CREDITS.influencers,
+			outreachRemaining: (existingCredits?.outreachRemaining ?? 0) + EVENT_BOOST_CREDITS.outreach,
+			additionalInboxes: (existingCredits?.additionalInboxes ?? 0) + EVENT_BOOST_CREDITS.inboxes,
+			purchasedAt: now,
+			paymentIntentId: params.paymentIntentId ?? addonId
+		};
+
+		await userRef.set(
+			{
+				addons: { eventAccess: true },
+				eventCredits: newEventCredits,
+				updatedAt: now
 			},
-			updatedAt: now
-		},
-		{ merge: true }
-	);
+			{ merge: true }
+		);
+	} else {
+		// Just mark event access for pending purchases
+		await userRef.set(
+			{
+				addons: { eventAccess: true },
+				updatedAt: now
+			},
+			{ merge: true }
+		);
+	}
 }
 
 async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session, logger: Logger) {

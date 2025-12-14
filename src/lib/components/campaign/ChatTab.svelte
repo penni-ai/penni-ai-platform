@@ -98,13 +98,13 @@
 		>
 			<div class="mx-auto flex w-full max-w-3xl flex-col gap-6">
 				{#if isInitializing}
-					<div class="flex justify-center py-12 text-gray-500">Loading conversation…</div>
+					<div class="flex justify-center py-12 text-gray-500 text-sm tracking-wide">Loading conversation...</div>
 				{:else if initError}
-					<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">
-						<p class="font-semibold">We couldn't load the conversation.</p>
-						<p class="text-sm">{initError}</p>
+					<div class="border-l-2 border-red-400 bg-red-50/50 px-4 py-3">
+						<p class="font-medium text-gray-900">We couldn't load the conversation.</p>
+						<p class="text-sm text-gray-600 mt-1">{initError}</p>
 						<button
-							class="mt-4 text-sm font-medium text-red-700 underline"
+							class="mt-3 text-sm font-medium text-[#FF6F61] hover:underline"
 							onclick={onRetry}
 						>
 							Try again
@@ -112,9 +112,9 @@
 					</div>
 				{:else}
 					{#if chatError}
-						<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">
-							<p class="font-semibold">Failed to send message</p>
-							<p class="text-sm">{chatError}</p>
+						<div class="border-l-2 border-red-400 bg-red-50/50 px-4 py-3">
+							<p class="font-medium text-gray-900">Failed to send message</p>
+							<p class="text-sm text-gray-600 mt-1">{chatError}</p>
 						</div>
 					{/if}
 					<MessageList {messages} {isSending} />

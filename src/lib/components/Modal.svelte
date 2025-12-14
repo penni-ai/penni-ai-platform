@@ -49,7 +49,7 @@
   <div
     class="modal-backdrop"
     onclick={handleBackdropClick}
-    transition:fade={{ duration: 200 }}
+    transition:fade={{ duration: 250 }}
     role="dialog"
     aria-modal="true"
     aria-labelledby={title ? 'modal-title' : undefined}
@@ -58,7 +58,7 @@
     <div
       class="modal-content {sizes[size]}"
       class:center-content={centerContent}
-      transition:fly={{ y: 20, duration: 300 }}
+      transition:fly={{ y: 30, duration: 350, opacity: 0 }}
     >
       {#if title || dismissible}
         <div class="modal-header">
@@ -104,6 +104,18 @@
     background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(8px);
     padding: 1rem;
+    animation: backdropFadeIn 0.25s ease-out forwards;
+  }
+
+  @keyframes backdropFadeIn {
+    from {
+      opacity: 0;
+      backdrop-filter: blur(0px);
+    }
+    to {
+      opacity: 1;
+      backdrop-filter: blur(8px);
+    }
   }
 
   .modal-content {
@@ -114,6 +126,18 @@
     border-radius: 20px;
     background: white;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    animation: modalSlideIn 0.35s ease-out forwards;
+  }
+
+  @keyframes modalSlideIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95) translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
   }
 
   .modal-content.center-content {
@@ -149,12 +173,18 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
   }
 
   .modal-close:hover {
     color: rgba(0, 0, 0, 0.7);
     background: rgba(0, 0, 0, 0.05);
+    transform: scale(1.05);
+  }
+
+  .modal-close:active {
+    transform: scale(0.95);
+    transition: all 0.1s ease;
   }
 
   .modal-body {

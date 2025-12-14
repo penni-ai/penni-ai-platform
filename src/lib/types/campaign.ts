@@ -53,6 +53,7 @@ export type PipelineStages = {
 
 export type InfluencerProfile = {
 	profile_url?: string;
+	profile_image_url?: string;
 	display_name?: string;
 	followers?: number;
 	fit_score?: number;

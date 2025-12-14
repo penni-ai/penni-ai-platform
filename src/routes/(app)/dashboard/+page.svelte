@@ -1,41 +1,17 @@
 <script lang="ts">
-	import TutorialPopup from '$lib/components/campaign/TutorialPopup.svelte';
 	import type { PageData } from './$types';
-	import { planMap, type PlanKey } from '$lib/billing/plans';
-	import { upgradeModal } from '$lib/stores/upgrade';
+	import { campaignPanel } from '$lib/stores/campaign-panel';
+	import WelcomePopup from '$lib/components/WelcomePopup.svelte';
 
 	let { data }: { data: PageData } = $props();
 	const campaigns = $derived(data.campaigns ?? []);
 	const user = $derived(data.user);
-	const currentPlan = $derived(data.currentPlan);
 
-	// Get plan details
-	const planDetails = $derived(currentPlan?.planKey ? planMap[currentPlan.planKey as PlanKey] : planMap['free']);
-	const isFreePlan = $derived(!currentPlan?.planKey || currentPlan.planKey === 'free');
-
-	// Tutorial state
-	let showTutorial = $state(false);
 	let isCreatingCampaign = $state(false);
+	let showWelcome = $state(!data.onboardingCompleted);
 
-	// Show tutorial if: no campaigns AND not completed onboarding
-	$effect(() => {
-		if (campaigns.length === 0 && !data.onboardingCompleted) {
-			showTutorial = true;
-		}
-	});
-
-	// Aggregate stats
-	const totalOutreach = $derived(campaigns.reduce((sum, c) => sum + (c.stats?.outreachSent ?? 0), 0));
-	const totalInfluencers = $derived(campaigns.reduce((sum, c) => sum + (c.stats?.influencersFound ?? 0), 0));
-
-	// Only show max 3 campaigns, sorted by most recent
-	const displayCampaigns = $derived(
-		[...campaigns]
-			.sort((a, b) => (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0))
-			.slice(0, 3)
-	);
-
-	async function handleTutorialComplete() {
+	async function dismissWelcome() {
+		showWelcome = false;
 		try {
 			await fetch('/api/user/onboarding', {
 				method: 'POST',
@@ -45,32 +21,28 @@
 		} catch (error) {
 			console.error('Failed to save onboarding status', error);
 		}
-		showTutorial = false;
 	}
 
-	async function handleTutorialSkip() {
-		try {
-			await fetch('/api/user/onboarding', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'skip' })
-			});
-		} catch (error) {
-			console.error('Failed to save onboarding status', error);
-		}
-		showTutorial = false;
+	async function handleWelcomeGetStarted() {
+		await dismissWelcome();
+		createCampaign();
 	}
+
+	// Aggregate stats
+	const totalOutreach = $derived(campaigns.reduce((sum, c) => sum + (c.stats?.outreachSent ?? 0), 0));
+	const totalInfluencers = $derived(campaigns.reduce((sum, c) => sum + (c.stats?.influencersFound ?? 0), 0));
+
+	// Sort campaigns by most recent
+	const displayCampaigns = $derived(
+		[...campaigns]
+			.sort((a, b) => (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0))
+	);
 
 	async function createCampaign() {
-		if (isCreatingCampaign) return;
+		if (isCreatingCampaign || $campaignPanel.isCreating) return;
 		isCreatingCampaign = true;
 		try {
-			const response = await fetch('/api/campaigns', { method: 'POST' });
-			if (!response.ok) throw new Error('Failed to create campaign');
-			const data = await response.json();
-			if (data.campaignId) {
-				window.location.href = `/campaign/${data.campaignId}`;
-			}
+			await campaignPanel.requestCreate();
 		} catch (error) {
 			console.error('Failed to create campaign', error);
 			alert('Failed to create campaign. Please try again.');
@@ -99,13 +71,13 @@
 		switch (status) {
 			case 'ready':
 			case 'complete':
-				return { label: 'Ready', dot: 'bg-emerald-500' };
+				return { label: 'Ready', class: 'status-ready' };
 			case 'searching':
-				return { label: 'Searching', dot: 'bg-amber-500 animate-pulse' };
+				return { label: 'Searching', class: 'status-searching' };
 			case 'error':
-				return { label: 'Error', dot: 'bg-red-500' };
+				return { label: 'Error', class: 'status-error' };
 			default:
-				return { label: 'Draft', dot: 'bg-gray-300' };
+				return { label: 'Draft', class: 'status-draft' };
 		}
 	}
 
@@ -121,397 +93,181 @@
 		const name = user.email.split('@')[0];
 		return name.charAt(0).toUpperCase() + name.slice(1);
 	}
+
+	function formatDate(timestamp: number | null | undefined): string {
+		if (!timestamp) return '';
+		const date = new Date(timestamp);
+		const now = new Date();
+		const diffMs = now.getTime() - date.getTime();
+		const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+		if (diffDays === 0) return 'Today';
+		if (diffDays === 1) return 'Yesterday';
+		if (diffDays < 7) return `${diffDays} days ago`;
+
+		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	}
 </script>
 
 <svelte:head>
-	<title>Dashboard – Penni AI</title>
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
-	<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+	<title>Dashboard - Penni AI</title>
 </svelte:head>
 
 <div class="dashboard">
-	<div class="dashboard-container">
-		<!-- Editorial Header -->
-		<header class="header">
-			<div class="header-top">
-				<span class="header-date">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
-			</div>
-			<h1 class="header-greeting">
-				{getGreeting()}{getUserFirstName() ? `, ${getUserFirstName()}` : ''}
-			</h1>
-		</header>
+	<!-- Header -->
+	<header class="page-header">
+		<div class="greeting">
+			<h1>{getGreeting()}{getUserFirstName() ? `, ${getUserFirstName()}` : ''}</h1>
+			<p>Here's what's happening with your campaigns</p>
+		</div>
+	</header>
 
-		<!-- Main Grid -->
-		<div class="main-grid">
-			<!-- Subscription Hero Card -->
-			<div class="subscription-card">
-				<div class="subscription-inner">
-					<div class="subscription-header">
-						<span class="subscription-label">Current Plan</span>
-						{#if isFreePlan}
-							<button type="button" class="upgrade-link" onclick={() => upgradeModal.open('Upgrade your plan', 'Unlock more influencer searches, outreach emails, and connected inboxes.')}>
-								Upgrade
-								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-									<path d="M7 17L17 7M17 7H7M17 7V17"/>
-								</svg>
-							</button>
-						{/if}
-					</div>
+	<!-- Stats Row -->
+	<div class="stats-row">
+		<div class="stat-card">
+			<span class="stat-value">{campaigns.length}</span>
+			<span class="stat-label">Campaigns</span>
+		</div>
+		<div class="stat-card">
+			<span class="stat-value">{totalInfluencers.toLocaleString()}</span>
+			<span class="stat-label">Influencers Found</span>
+		</div>
+		<div class="stat-card">
+			<span class="stat-value">{totalOutreach.toLocaleString()}</span>
+			<span class="stat-label">Emails Sent</span>
+		</div>
+	</div>
 
-					<div class="plan-display">
-						<h2 class="plan-name">{planDetails?.name ?? 'Free Plan'}</h2>
-						<div class="plan-price">
-							<span class="price-amount">{planDetails?.price ?? '$0'}</span>
-							<span class="price-cadence">/{planDetails?.cadence ?? 'month'}</span>
-						</div>
-					</div>
-
-					<div class="plan-features">
-						{#each (planDetails?.features ?? []).slice(0, 3) as feature}
-							<div class="feature-item">
-								<span class="feature-dot"></span>
-								<span>{feature}</span>
-							</div>
-						{/each}
-					</div>
-
-					{#if !isFreePlan && currentPlan?.currentPeriodEnd}
-						<div class="billing-info">
-							Next billing: {new Date(currentPlan.currentPeriodEnd * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-						</div>
-					{/if}
-				</div>
-
-				<!-- Decorative element -->
-				<div class="subscription-accent"></div>
-			</div>
-
-			<!-- Stats Column -->
-			<div class="stats-column">
-				<div class="stat-card">
-					<span class="stat-label">Campaigns</span>
-					<span class="stat-number">{campaigns.length}</span>
-				</div>
-				<div class="stat-card">
-					<span class="stat-label">Influencers</span>
-					<span class="stat-number">{totalInfluencers.toLocaleString()}</span>
-				</div>
-				<div class="stat-card">
-					<span class="stat-label">Emails Sent</span>
-					<span class="stat-number">{totalOutreach.toLocaleString()}</span>
-				</div>
-			</div>
+	<!-- Campaigns Section -->
+	<section class="campaigns-section">
+		<div class="section-header">
+			<h2>Recent Campaigns</h2>
 		</div>
 
-		<!-- Campaigns Section -->
-		<section class="campaigns-section">
-			<div class="section-header">
-				<h2 class="section-title">Recent Campaigns</h2>
-				<button
-					onclick={createCampaign}
-					disabled={isCreatingCampaign}
-					class="new-campaign-btn"
-				>
+		{#if campaigns.length === 0}
+			<div class="empty-state">
+				<div class="empty-icon">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+						<path d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>
+					</svg>
+				</div>
+				<h3>No campaigns yet</h3>
+				<p>Create your first campaign to start finding influencers.</p>
+				<button onclick={createCampaign} disabled={isCreatingCampaign} class="empty-cta">
 					{#if isCreatingCampaign}
 						<span class="spinner"></span>
+						Creating...
 					{:else}
-						<span class="btn-plus">+</span>
-						New Campaign
+						Create Campaign
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M12 4.5v15m7.5-7.5h-15"/>
+						</svg>
 					{/if}
 				</button>
 			</div>
-
-			{#if campaigns.length === 0}
-				<!-- Empty State -->
-				<div class="empty-state">
-					<div class="empty-content">
-						<div class="empty-icon">
-							<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-								<path d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>
+		{:else}
+			<div class="campaigns-grid">
+				{#each displayCampaigns as campaign}
+					{@const status = getStatusConfig(campaign.status)}
+					<a href={`/campaign/${campaign.id}`} class="campaign-card">
+						<div class="card-header">
+							<h3 class="campaign-name">{getCampaignName(campaign)}</h3>
+							<span class="status-badge {status.class}">{status.label}</span>
+						</div>
+						<div class="card-stats">
+							<div class="card-stat">
+								<span class="card-stat-value">{campaign.stats?.influencersFound ?? 0}</span>
+								<span class="card-stat-label">influencers</span>
+							</div>
+							<div class="card-stat">
+								<span class="card-stat-value">{campaign.stats?.outreachSent ?? 0}</span>
+								<span class="card-stat-label">sent</span>
+							</div>
+						</div>
+						<div class="card-footer">
+							<span class="card-date">{formatDate(campaign.updatedAt ?? campaign.createdAt)}</span>
+							<svg class="card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M7 17L17 7M17 7H7M17 7V17"/>
 							</svg>
 						</div>
-						<h3 class="empty-title">Launch your first campaign</h3>
-						<p class="empty-description">Find influencers that match your brand and reach out with personalized emails.</p>
-						<button
-							onclick={createCampaign}
-							disabled={isCreatingCampaign}
-							class="empty-cta"
-						>
-							{#if isCreatingCampaign}
-								<span class="spinner"></span>
-								Creating...
-							{:else}
-								Get Started
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-									<path d="M5 12h14M12 5l7 7-7 7"/>
-								</svg>
-							{/if}
-						</button>
-					</div>
-				</div>
-			{:else}
-				<!-- Campaign Cards -->
-				<div class="campaign-grid">
-					{#each displayCampaigns as campaign, i}
-						{@const status = getStatusConfig(campaign.status)}
-						<a
-							href={`/campaign/${campaign.id}`}
-							class="campaign-card"
-							style="--delay: {i * 0.1}s"
-						>
-							<div class="campaign-top">
-								<div class="campaign-status">
-									<span class="status-dot {status.dot}"></span>
-									<span class="status-label">{status.label}</span>
-								</div>
-								<svg class="campaign-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-									<path d="M7 17L17 7M17 7H7M17 7V17"/>
-								</svg>
-							</div>
-
-							<h3 class="campaign-name">{getCampaignName(campaign)}</h3>
-
-							<div class="campaign-stats">
-								<div class="campaign-stat">
-									<span class="campaign-stat-number">{campaign.stats?.influencersFound ?? 0}</span>
-									<span class="campaign-stat-label">influencers</span>
-								</div>
-								<div class="campaign-stat-divider"></div>
-								<div class="campaign-stat">
-									<span class="campaign-stat-number">{campaign.stats?.outreachSent ?? 0}</span>
-									<span class="campaign-stat-label">emails</span>
-								</div>
-							</div>
-						</a>
-					{/each}
-				</div>
-
-				{#if campaigns.length > 3}
-					<div class="view-all">
-						<a href="/campaigns" class="view-all-link">
-							View all {campaigns.length} campaigns
-							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M5 12h14M12 5l7 7-7 7"/>
-							</svg>
-						</a>
-					</div>
-				{/if}
-			{/if}
-		</section>
-	</div>
+					</a>
+				{/each}
+			</div>
+		{/if}
+	</section>
 </div>
 
-<!-- Tutorial Popup -->
-<TutorialPopup
-	open={showTutorial}
-	onComplete={handleTutorialComplete}
-	onSkip={handleTutorialSkip}
+<WelcomePopup
+	open={showWelcome}
+	userName={getUserFirstName()}
+	onGetStarted={handleWelcomeGetStarted}
+	onClose={dismissWelcome}
 />
 
 <style>
 	.dashboard {
-		font-family: 'DM Sans', system-ui, sans-serif;
-		min-height: 100vh;
-		background: var(--color-bg);
-		color: var(--color-text);
-	}
-
-	.dashboard-container {
+		padding: 2rem;
 		max-width: 1200px;
 		margin: 0 auto;
-		padding: 3rem 2rem 4rem;
 	}
 
 	/* Header */
-	.header {
-		margin-bottom: 3rem;
-		animation: fadeIn 0.6s ease-out;
-	}
-
-	.header-top {
-		margin-bottom: 0.5rem;
-	}
-
-	.header-date {
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		color: var(--color-text-muted);
-	}
-
-	.header-greeting {
-		font-family: 'Instrument Serif', Georgia, serif;
-		font-size: clamp(2.5rem, 5vw, 3.5rem);
-		font-weight: 400;
-		line-height: 1.1;
-		color: var(--color-text);
-	}
-
-	/* Main Grid */
-	.main-grid {
-		display: grid;
-		grid-template-columns: 2fr 1fr;
-		gap: 1.5rem;
-		margin-bottom: 4rem;
-		animation: fadeIn 0.6s ease-out 0.1s both;
-	}
-
-	/* Subscription Card */
-	.subscription-card {
-		position: relative;
-		background: var(--color-bg-elevated);
-		border-radius: 1.5rem;
-		overflow: hidden;
-		border: 1px solid var(--color-border);
-	}
-
-	.subscription-inner {
-		padding: 2rem 2.5rem;
-		position: relative;
-		z-index: 1;
-	}
-
-	.subscription-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1.5rem;
-	}
-
-	.subscription-label {
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		color: var(--color-text-muted);
-	}
-
-	.upgrade-link {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		font-size: 0.8rem;
-		font-weight: 500;
-		color: var(--color-primary);
-		text-decoration: none;
-		transition: gap 0.2s ease;
-	}
-
-	.upgrade-link:hover {
-		gap: 0.5rem;
-	}
-
-	.plan-display {
+	.page-header {
 		margin-bottom: 2rem;
 	}
 
-	.plan-name {
+	.greeting h1 {
 		font-family: 'Instrument Serif', Georgia, serif;
-		font-size: 2.25rem;
+		font-size: 1.75rem;
 		font-weight: 400;
 		color: var(--color-text);
-		margin-bottom: 0.5rem;
+		margin: 0 0 0.25rem 0;
 	}
 
-	.plan-price {
-		display: flex;
-		align-items: baseline;
-		gap: 0.25rem;
-	}
-
-	.price-amount {
-		font-size: 1.5rem;
-		font-weight: 600;
-		color: var(--color-text);
-	}
-
-	.price-cadence {
-		font-size: 0.9rem;
+	.greeting p {
+		font-size: 0.875rem;
 		color: var(--color-text-muted);
+		margin: 0;
 	}
 
-	.plan-features {
+	/* Stats Row */
+	.stats-row {
 		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.feature-item {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		font-size: 0.9rem;
-		color: var(--color-text-secondary);
-	}
-
-	.feature-dot {
-		width: 4px;
-		height: 4px;
-		border-radius: 50%;
-		background: var(--color-primary);
-		flex-shrink: 0;
-	}
-
-	.billing-info {
-		margin-top: 1.5rem;
-		padding-top: 1.5rem;
-		border-top: 1px solid var(--color-border);
-		font-size: 0.8rem;
-		color: var(--color-text-muted);
-	}
-
-	.subscription-accent {
-		position: absolute;
-		top: 0;
-		right: 0;
-		width: 200px;
-		height: 200px;
-		background: linear-gradient(135deg, var(--color-primary) 0%, transparent 60%);
-		opacity: 0.06;
-		border-radius: 0 1.5rem 0 100%;
-	}
-
-	/* Stats Column */
-	.stats-column {
-		display: flex;
-		flex-direction: column;
 		gap: 1rem;
+		margin-bottom: 2.5rem;
 	}
 
 	.stat-card {
+		flex: 1;
+		padding: 1.25rem 1.5rem;
 		background: var(--color-bg-elevated);
 		border: 1px solid var(--color-border);
-		border-radius: 1rem;
-		padding: 1.25rem 1.5rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		transition: transform 0.2s ease, box-shadow 0.2s ease;
+		border-radius: 10px;
 	}
 
-	.stat-card:hover {
-		transform: translateY(-2px);
-		box-shadow: var(--shadow-md);
-	}
-
-	.stat-label {
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-muted);
-	}
-
-	.stat-number {
+	.stat-value {
+		display: block;
 		font-family: 'Instrument Serif', Georgia, serif;
 		font-size: 2rem;
 		font-weight: 400;
 		color: var(--color-text);
 		line-height: 1;
+		margin-bottom: 0.25rem;
+	}
+
+	.stat-label {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
 	/* Campaigns Section */
 	.campaigns-section {
-		animation: fadeIn 0.6s ease-out 0.2s both;
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
+		border-radius: 12px;
+		padding: 1.5rem;
 	}
 
 	.section-header {
@@ -519,107 +275,67 @@
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 1.5rem;
-		padding-bottom: 1rem;
-		border-bottom: 1px solid var(--color-border);
 	}
 
-	.section-title {
+	.section-header h2 {
 		font-family: 'Instrument Serif', Georgia, serif;
-		font-size: 1.5rem;
+		font-size: 1.25rem;
 		font-weight: 400;
 		color: var(--color-text);
-	}
-
-	.new-campaign-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.75rem 1.25rem;
-		background: var(--color-text);
-		color: var(--color-bg-elevated);
-		font-size: 0.875rem;
-		font-weight: 500;
-		border: none;
-		border-radius: 2rem;
-		cursor: pointer;
-		transition: background 0.2s ease, transform 0.2s ease;
-	}
-
-	.new-campaign-btn:hover:not(:disabled) {
-		background: var(--color-primary);
-		transform: translateY(-1px);
-	}
-
-	.new-campaign-btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.btn-plus {
-		font-size: 1.1rem;
-		font-weight: 300;
+		margin: 0;
 	}
 
 	/* Empty State */
 	.empty-state {
-		background: var(--color-bg-elevated);
-		border: 1px solid var(--color-border);
-		border-radius: 1.5rem;
-		padding: 4rem 2rem;
-	}
-
-	.empty-content {
-		max-width: 360px;
-		margin: 0 auto;
 		text-align: center;
+		padding: 3rem 2rem;
 	}
 
 	.empty-icon {
-		width: 64px;
-		height: 64px;
-		margin: 0 auto 1.5rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--color-bg-subtle);
-		border-radius: 1rem;
-		color: var(--color-primary);
+		width: 56px;
+		height: 56px;
+		margin: 0 auto 1.25rem;
+		color: var(--color-coral);
+		opacity: 0.6;
 	}
 
-	.empty-title {
+	.empty-icon svg {
+		width: 100%;
+		height: 100%;
+	}
+
+	.empty-state h3 {
 		font-family: 'Instrument Serif', Georgia, serif;
 		font-size: 1.5rem;
 		font-weight: 400;
 		color: var(--color-text);
-		margin-bottom: 0.75rem;
+		margin: 0 0 0.5rem 0;
 	}
 
-	.empty-description {
-		font-size: 0.95rem;
+	.empty-state p {
+		font-size: 0.9375rem;
 		color: var(--color-text-muted);
-		line-height: 1.5;
-		margin-bottom: 2rem;
+		margin: 0 0 1.5rem 0;
 	}
 
 	.empty-cta {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 1rem 2rem;
-		background: var(--color-primary);
-		color: var(--color-bg-elevated);
-		font-size: 0.95rem;
-		font-weight: 500;
+		padding: 0.75rem 1.5rem;
+		background: var(--color-coral);
+		color: white;
+		font-size: 0.875rem;
+		font-weight: 600;
+		font-family: inherit;
 		border: none;
-		border-radius: 2rem;
+		border-radius: 6px;
 		cursor: pointer;
-		transition: background 0.2s ease, transform 0.2s ease, gap 0.2s ease;
+		transition: background 0.2s ease;
 	}
 
 	.empty-cta:hover:not(:disabled) {
-		background: var(--color-primary-dark);
-		transform: translateY(-2px);
-		gap: 0.75rem;
+		background: var(--color-coral-dark);
 	}
 
 	.empty-cta:disabled {
@@ -627,130 +343,155 @@
 		cursor: not-allowed;
 	}
 
-	/* Campaign Grid */
-	.campaign-grid {
+	.empty-cta svg {
+		width: 16px;
+		height: 16px;
+	}
+
+	/* Campaigns Grid */
+	.campaigns-grid {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 1.25rem;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: 1rem;
 	}
 
 	.campaign-card {
-		background: var(--color-bg-elevated);
+		display: flex;
+		flex-direction: column;
+		padding: 1.25rem;
+		background: var(--color-bg);
 		border: 1px solid var(--color-border);
-		border-radius: 1.25rem;
-		padding: 1.5rem;
+		border-radius: 10px;
 		text-decoration: none;
 		color: inherit;
-		transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-		animation: slideUp 0.5s ease-out calc(var(--delay)) both;
+		transition: all 0.2s ease;
 	}
 
 	.campaign-card:hover {
-		transform: translateY(-4px);
-		box-shadow: var(--shadow-lg);
-		border-color: var(--color-primary);
+		border-color: var(--color-coral);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 	}
 
-	.campaign-card:hover .campaign-arrow {
+	.campaign-card:hover .card-arrow {
 		opacity: 1;
-		transform: translate(2px, -2px);
+		color: var(--color-coral);
 	}
 
-	.campaign-top {
+	.card-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: flex-start;
+		gap: 0.75rem;
 		margin-bottom: 1rem;
-	}
-
-	.campaign-status {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.status-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-	}
-
-	.status-label {
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text-muted);
-	}
-
-	.campaign-arrow {
-		opacity: 0;
-		color: var(--color-primary);
-		transition: opacity 0.2s ease, transform 0.2s ease;
 	}
 
 	.campaign-name {
 		font-family: 'Instrument Serif', Georgia, serif;
-		font-size: 1.25rem;
+		font-size: 1.125rem;
 		font-weight: 400;
 		color: var(--color-text);
-		margin-bottom: 1.25rem;
+		margin: 0;
 		line-height: 1.3;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
+		flex: 1;
+		min-width: 0;
 		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
-	.campaign-stats {
+	.status-badge {
+		font-size: 0.625rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		flex-shrink: 0;
+	}
+
+	.status-ready {
+		background: #dcfce7;
+		color: #166534;
+	}
+
+	.status-searching {
+		background: #fef3c7;
+		color: #92400e;
+	}
+
+	.status-error {
+		background: #fee2e2;
+		color: #991b1b;
+	}
+
+	.status-draft {
+		background: var(--color-border);
+		color: var(--color-text-muted);
+	}
+
+	:global([data-theme="dark"]) .status-ready {
+		background: rgba(34, 197, 94, 0.2);
+		color: #4ade80;
+	}
+
+	:global([data-theme="dark"]) .status-searching {
+		background: rgba(251, 191, 36, 0.2);
+		color: #fbbf24;
+	}
+
+	:global([data-theme="dark"]) .status-error {
+		background: rgba(239, 68, 68, 0.2);
+		color: #f87171;
+	}
+
+	:global([data-theme="dark"]) .status-draft {
+		background: rgba(255, 255, 255, 0.1);
+		color: var(--color-text-muted);
+	}
+
+	.card-stats {
 		display: flex;
-		align-items: center;
-		gap: 1rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--color-border);
+		gap: 1.5rem;
+		margin-bottom: 1rem;
 	}
 
-	.campaign-stat {
+	.card-stat {
 		display: flex;
 		align-items: baseline;
-		gap: 0.35rem;
+		gap: 0.25rem;
 	}
 
-	.campaign-stat-number {
+	.card-stat-value {
+		font-family: 'Instrument Serif', Georgia, serif;
 		font-size: 1.25rem;
-		font-weight: 600;
 		color: var(--color-text);
 	}
 
-	.campaign-stat-label {
+	.card-stat-label {
+		font-size: 0.6875rem;
+		color: var(--color-text-muted);
+	}
+
+	.card-footer {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--color-border);
+		margin-top: auto;
+	}
+
+	.card-date {
 		font-size: 0.75rem;
 		color: var(--color-text-muted);
 	}
 
-	.campaign-stat-divider {
-		width: 1px;
-		height: 20px;
-		background: var(--color-border);
-	}
-
-	/* View All Link */
-	.view-all {
-		margin-top: 1.5rem;
-		text-align: center;
-	}
-
-	.view-all-link {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.9rem;
+	.card-arrow {
+		width: 16px;
+		height: 16px;
 		color: var(--color-text-muted);
-		text-decoration: none;
-		transition: color 0.2s ease, gap 0.2s ease;
-	}
-
-	.view-all-link:hover {
-		color: var(--color-primary);
-		gap: 0.75rem;
+		opacity: 0;
+		transition: all 0.2s ease;
 	}
 
 	/* Spinner */
@@ -763,71 +504,22 @@
 		animation: spin 0.8s linear infinite;
 	}
 
-	/* Animations */
-	@keyframes fadeIn {
-		from {
-			opacity: 0;
-			transform: translateY(8px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	@keyframes slideUp {
-		from {
-			opacity: 0;
-			transform: translateY(16px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
 	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
+		to { transform: rotate(360deg); }
 	}
 
 	/* Responsive */
-	@media (max-width: 1024px) {
-		.main-grid {
-			grid-template-columns: 1fr;
+	@media (max-width: 768px) {
+		.dashboard {
+			padding: 1.5rem;
 		}
 
-		.stats-column {
-			flex-direction: row;
-		}
-
-		.stat-card {
-			flex: 1;
-		}
-
-		.campaign-grid {
-			grid-template-columns: repeat(2, 1fr);
-		}
-	}
-
-	@media (max-width: 640px) {
-		.dashboard-container {
-			padding: 2rem 1.25rem 3rem;
-		}
-
-		.stats-column {
+		.stats-row {
 			flex-direction: column;
 		}
 
-		.campaign-grid {
+		.campaigns-grid {
 			grid-template-columns: 1fr;
-		}
-
-		.section-header {
-			flex-direction: column;
-			align-items: flex-start;
-			gap: 1rem;
 		}
 	}
 </style>

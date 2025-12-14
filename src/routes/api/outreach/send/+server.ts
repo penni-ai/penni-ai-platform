@@ -13,7 +13,7 @@ import {
 import type { UserEmailSettings, OutreachContact } from '$lib/server/core/firestore';
 import { clearSelectionsAfterSend } from '$lib/server/outreach/clear-selections';
 import { FieldValue } from 'firebase-admin/firestore';
-import { checkAndReserveDailyCapacity, getNextMidnightUTC } from '$lib/server/usage/daily-inbox-usage';
+import { checkAndReserveDailyCapacity, getNextMidnightUTC, releaseReservedCapacity, DAILY_INBOX_LIMIT } from '$lib/server/usage/daily-inbox-usage';
 import { addToEmailQueue } from '$lib/server/email-queue/queue-service';
 
 export const POST = handleApiRoute(async (event) => {
@@ -196,16 +196,14 @@ export const POST = handleApiRoute(async (event) => {
 				});
 			}
 		} else {
-			// Legacy format: influencerIds only (fallback for backwards compatibility)
-			// TODO: Fetch influencer profiles to get email addresses
-			// For now, this is a placeholder
-			for (let i = 0; i < body.influencerIds!.length; i++) {
-				allEmails.push({
-					to: `influencer${i}@example.com`, // TODO: Fetch actual email
-					subject: body.subject || defaultSubject,
-					htmlBody: body.emailContent // No template replacement for legacy format
-				});
-			}
+			// Legacy format: influencerIds only is no longer supported
+			// The new format with recipients array should always be used
+			throw new ApiProblem({
+				status: 400,
+				code: 'LEGACY_FORMAT_DEPRECATED',
+				message: 'The influencerIds format is deprecated. Please use the recipients array format instead.',
+				hint: 'Update your request to use recipients: [{ influencerId, email, name, platform }]'
+			});
 		}
 
 		// Split emails into immediate send vs queue based on daily capacity
@@ -227,6 +225,15 @@ export const POST = handleApiRoute(async (event) => {
 				if (sent > 0) {
 					await incrementOutreachUsage(user.uid, sent);
 				}
+
+				// Release reserved capacity for failed sends
+				if (result.failed > 0 && effectiveConnectionId) {
+					try {
+						await releaseReservedCapacity(user.uid, effectiveConnectionId, result.failed);
+					} catch (releaseError) {
+						console.error('Failed to release reserved capacity:', releaseError);
+					}
+				}
 			} else {
 				// Create drafts instead of sending
 				const result = await createDraftsViaGmail(user.uid, emails, senderConnectionId ?? null);
@@ -238,6 +245,15 @@ export const POST = handleApiRoute(async (event) => {
 				// Increment usage for successfully created drafts
 				if (created > 0) {
 					await incrementOutreachUsage(user.uid, created);
+				}
+
+				// Release reserved capacity for failed draft creations
+				if (result.failed > 0 && effectiveConnectionId) {
+					try {
+						await releaseReservedCapacity(user.uid, effectiveConnectionId, result.failed);
+					} catch (releaseError) {
+						console.error('Failed to release reserved capacity:', releaseError);
+					}
 				}
 			}
 		}
@@ -428,7 +444,7 @@ export const POST = handleApiRoute(async (event) => {
 		dailyUsage: dailyCapacity
 			? {
 					used: dailyCapacity.currentUsed,
-					remaining: 50 - dailyCapacity.currentUsed,
+					remaining: DAILY_INBOX_LIMIT - dailyCapacity.currentUsed,
 					resetAt: dailyCapacity.resetAt
 				}
 			: undefined

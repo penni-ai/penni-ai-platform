@@ -1,175 +1,308 @@
 <script lang="ts">
-	import Button from '$lib/components/Button.svelte';
-	import { type Plan, getFeatureColor } from '$lib/billing/plans';
+	import { type Plan } from '$lib/billing/plans';
 
 	interface Props {
 		plan: Plan;
 		isCurrentPlan?: boolean;
-		isUpgradeAvailable?: boolean;
+		isRecommended?: boolean;
 		loading?: boolean;
 		disabled?: boolean;
-		buttonText?: string;
 		onSelect: (plan: Plan) => void;
-		variant?: 'default' | 'compact';
 	}
 
 	let {
 		plan,
 		isCurrentPlan = false,
-		isUpgradeAvailable = false,
+		isRecommended = false,
 		loading = false,
 		disabled = false,
-		buttonText,
-		onSelect,
-		variant = 'default'
+		onSelect
 	}: Props = $props();
 
-	const defaultButtonText = $derived.by(() => {
-		if (isCurrentPlan && !plan.oneTime) return 'Current plan';
-		if (loading) return plan.key === 'free' ? 'Setting up…' : 'Redirecting…';
-		if (plan.oneTime) return 'Book event blast';
-		if (plan.key === 'free') return 'Get started free';
-		if (plan.key === 'starter') return 'Start free trial';
-		if (isUpgradeAvailable && plan.key === 'growth') return 'Upgrade to Growth';
-		return 'Choose plan';
+	const buttonText = $derived.by(() => {
+		if (isCurrentPlan && !plan.oneTime) return 'Current';
+		if (loading) return 'Processing...';
+		if (plan.oneTime) return 'Add Credits';
+		if (plan.key === 'free') return 'Start free';
+		return 'Subscribe';
 	});
 
-	const buttonVariant = $derived.by(() => {
-		if (plan.oneTime || plan.key === 'free' || isCurrentPlan) return 'outline';
-		if (plan.badge) return 'primary';
-		return 'primary';
-	});
-
-	const isCompact = variant === 'compact';
-	const isMostPopular = plan.badge === 'Most popular';
+	const isHighlighted = isRecommended || plan.badge === 'recommended';
+	const isAddon = plan.oneTime;
 </script>
 
-<article
-	class="relative flex h-full flex-col {isCompact ? 'p-6' : 'p-8'} transition-all duration-200"
-	style="
-		background-color: {isMostPopular ? 'var(--color-text)' : 'var(--color-bg-elevated)'};
-		color: {isMostPopular ? 'var(--color-text-inverse)' : 'var(--color-text)'};
-		border: 1.5px solid {plan.badge && !isMostPopular ? 'var(--color-primary)' : 'var(--color-border)'};
-		border-radius: 1.5rem;
-		font-family: 'DM Sans', sans-serif;
-	"
-	onmouseenter={(e) => {
-		if (!isMostPopular) {
-			e.currentTarget.style.transform = 'translateY(-4px)';
-			e.currentTarget.style.boxShadow = '0 12px 24px -10px rgba(0,0,0,0.1)';
-		}
-	}}
-	onmouseleave={(e) => {
-		if (!isMostPopular) {
-			e.currentTarget.style.transform = 'translateY(0)';
-			e.currentTarget.style.boxShadow = 'none';
-		}
-	}}
->
-	{#if plan.badge}
-		<div class="absolute -top-3 left-1/2 -translate-x-1/2">
-			<span
-				class="inline-flex items-center rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-wider"
-				style="
-					background-color: {isMostPopular ? 'var(--color-bg-elevated)' : 'var(--color-primary)'};
-					color: {isMostPopular ? 'var(--color-text)' : 'var(--color-text-inverse)'};
-					letter-spacing: 0.05em;
-				"
-			>
-				{plan.badge}
-			</span>
-		</div>
+<article class="plan" class:plan--highlighted={isHighlighted} class:plan--current={isCurrentPlan} class:plan--addon={isAddon}>
+	{#if isHighlighted}
+		<div class="plan__ribbon">Recommended</div>
+	{:else if isAddon}
+		<div class="plan__ribbon plan__ribbon--addon">Credit Boost</div>
 	{/if}
 
-	{#if isCurrentPlan && !plan.oneTime}
-		<div class="absolute right-4 top-4">
-			<span
-				class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
-				style="background-color: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success);"
-			>
-				Current plan
-			</span>
-		</div>
-	{:else if isUpgradeAvailable}
-		<div class="absolute right-4 top-4">
-			<span
-				class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
-				style="background-color: color-mix(in srgb, var(--color-info) 15%, transparent); color: var(--color-info);"
-			>
-				Upgrade available
-			</span>
-		</div>
+	<div class="plan__header">
+		<h3 class="plan__name">{plan.name}</h3>
+		{#if isCurrentPlan && !plan.oneTime}
+			<span class="plan__current-badge">Current</span>
+		{/if}
+	</div>
+
+	<div class="plan__price-row">
+		<span class="plan__price">{plan.price}</span>
+		<span class="plan__cadence">{isAddon ? 'one-time' : plan.cadence === 'forever' ? '/free' : `/${plan.cadence.replace('per ', '')}`}</span>
+	</div>
+
+	<p class="plan__attendance">{plan.estimatedAttendance}</p>
+
+	{#if isAddon}
+		<p class="plan__addon-note">Adds credits to your current plan. Never expires.</p>
 	{/if}
 
-	<header class="{isCompact ? 'mb-5 space-y-3' : 'mb-8 space-y-4'}">
-		<h3
-			class="{isCompact ? 'text-2xl' : 'text-3xl'} font-normal"
-			style="font-family: 'Instrument Serif', serif;"
-		>
-			{plan.name}
-		</h3>
-		<div>
-			<p
-				class="{isCompact ? 'text-3xl' : 'text-4xl'} font-normal leading-none"
-				style="font-family: 'Instrument Serif', serif;"
-			>
-				{plan.price}
-			</p>
-			<p
-				class="mt-1 text-xs font-semibold uppercase tracking-wider"
-				style="color: {isMostPopular ? 'rgba(255,255,255,0.7)' : 'var(--color-text-secondary)'}; letter-spacing: 0.1em;"
-			>
-				{plan.cadence}
-			</p>
-		</div>
-		<p
-			class="text-sm leading-relaxed"
-			style="color: {isMostPopular ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)'};"
-		>
-			{plan.description}
-		</p>
-		{#if plan.estimatedAttendance}
-			<p
-				class="text-xs font-medium"
-				style="color: {isMostPopular ? 'rgba(255,255,255,0.8)' : 'var(--color-primary)'};"
-			>
-				{plan.estimatedAttendance}
-			</p>
-		{/if}
-		{#if plan.trialCopy}
-			<p
-				class="rounded-xl px-3 py-2 text-xs font-medium"
-				style="background-color: {isMostPopular ? 'rgba(255,255,255,0.1)' : 'color-mix(in srgb, var(--color-error) 10%, transparent)'}; color: {isMostPopular ? 'rgba(255,255,255,0.9)' : 'var(--color-error)'}; border: 1px solid {isMostPopular ? 'rgba(255,255,255,0.2)' : 'color-mix(in srgb, var(--color-error) 30%, transparent)'};"
-			>
-				{plan.trialCopy}
-			</p>
-		{/if}
-	</header>
-
-	<ul class="mb-6 flex-1 space-y-3 text-sm">
+	<ul class="plan__features">
 		{#each plan.features as feature}
-			<li class="flex items-start gap-3">
-				<svg
-					class="mt-0.5 h-1.5 w-1.5 shrink-0"
-					fill="currentColor"
-					viewBox="0 0 20 20"
-					style="color: {isMostPopular ? 'rgba(255,255,255,0.6)' : 'var(--color-primary)'};"
-				>
-					<circle cx="10" cy="10" r="10" />
-				</svg>
-				<span style="color: {isMostPopular ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)'};">
-					{feature}
-				</span>
+			<li class="plan__feature" class:plan__feature--addon={isAddon && feature.startsWith('+')}>
+				{#if isAddon && feature.startsWith('+')}
+					<svg class="plan__plus" viewBox="0 0 16 16" fill="none">
+						<path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+					</svg>
+				{:else}
+					<svg class="plan__check" viewBox="0 0 16 16" fill="none">
+						<path d="M3 8l3.5 3.5L13 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+					</svg>
+				{/if}
+				{feature}
 			</li>
 		{/each}
 	</ul>
 
-	<Button
-		class="w-full justify-center {isCompact ? '' : 'mt-2'}"
-		variant={buttonVariant}
+	<button
+		type="button"
+		class="plan__cta"
+		class:plan__cta--primary={isHighlighted}
+		class:plan__cta--addon={isAddon}
+		class:plan__cta--disabled={disabled || loading || (isCurrentPlan && !plan.oneTime)}
 		disabled={disabled || loading || (isCurrentPlan && !plan.oneTime)}
 		onclick={() => onSelect(plan)}
 	>
-		{buttonText ?? defaultButtonText}
-	</Button>
+		{buttonText}
+	</button>
 </article>
+
+<style>
+	.plan {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		padding: 1.5rem;
+		background: var(--color-bg-elevated, #fff);
+		border: 1px solid var(--color-border, #e5e5e5);
+		border-radius: 2px;
+		transition: border-color 0.2s ease, box-shadow 0.2s ease;
+	}
+
+	.plan:hover {
+		border-color: var(--color-border-strong, #ccc);
+	}
+
+	.plan--highlighted {
+		border-color: var(--coral, #FF6F61);
+		box-shadow: 0 0 0 1px var(--coral, #FF6F61);
+	}
+
+	.plan--highlighted:hover {
+		border-color: var(--coral, #FF6F61);
+	}
+
+	.plan--current {
+		background: var(--color-bg-subtle, #fafafa);
+	}
+
+	/* Ribbon */
+	.plan__ribbon {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		padding: 0.375rem 0;
+		font-size: 0.625rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		text-align: center;
+		color: white;
+		background: var(--coral, #FF6F61);
+	}
+
+	.plan--highlighted {
+		padding-top: 2.5rem;
+	}
+
+	/* Header */
+	.plan__header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.plan__name {
+		margin: 0;
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 1.25rem;
+		font-weight: 400;
+		color: var(--color-text, #1a1a1a);
+	}
+
+	.plan__current-badge {
+		padding: 0.125rem 0.5rem;
+		font-size: 0.625rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-success, #059669);
+		background: rgba(5, 150, 105, 0.1);
+		border-radius: 2px;
+	}
+
+	/* Pricing */
+	.plan__price-row {
+		display: flex;
+		align-items: baseline;
+		gap: 0.25rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.plan__price {
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 2rem;
+		font-weight: 400;
+		line-height: 1;
+		color: var(--color-text, #1a1a1a);
+	}
+
+	.plan__cadence {
+		font-size: 0.75rem;
+		color: var(--color-text-muted, #888);
+	}
+
+	.plan__attendance {
+		margin: 0 0 1rem;
+		font-size: 0.6875rem;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--coral, #FF6F61);
+	}
+
+	/* Features */
+	.plan__features {
+		flex: 1;
+		margin: 0 0 1rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.plan__feature {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.375rem;
+		font-size: 0.8125rem;
+		color: var(--color-text-secondary, #4a4a4a);
+	}
+
+	.plan__feature:last-child {
+		margin-bottom: 0;
+	}
+
+	.plan__check {
+		flex-shrink: 0;
+		width: 14px;
+		height: 14px;
+		color: var(--coral, #FF6F61);
+	}
+
+	/* CTA */
+	.plan__cta {
+		width: 100%;
+		padding: 0.625rem 1rem;
+		font-family: 'DM Sans', system-ui, sans-serif;
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--color-text, #1a1a1a);
+		background: transparent;
+		border: 1.5px solid var(--color-text, #1a1a1a);
+		border-radius: 0;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.plan__cta:hover:not(:disabled) {
+		background: var(--color-text, #1a1a1a);
+		color: white;
+	}
+
+	.plan__cta--primary {
+		background: var(--coral, #FF6F61);
+		color: white;
+		border-color: var(--coral, #FF6F61);
+	}
+
+	.plan__cta--primary:hover:not(:disabled) {
+		background: #e85d50;
+		border-color: #e85d50;
+	}
+
+	.plan__cta--disabled,
+	.plan__cta:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	/* Addon/Credit Boost styles */
+	.plan--addon {
+		background: linear-gradient(135deg, var(--color-bg-elevated, #fff) 0%, rgba(139, 92, 246, 0.05) 100%);
+		border-color: rgba(139, 92, 246, 0.3);
+		padding-top: 2.5rem;
+	}
+
+	.plan--addon:hover {
+		border-color: rgba(139, 92, 246, 0.5);
+	}
+
+	.plan__ribbon--addon {
+		background: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%);
+	}
+
+	.plan__addon-note {
+		margin: -0.5rem 0 1rem;
+		padding: 0.5rem;
+		font-size: 0.6875rem;
+		color: #7c3aed;
+		background: rgba(139, 92, 246, 0.1);
+		border-radius: 2px;
+		text-align: center;
+	}
+
+	.plan__plus {
+		flex-shrink: 0;
+		width: 14px;
+		height: 14px;
+		color: #8b5cf6;
+	}
+
+	.plan__feature--addon {
+		color: #6d28d9;
+		font-weight: 500;
+	}
+
+	.plan__cta--addon {
+		background: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%);
+		color: white;
+		border-color: #8b5cf6;
+	}
+
+	.plan__cta--addon:hover:not(:disabled) {
+		background: linear-gradient(90deg, #7c3aed 0%, #8b5cf6 100%);
+		border-color: #7c3aed;
+	}
+</style>

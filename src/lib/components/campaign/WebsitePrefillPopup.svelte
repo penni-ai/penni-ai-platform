@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { fly, fade } from 'svelte/transition';
+
   interface Props {
     open: boolean;
     onSubmit: (websiteUrl: string) => Promise<void>;
@@ -50,11 +52,11 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="prefill-title"
+    transition:fade={{ duration: 200 }}
   >
-    <div class="popup">
+    <div class="popup" transition:fly={{ y: 20, duration: 300 }}>
       <div class="header">
-        <div class="icon">🌐</div>
-        <h1 id="prefill-title" class="title">Let's get started!</h1>
+        <h1 id="prefill-title" class="title">Let's get started</h1>
         <p class="subtitle">Enter your website URL and we'll automatically fill in your brand details</p>
       </div>
 
@@ -71,7 +73,6 @@
 
         {#if error}
           <div class="error">
-            <span class="error-icon">⚠️</span>
             {error}
           </div>
         {/if}
@@ -86,7 +87,7 @@
               <span class="spinner"></span>
               Analyzing website...
             {:else}
-              Continue →
+              Continue
             {/if}
           </button>
 
@@ -102,7 +103,7 @@
       </form>
 
       <div class="footer">
-        <p class="footer-text">This helps us understand your brand better and saves you time ⚡</p>
+        <p class="footer-text">This helps us understand your brand better and saves you time</p>
       </div>
     </div>
   </div>
@@ -112,65 +113,50 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 9999;
-    padding: 20px;
+    padding: 24px;
   }
 
   .popup {
     background: var(--color-bg-elevated);
-    border-radius: 24px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    max-width: 560px;
+    border-radius: 0;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.2);
+    max-width: 520px;
     width: 100%;
-    padding: 48px;
-    animation: slideUp 0.3s ease-out;
-  }
-
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    padding: 56px;
   }
 
   .header {
     text-align: center;
-    margin-bottom: 40px;
-  }
-
-  .icon {
-    font-size: 64px;
-    margin-bottom: 16px;
+    margin-bottom: 48px;
   }
 
   .title {
-    font-size: 32px;
-    font-weight: 700;
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 36px;
+    font-weight: 400;
     color: var(--color-text);
-    margin: 0 0 12px 0;
+    margin: 0 0 16px 0;
     letter-spacing: -0.02em;
+    line-height: 1.1;
   }
 
   .subtitle {
     font-size: 16px;
     color: var(--color-text-secondary);
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.6;
   }
 
   .form {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 24px;
   }
 
   .input-wrapper {
@@ -179,19 +165,18 @@
 
   .input {
     width: 100%;
-    padding: 18px 24px;
-    font-size: 16px;
-    border: 2px solid var(--color-border);
-    border-radius: 12px;
+    padding: 20px 0;
+    font-size: 18px;
+    border: none;
+    border-bottom: 2px solid var(--color-border);
     outline: none;
-    transition: all 0.2s;
-    background: var(--color-bg-elevated);
+    transition: border-color 0.2s;
+    background: transparent;
     color: var(--color-text);
   }
 
   .input:focus {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 4px rgba(255, 111, 97, 0.1);
+    border-bottom-color: #FF6F61;
   }
 
   .input:disabled {
@@ -204,71 +189,58 @@
   }
 
   .error {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 16px;
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 8px;
+    padding: 16px;
+    background: transparent;
+    border-left: 3px solid #dc2626;
     color: #dc2626;
     font-size: 14px;
-  }
-
-  .error-icon {
-    font-size: 16px;
   }
 
   .buttons {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-top: 8px;
+    gap: 16px;
+    margin-top: 16px;
   }
 
   .primary-btn {
     padding: 18px 32px;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
     border: none;
-    border-radius: 12px;
-    background: var(--color-primary);
+    background: #FF6F61;
     color: white;
     cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 4px 20px rgba(255, 111, 97, 0.25);
+    transition: background 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 10px;
   }
 
   .primary-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 25px rgba(255, 111, 97, 0.35);
+    background: #E85A4F;
   }
 
   .primary-btn:disabled {
     opacity: 0.7;
     cursor: not-allowed;
-    transform: none;
   }
 
   .secondary-btn {
-    padding: 14px 24px;
-    font-size: 15px;
+    padding: 16px 24px;
+    font-size: 14px;
     font-weight: 500;
-    border: 1px solid var(--color-border);
-    border-radius: 10px;
+    border: none;
     background: transparent;
-    color: var(--color-text-secondary);
+    color: var(--color-text-muted);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: color 0.2s;
   }
 
   .secondary-btn:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.03);
-    border-color: rgba(0, 0, 0, 0.2);
+    color: var(--color-text);
   }
 
   .secondary-btn:disabled {
@@ -292,8 +264,8 @@
   }
 
   .footer {
-    margin-top: 32px;
-    padding-top: 24px;
+    margin-top: 48px;
+    padding-top: 32px;
     border-top: 1px solid var(--color-border);
   }
 

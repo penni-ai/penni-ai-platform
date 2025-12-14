@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { slideFade } from './transitions';
 	import type { ContactMethod, Influencer, GmailConnection } from './types';
-	
+
 	interface Props {
 		navigationDirection?: 'forward' | 'backward';
 		influencers: Influencer[];
@@ -23,7 +23,7 @@
 		onEvenlyAssignEmailAccounts: () => void;
 		onSelectAllForMethod: (method: ContactMethod) => void;
 	}
-	
+
 	let {
 		influencers,
 		gmailConnections,
@@ -50,15 +50,18 @@
 <div class="absolute inset-0 h-full flex flex-col" transition:slideFade={{ axis: 'x', duration: 300, direction: navigationDirection }}>
 	<div class="flex-1 overflow-y-auto px-8 py-6">
 		<!-- Quick Selection Buttons -->
-		<div class="flex flex-wrap gap-2 mb-4">
+		<div class="flex flex-wrap gap-3 mb-6">
 			{#if availableMethodCounts.email > 0 && gmailConnections.length > 0}
 				<button
 					type="button"
 					onclick={onEvenlyAssignEmailAccounts}
-					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-blue-100 text-blue-700 hover:bg-blue-200"
+					class="flex items-center gap-2 px-4 py-2 text-xs font-medium transition-colors"
+					style="color: var(--color-primary); border-bottom: 1px solid var(--color-primary);"
+					onmouseenter={(e) => e.currentTarget.style.opacity = '0.7'}
+					onmouseleave={(e) => e.currentTarget.style.opacity = '1'}
 				>
 					{@html getMethodIcon('email')}
-					<span>Evenly Assign Email</span>
+					<span>Assign All Email</span>
 				</button>
 			{/if}
 			{#if availableMethodCounts.instagram > 0}
@@ -66,27 +69,21 @@
 				<button
 					type="button"
 					onclick={() => onSelectAllForMethod('instagram')}
-					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-					style={allInstagramSelected
-						? 'background: #E4405F; color: white;'
-						: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+					class="flex items-center gap-2 px-4 py-2 text-xs font-medium transition-colors"
+					style="color: {allInstagramSelected ? '#E4405F' : 'var(--color-text-secondary)'}; border-bottom: 1px solid {allInstagramSelected ? '#E4405F' : 'var(--color-border)'};"
 					onmouseenter={(e) => {
-						if (allInstagramSelected) {
-							e.currentTarget.style.background = '#D32A4F';
-						} else {
-							e.currentTarget.style.background = 'var(--color-bg-tertiary)';
-						}
+						e.currentTarget.style.color = '#E4405F';
+						e.currentTarget.style.borderColor = '#E4405F';
 					}}
 					onmouseleave={(e) => {
-						if (allInstagramSelected) {
-							e.currentTarget.style.background = '#E4405F';
-						} else {
-							e.currentTarget.style.background = 'var(--color-bg-secondary)';
+						if (!allInstagramSelected) {
+							e.currentTarget.style.color = 'var(--color-text-secondary)';
+							e.currentTarget.style.borderColor = 'var(--color-border)';
 						}
 					}}
 				>
 					{@html getMethodIcon('instagram')}
-					<span>{allInstagramSelected ? 'Deselect All Instagram' : 'Select All Instagram'} ({availableMethodCounts.instagram})</span>
+					<span>{allInstagramSelected ? 'Deselect' : 'Select'} All Instagram ({availableMethodCounts.instagram})</span>
 				</button>
 			{/if}
 			{#if availableMethodCounts.tiktok > 0}
@@ -94,38 +91,37 @@
 				<button
 					type="button"
 					onclick={() => onSelectAllForMethod('tiktok')}
-					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-					style={allTikTokSelected
-						? 'background: black; color: white;'
-						: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+					class="flex items-center gap-2 px-4 py-2 text-xs font-medium transition-colors"
+					style="color: {allTikTokSelected ? 'var(--color-text)' : 'var(--color-text-secondary)'}; border-bottom: 1px solid {allTikTokSelected ? 'var(--color-text)' : 'var(--color-border)'};"
 					onmouseenter={(e) => {
-						if (allTikTokSelected) {
-							e.currentTarget.style.background = '#1a1a1a';
-						} else {
-							e.currentTarget.style.background = 'var(--color-bg-tertiary)';
-						}
+						e.currentTarget.style.color = 'var(--color-text)';
+						e.currentTarget.style.borderColor = 'var(--color-text)';
 					}}
 					onmouseleave={(e) => {
-						if (allTikTokSelected) {
-							e.currentTarget.style.background = 'black';
-						} else {
-							e.currentTarget.style.background = 'var(--color-bg-secondary)';
+						if (!allTikTokSelected) {
+							e.currentTarget.style.color = 'var(--color-text-secondary)';
+							e.currentTarget.style.borderColor = 'var(--color-border)';
 						}
 					}}
 				>
 					{@html getMethodIcon('tiktok')}
-					<span>{allTikTokSelected ? 'Deselect All TikTok' : 'Select All TikTok'} ({availableMethodCounts.tiktok})</span>
+					<span>{allTikTokSelected ? 'Deselect' : 'Select'} All TikTok ({availableMethodCounts.tiktok})</span>
 				</button>
 			{/if}
 		</div>
-		
+
 		<div class="grid grid-cols-2 gap-4">
 			{#each influencers as influencer (getInfluencerKey(influencer))}
 				{@const key = getInfluencerKey(influencer)}
 				{@const selected = getSelectedMethods(key)}
 				{@const hasEmailAddr = hasEmail(influencer)}
 				{@const platform = influencer.platform?.toLowerCase()}
-				<div class="flex items-center justify-between p-4 rounded-lg transition-colors" style="border: 1px solid var(--color-border);" onmouseenter={(e) => e.currentTarget.style.borderColor = 'var(--color-text-muted)'} onmouseleave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
+				<div
+					class="flex items-center justify-between p-4 transition-colors"
+					style="border-bottom: 1px solid var(--color-border);"
+					onmouseenter={(e) => e.currentTarget.style.background = 'var(--color-bg-secondary)'}
+					onmouseleave={(e) => e.currentTarget.style.background = 'transparent'}
+				>
 					<div class="flex items-center gap-4 flex-1 min-w-0">
 						<div class="shrink-0 flex flex-col items-center gap-1">
 							{#if influencer.platform}
@@ -142,11 +138,11 @@
 						<div class="flex-1 min-w-0">
 							<p class="text-sm font-medium truncate" style="color: var(--color-text);">{influencer.display_name ?? 'N/A'}</p>
 							{#if influencer.biography || influencer.bio}
-								<p class="text-xs line-clamp-2 mt-1" style="color: var(--color-text-muted);">{influencer.biography || influencer.bio}</p>
+								<p class="text-xs line-clamp-1 mt-0.5" style="color: var(--color-text-muted);">{influencer.biography || influencer.bio}</p>
 							{/if}
 						</div>
 					</div>
-					<div class="grid grid-cols-2 gap-2 shrink-0 ml-4 w-full max-w-[200px]">
+					<div class="flex gap-2 shrink-0 ml-4">
 						{#if hasEmailAddr && gmailConnections.length > 0}
 							{#each gmailConnections as connection}
 								{@const isSelected = getSelectedEmailAccount(key) === connection.id}
@@ -159,42 +155,38 @@
 											onSetEmailAccount(key, connection.id);
 										}
 									}}
-									class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-									style={isSelected
-										? 'background: var(--color-primary); color: white;'
-										: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+									class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors"
+									style="color: {isSelected ? 'white' : 'var(--color-text-secondary)'}; background: {isSelected ? 'var(--color-primary)' : 'transparent'}; border-bottom: 1px solid {isSelected ? 'var(--color-primary)' : 'var(--color-border)'};"
 									onmouseenter={(e) => {
 										if (!isSelected) {
-											e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+											e.currentTarget.style.borderColor = 'var(--color-text)';
 										}
 									}}
 									onmouseleave={(e) => {
 										if (!isSelected) {
-											e.currentTarget.style.background = 'var(--color-bg-secondary)';
+											e.currentTarget.style.borderColor = 'var(--color-border)';
 										}
 									}}
 									title={connection.email}
 								>
 									{@html getMethodIcon('email')}
-									<span class="truncate">{connection.email}</span>
+									<span class="truncate max-w-24">{connection.email}</span>
 								</button>
 							{/each}
 						{:else if hasEmailAddr}
 							<button
 								type="button"
 								onclick={() => onToggleMethod(key, 'email')}
-								class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-								style={isMethodSelected(key, 'email')
-									? 'background: var(--color-primary); color: white;'
-									: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+								class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors"
+								style="color: {isMethodSelected(key, 'email') ? 'white' : 'var(--color-text-secondary)'}; background: {isMethodSelected(key, 'email') ? 'var(--color-primary)' : 'transparent'}; border-bottom: 1px solid {isMethodSelected(key, 'email') ? 'var(--color-primary)' : 'var(--color-border)'};"
 								onmouseenter={(e) => {
 									if (!isMethodSelected(key, 'email')) {
-										e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+										e.currentTarget.style.borderColor = 'var(--color-text)';
 									}
 								}}
 								onmouseleave={(e) => {
 									if (!isMethodSelected(key, 'email')) {
-										e.currentTarget.style.background = 'var(--color-bg-secondary)';
+										e.currentTarget.style.borderColor = 'var(--color-border)';
 									}
 								}}
 							>
@@ -206,18 +198,18 @@
 							<button
 								type="button"
 								onclick={() => onToggleMethod(key, 'instagram')}
-								class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-								style={isMethodSelected(key, 'instagram')
-									? 'background: #E4405F; color: white;'
-									: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+								class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors"
+								style="color: {isMethodSelected(key, 'instagram') ? 'white' : 'var(--color-text-secondary)'}; background: {isMethodSelected(key, 'instagram') ? '#E4405F' : 'transparent'}; border-bottom: 1px solid {isMethodSelected(key, 'instagram') ? '#E4405F' : 'var(--color-border)'};"
 								onmouseenter={(e) => {
 									if (!isMethodSelected(key, 'instagram')) {
-										e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+										e.currentTarget.style.borderColor = '#E4405F';
+										e.currentTarget.style.color = '#E4405F';
 									}
 								}}
 								onmouseleave={(e) => {
 									if (!isMethodSelected(key, 'instagram')) {
-										e.currentTarget.style.background = 'var(--color-bg-secondary)';
+										e.currentTarget.style.borderColor = 'var(--color-border)';
+										e.currentTarget.style.color = 'var(--color-text-secondary)';
 									}
 								}}
 							>
@@ -229,18 +221,18 @@
 							<button
 								type="button"
 								onclick={() => onToggleMethod(key, 'tiktok')}
-								class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-								style={isMethodSelected(key, 'tiktok')
-									? 'background: black; color: white;'
-									: 'background: var(--color-bg-secondary); color: var(--color-text-secondary);'}
+								class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors"
+								style="color: {isMethodSelected(key, 'tiktok') ? 'white' : 'var(--color-text-secondary)'}; background: {isMethodSelected(key, 'tiktok') ? 'black' : 'transparent'}; border-bottom: 1px solid {isMethodSelected(key, 'tiktok') ? 'black' : 'var(--color-border)'};"
 								onmouseenter={(e) => {
 									if (!isMethodSelected(key, 'tiktok')) {
-										e.currentTarget.style.background = 'var(--color-bg-tertiary)';
+										e.currentTarget.style.borderColor = 'black';
+										e.currentTarget.style.color = 'black';
 									}
 								}}
 								onmouseleave={(e) => {
 									if (!isMethodSelected(key, 'tiktok')) {
-										e.currentTarget.style.background = 'var(--color-bg-secondary)';
+										e.currentTarget.style.borderColor = 'var(--color-border)';
+										e.currentTarget.style.color = 'var(--color-text-secondary)';
 									}
 								}}
 							>
@@ -254,4 +246,3 @@
 		</div>
 	</div>
 </div>
-

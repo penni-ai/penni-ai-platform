@@ -431,11 +431,16 @@ export async function performParallelHybridSearches(
   }
   
   console.log(`[Weaviate] ${searchConfigs.length} searches, ${embeddingMap.size} embeddings (${embeddingDurationMs}ms)`);
-  
+
   const allSearchResults: WeaviateHybridSearchResponse[] = [];
   const errors: Array<{ keyword: string; alpha: number; error: string }> = [];
   const batchTimings: Array<{ batchNumber: number; durationMs: number; searchesInBatch: number }> = [];
-  
+
+  // Start timing for parallel searches
+  if (timingTracker) {
+    timingTracker.startSubStage('weaviate_search', 'parallel_searches');
+  }
+
   // Process searches in batches to limit concurrent connections
   for (let i = 0; i < searchConfigs.length; i += MAX_CONCURRENT_SEARCHES) {
     const batchStartTime = Date.now();

@@ -204,6 +204,9 @@ export async function cancelQueuedEmail(uid: string, queueId: string): Promise<v
 /**
  * Process a single queued email - attempt to send it
  *
+ * Uses a transaction to atomically claim the email (prevent race conditions
+ * where multiple processes try to send the same email).
+ *
  * @returns Object with success status and optional error
  */
 export async function processQueuedEmail(
@@ -211,29 +214,52 @@ export async function processQueuedEmail(
 	queueId: string
 ): Promise<{ success: boolean; error?: string }> {
 	const queueRef = emailQueueDocRef(uid, queueId);
-	const doc = await queueRef.get();
-
-	if (!doc.exists) {
-		return { success: false, error: 'Queue item not found' };
-	}
-
-	const email = doc.data() as QueuedEmail;
-
-	// Validate status
-	if (email.status !== 'queued') {
-		return { success: false, error: `Invalid status for processing: ${email.status}` };
-	}
-
 	const now = Date.now();
 
-	// Mark as processing
-	await queueRef.update({
-		status: 'processing' as EmailQueueStatus,
-		processedAt: now,
-		attempts: FieldValue.increment(1),
-		lastAttemptAt: now,
-		updatedAt: now
-	});
+	// Use a transaction to atomically claim the email
+	// This prevents race conditions where two processes pick up the same email
+	let email: QueuedEmail;
+	let currentAttempts: number;
+
+	try {
+		const claimResult = await firestore.runTransaction(async (tx) => {
+			const doc = await tx.get(queueRef);
+
+			if (!doc.exists) {
+				return { claimed: false, reason: 'Queue item not found' };
+			}
+
+			const data = doc.data() as QueuedEmail;
+
+			// Check if already claimed by another process
+			if (data.status !== 'queued') {
+				return { claimed: false, reason: `Invalid status for processing: ${data.status}` };
+			}
+
+			// Atomically claim the email by updating status to 'processing'
+			const newAttempts = data.attempts + 1;
+			tx.update(queueRef, {
+				status: 'processing' as EmailQueueStatus,
+				processedAt: now,
+				attempts: newAttempts,
+				lastAttemptAt: now,
+				updatedAt: now
+			});
+
+			return { claimed: true, email: data, attempts: newAttempts };
+		});
+
+		if (!claimResult.claimed) {
+			return { success: false, error: claimResult.reason };
+		}
+
+		email = claimResult.email!;
+		currentAttempts = claimResult.attempts!;
+	} catch (txError) {
+		// Transaction failed (likely due to contention)
+		const errorMsg = txError instanceof Error ? txError.message : 'Transaction failed';
+		return { success: false, error: `Failed to claim email: ${errorMsg}` };
+	}
 
 	try {
 		// Attempt to send via Gmail
@@ -245,7 +271,7 @@ export async function processQueuedEmail(
 
 		await sendEmailViaGmail(uid, sendOptions, email.senderConnectionId);
 
-		// Success! Update queue item and usage
+		// Success! Update queue item and contact status
 		await firestore.runTransaction(async (tx) => {
 			// Update queue item
 			tx.update(queueRef, {
@@ -270,14 +296,14 @@ export async function processQueuedEmail(
 		});
 
 		// Increment usage counters (outside transaction for simplicity)
-		await incrementDailyInboxUsage(uid, email.senderConnectionId, 1);
+		// Note: Daily inbox usage is already counted when emails are queued via checkAndReserveDailyCapacity
+		// Only increment monthly outreach usage here
 		await incrementOutreachUsage(uid, 1);
 
 		return { success: true };
 	} catch (error) {
 		// Handle failure
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-		const currentAttempts = email.attempts + 1; // Already incremented above
 		const shouldRetry = currentAttempts < email.maxAttempts && isRetryableError(error);
 
 		if (shouldRetry) {
@@ -325,29 +351,42 @@ function isRetryableError(error: unknown): boolean {
 
 	const message = error.message.toLowerCase();
 
-	// Rate limit errors are retryable
-	if (message.includes('rate limit') || message.includes('429')) {
-		return true;
-	}
-
-	// Server errors are retryable
-	if (message.includes('5') && message.includes('error')) {
-		return true;
-	}
-
-	// Auth errors are NOT retryable
+	// Auth errors are NOT retryable (check these first)
 	if (
 		message.includes('access denied') ||
 		message.includes('401') ||
 		message.includes('403') ||
-		message.includes('reconnect')
+		message.includes('reconnect') ||
+		message.includes('permission')
 	) {
 		return false;
 	}
 
-	// Invalid email errors are NOT retryable
+	// Invalid email/request errors are NOT retryable
 	if (message.includes('invalid') || message.includes('400')) {
 		return false;
+	}
+
+	// Rate limit errors ARE retryable
+	if (message.includes('rate limit') || message.includes('429') || message.includes('too many')) {
+		return true;
+	}
+
+	// Server errors (5xx) ARE retryable - use regex to match status codes 500-599
+	if (/\b5\d{2}\b/.test(message) || message.includes('server error') || message.includes('internal error')) {
+		return true;
+	}
+
+	// Network/timeout errors ARE retryable
+	if (
+		message.includes('timeout') ||
+		message.includes('timed out') ||
+		message.includes('econnreset') ||
+		message.includes('econnrefused') ||
+		message.includes('network') ||
+		message.includes('socket')
+	) {
+		return true;
 	}
 
 	// Default to not retrying for unknown errors

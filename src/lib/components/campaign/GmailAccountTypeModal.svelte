@@ -30,13 +30,13 @@
         onclick={onCancel}
         aria-label="Close"
       >
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        <svg class="close-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
 
       <h2 id="gmail-type-title" class="modal-title">Connect Gmail Account</h2>
-      <p class="modal-description">Choose how you want to send outreach emails:</p>
+      <p class="modal-description">Choose how you want to send outreach emails</p>
 
       <div class="options-container">
         <!-- Draft Mode -->
@@ -45,18 +45,13 @@
           class="option-card"
           onclick={() => onSelect('draft')}
         >
-          <div class="option-icon draft">
-            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </div>
-          <div class="option-content">
+          <div class="option-header">
             <h3 class="option-title">Draft Mode</h3>
-            <p class="option-description">
-              Creates drafts in your Gmail account for you to review and send manually.
-            </p>
             <span class="option-badge recommended">Recommended</span>
           </div>
+          <p class="option-description">
+            Creates drafts in your Gmail account for you to review and send manually.
+          </p>
         </button>
 
         <!-- Send Mode -->
@@ -65,18 +60,13 @@
           class="option-card"
           onclick={() => onSelect('send')}
         >
-          <div class="option-icon send">
-            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </div>
-          <div class="option-content">
+          <div class="option-header">
             <h3 class="option-title">Send Mode</h3>
-            <p class="option-description">
-              Sends emails directly from your Gmail account. Emails are sent immediately.
-            </p>
             <span class="option-badge warning">Sends immediately</span>
           </div>
+          <p class="option-description">
+            Sends emails directly from your Gmail account. Emails are sent immediately.
+          </p>
         </button>
       </div>
 
@@ -91,71 +81,77 @@
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: var(--color-bg-overlay);
-    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 9999;
-    padding: 20px;
+    padding: 24px;
   }
 
   .modal-content {
     background: var(--color-bg-elevated);
-    border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    border-radius: 0;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.2);
     max-width: 480px;
     width: 100%;
-    padding: 28px;
+    padding: 48px;
     position: relative;
   }
 
   .close-btn {
     position: absolute;
-    top: 16px;
-    right: 16px;
+    top: 24px;
+    right: 24px;
     padding: 8px;
-    border-radius: 8px;
     border: none;
     background: transparent;
     color: var(--color-text-muted);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: color 0.2s;
   }
 
   .close-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: var(--color-text-secondary);
+    color: var(--color-text);
+  }
+
+  .close-icon {
+    width: 20px;
+    height: 20px;
   }
 
   .modal-title {
-    font-size: 22px;
-    font-weight: 700;
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 28px;
+    font-weight: 400;
     color: var(--color-text);
     margin: 0 0 8px 0;
+    letter-spacing: -0.01em;
   }
 
   .modal-description {
     font-size: 15px;
     color: var(--color-text-secondary);
-    margin: 0 0 24px 0;
+    margin: 0 0 32px 0;
+    line-height: 1.5;
   }
 
   .options-container {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-bottom: 20px;
+    gap: 16px;
+    margin-bottom: 32px;
   }
 
   .option-card {
     display: flex;
-    align-items: flex-start;
-    gap: 16px;
-    padding: 16px;
-    border: 2px solid var(--color-border);
-    border-radius: 14px;
-    background: var(--color-bg-elevated);
+    flex-direction: column;
+    gap: 8px;
+    padding: 24px;
+    border: none;
+    border-bottom: 2px solid var(--color-border);
+    background: transparent;
     cursor: pointer;
     transition: all 0.2s;
     text-align: left;
@@ -163,62 +159,44 @@
   }
 
   .option-card:hover {
-    border-color: var(--color-primary);
-    box-shadow: 0 4px 16px rgba(255, 111, 97, 0.15);
-    transform: translateY(-1px);
+    border-bottom-color: #FF6F61;
+    background: rgba(255, 111, 97, 0.03);
   }
 
-  .option-icon {
-    flex-shrink: 0;
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+  .option-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-  }
-
-  .option-icon.draft {
-    background: linear-gradient(135deg, #3b82f6, #60a5fa);
-    color: white;
-  }
-
-  .option-icon.send {
-    background: linear-gradient(135deg, #10b981, #34d399);
-    color: white;
-  }
-
-  .option-content {
-    flex: 1;
+    justify-content: space-between;
+    gap: 12px;
   }
 
   .option-title {
-    font-size: 16px;
-    font-weight: 600;
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 18px;
+    font-weight: 400;
     color: var(--color-text);
-    margin: 0 0 4px 0;
+    margin: 0;
   }
 
   .option-description {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--color-text-secondary);
-    margin: 0 0 8px 0;
-    line-height: 1.4;
+    margin: 0;
+    line-height: 1.5;
   }
 
   .option-badge {
     display: inline-block;
-    padding: 3px 8px;
-    border-radius: 6px;
+    padding: 4px 10px;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.05em;
   }
 
   .option-badge.recommended {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    background: rgba(255, 111, 97, 0.1);
+    color: #FF6F61;
   }
 
   .option-badge.warning {
@@ -227,9 +205,11 @@
   }
 
   .modal-note {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--color-text-muted);
     text-align: center;
     margin: 0;
+    padding-top: 24px;
+    border-top: 1px solid var(--color-border);
   }
 </style>

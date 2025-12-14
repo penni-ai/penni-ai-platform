@@ -1,9 +1,10 @@
 import { redirect } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
 import { adminAuth } from '$lib/firebase/admin';
 
 const SESSION_COOKIE_NAME = '__session';
 
-export const load = async ({ cookies, locals, depends }) => {
+export const load: PageServerLoad = async ({ cookies, locals, depends }) => {
 	// Invalidate all data dependencies
 	depends('app:user');
 	

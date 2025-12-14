@@ -270,25 +270,40 @@
 			});
 		}
 	}
+
+	// Format follower count with proper formatting
+	function formatFollowers(count: number | undefined | null): string {
+		if (!count) return '--';
+		if (count >= 1000000) {
+			return (count / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+		}
+		if (count >= 1000) {
+			return (count / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+		}
+		return count.toLocaleString();
+	}
 </script>
 
-<div class="influencers-table-wrapper">
-	<!-- Header -->
-	<div class="table-header">
-		<h3 class="table-title">
-			Campaign Influencers
-			{#if filteredProfiles().length > 0}
-				<span class="table-count">
-					{#if isPreliminary}
-						({filteredProfiles().length} preview of {allFilteredProfiles().length})
-					{:else}
-						({filteredProfiles().length} of {profiles.length})
-					{/if}
-				</span>
-			{/if}
-		</h3>
+<div class="influencers-gallery">
+	<!-- Editorial Header -->
+	<header class="gallery-header">
+		<div class="header-left">
+			<span class="header-label">Curated Selection</span>
+			<h2 class="header-title">
+				Your Creators
+				{#if filteredProfiles().length > 0}
+					<span class="header-count">
+						{#if isPreliminary}
+							{filteredProfiles().length} of {allFilteredProfiles().length}
+						{:else}
+							{filteredProfiles().length}
+						{/if}
+					</span>
+				{/if}
+			</h2>
+		</div>
 
-		<div class="table-actions">
+		<div class="header-actions">
 			{#if onFindMore && !isPreliminary && profiles.length > 0}
 				<button
 					type="button"
@@ -299,783 +314,990 @@
 						onFindMore(existingUrls);
 					}}
 					disabled={isSearching}
-					class="action-btn find-more"
+					class="action-btn action-btn-discover"
 				>
-					<svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+					<svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<circle cx="11" cy="11" r="8"/>
+						<path d="M21 21l-4.35-4.35"/>
+						<path d="M11 8v6M8 11h6"/>
 					</svg>
-					{isSearching ? 'Searching...' : 'Find More'}
+					<span>{isSearching ? 'Discovering...' : 'Discover More'}</span>
 				</button>
 			{/if}
 			{#if !isPreliminary && profiles.length > 0}
 				<button
 					type="button"
 					onclick={exportToCSV}
-					class="action-btn export"
-					title="Export influencers to CSV"
+					class="action-btn action-btn-export"
+					title="Export to CSV"
 				>
-					<svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+					<svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+						<polyline points="7 10 12 15 17 10"/>
+						<line x1="12" y1="15" x2="12" y2="3"/>
 					</svg>
-					Export CSV
+					<span>Export</span>
 				</button>
 			{/if}
 			{#if profiles.length > 0}
 				<button
 					type="button"
 					onclick={onToggleContacted}
-					class="action-btn toggle-contacted {showContacted ? 'active' : ''}"
+					class="action-btn action-btn-filter {showContacted ? 'active' : ''}"
 				>
-					Contacted
+					<svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+						<polyline points="22 4 12 14.01 9 11.01"/>
+					</svg>
+					<span>Contacted</span>
 				</button>
 			{/if}
 		</div>
-	</div>
+	</header>
 
 	{#if filteredProfiles().length > 0}
-		<div class="table-container {isPreliminary ? 'preliminary' : ''}">
-			{#if isPreliminary}
-				<div class="preliminary-banner">
-					<svg class="banner-icon" fill="currentColor" viewBox="0 0 20 20">
-						<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-					</svg>
-					Analyzing profiles
-				</div>
-			{/if}
+		<!-- Preliminary Banner -->
+		{#if isPreliminary}
+			<div class="analysis-banner">
+				<div class="analysis-pulse"></div>
+				<span class="analysis-text">Analyzing creator profiles...</span>
+			</div>
+		{/if}
 
-			<table class="influencers-table">
-				<thead>
-					<tr>
-						<th class="col-checkbox">
-							{#if !isPreliminary && allSelectableProfiles().length > 0}
-								<button type="button" onclick={handleSelectAll} class="select-all-btn-checkbox">
-									<div class="checkbox {allSelected() ? 'checked' : someSelected() ? 'indeterminate' : ''}">
-										{#if allSelected()}
-											<svg class="check-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3">
-												<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-											</svg>
-										{:else if someSelected()}
-											<div class="indeterminate-icon"></div>
-										{/if}
-									</div>
-								</button>
-							{/if}
-						</th>
-						<th class="col-name">
-							{#if !isPreliminary && allSelectableProfiles().length > 0}
-								<button type="button" onclick={handleSelectAll} class="select-all-text-btn">
-									<span class="select-all-text">Select All</span>
-								</button>
-							{:else}
-								<span class="col-header">Name</span>
-							{/if}
-						</th>
-						<th class="col-bio"><span class="col-header">Bio</span></th>
-						<th class="col-followers"><span class="col-header">Followers</span></th>
-						<th class="col-fit"><span class="col-header">Fit Score</span></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each filteredProfiles() as profile (() => {
-						const id = profile?._id || getProfileId(profile);
-						return id || `profile-${Math.random()}`;
-					})}
-						{@const profileId = profile?._id || getProfileId(profile) || `profile-${Math.random()}`}
-						{@const isSelected = isInfluencerSelected(profileId)}
-						{@const isContacted = contactedIds.has(profileId)}
-						{@const isSelectable = (status === 'completed' || status === 'running' || status === 'pending') && !isContacted}
-						{@const hasRealBio = profile.biography || profile.bio}
-						{@const hasRealFollowers = profile.followers !== undefined && profile.followers !== null}
-						{@const hasFitScore = profile.fit_score !== undefined && profile.fit_score !== null}
-						{@const isAnalyzed = hasFitScore}
-						{@const shouldBlurBio = isPreliminary && !hasRealBio && !isAnalyzed}
-						{@const shouldBlurFollowers = isPreliminary && !hasRealFollowers && !isAnalyzed}
-						<tr
-							class="table-row {isContacted ? 'contacted' : ''} {isSelected ? 'selected' : ''} {isSelectable && !isPreliminary ? 'selectable' : ''}"
-							onclick={() => {
-								if (isSelectable && !isPreliminary) {
-									onToggleSelection(profileId);
-								}
-							}}
-							in:fly={{ y: isPreliminary ? -10 : -20, duration: isPreliminary ? 300 : 400, opacity: 0 }}
-							out:fade={{ duration: isPreliminary ? 250 : 0 }}
-						>
-							<td class="cell-checkbox">
-								{#if isSelected}
-									<div class="checkbox checked">
-										<svg class="check-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-										</svg>
-									</div>
-								{:else if isSelectable}
-									<div class="checkbox empty"></div>
+		<!-- Profile Cards -->
+		<div class="profiles-list {isPreliminary ? 'preliminary-mode' : ''}">
+			{#each filteredProfiles() as profile, index (() => {
+				const id = profile?._id || getProfileId(profile);
+				return id || `profile-${Math.random()}`;
+			})}
+				{@const profileId = profile?._id || getProfileId(profile) || `profile-${Math.random()}`}
+				{@const isSelected = isInfluencerSelected(profileId)}
+				{@const isContacted = contactedIds.has(profileId)}
+				{@const isSelectable = (status === 'completed' || status === 'running' || status === 'pending') && !isContacted}
+				{@const hasRealBio = profile.biography || profile.bio}
+				{@const hasRealFollowers = profile.followers !== undefined && profile.followers !== null}
+				{@const hasFitScore = profile.fit_score !== undefined && profile.fit_score !== null}
+				{@const isAnalyzed = hasFitScore}
+				{@const shouldBlurBio = isPreliminary && !hasRealBio && !isAnalyzed}
+				{@const shouldBlurFollowers = isPreliminary && !hasRealFollowers && !isAnalyzed}
+
+				<article
+					class="profile-card {isContacted ? 'contacted' : ''} {isSelected ? 'selected' : ''} {isSelectable && !isPreliminary ? 'selectable' : ''}"
+					onclick={() => {
+						if (isSelectable && !isPreliminary) {
+							onToggleSelection(profileId);
+						}
+					}}
+					in:fly={{ y: isPreliminary ? -8 : -16, duration: isPreliminary ? 280 : 350, delay: index * 30, opacity: 0 }}
+					out:fade={{ duration: isPreliminary ? 200 : 0 }}
+				>
+					<!-- Selection Column -->
+					<div class="card-select">
+						{#if isSelected}
+							<div class="checkbox-editorial checked">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+									<polyline points="20 6 9 17 4 12"/>
+								</svg>
+							</div>
+						{:else if isSelectable && !isPreliminary}
+							<div class="checkbox-editorial"></div>
+						{/if}
+					</div>
+
+					<!-- Creator Info Column -->
+					<div class="card-creator">
+						<div class="creator-details">
+							<div class="creator-name-row">
+								{#if profile.profile_url}
+									<a
+										href={profile.profile_url}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="creator-name"
+										onclick={(e) => e.stopPropagation()}
+									>
+										{profile.display_name ?? 'Unknown'}
+									</a>
+								{:else}
+									<span class="creator-name">{profile.display_name ?? 'Unknown'}</span>
 								{/if}
-							</td>
-							<td class="cell-name">
-								<div class="name-content">
-									<div class="platform-icons">
-										{#if profile.platform}
-											<div class="platform-icon {getPlatformColor(profile.platform)}" title={profile.platform}>
-												{@html getPlatformLogo(profile.platform)}
-											</div>
-										{/if}
-										{#if profile.email_address || profile.business_email}
-											<a
-												href={`mailto:${profile.email_address || profile.business_email}`}
-												class="email-icon"
-												title={profile.email_address || profile.business_email}
-												onclick={(e) => e.stopPropagation()}
-											>
-												<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-													<path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-												</svg>
-											</a>
-										{/if}
-									</div>
-									<div class="name-text">
-										{#if profile.profile_url}
-											<a
-												href={profile.profile_url}
-												target="_blank"
-												rel="noopener noreferrer"
-												class="profile-link"
-												onclick={(e) => e.stopPropagation()}
-											>
-												{profile.display_name ?? 'N/A'}
-											</a>
-										{:else}
-											<div class="profile-name">
-												{profile.display_name ?? 'N/A'}
-											</div>
-										{/if}
-									</div>
+								{#if profile.platform}
+									<span class="platform-badge-inline {getPlatformColor(profile.platform)}">
+										{@html getPlatformLogo(profile.platform)}
+									</span>
+								{/if}
+							</div>
+							{#if profile.username}
+								<span class="creator-handle">@{profile.username}</span>
+							{/if}
+						</div>
+					</div>
+
+					<!-- Bio Column -->
+					<div class="card-bio">
+						{#if shouldBlurBio}
+							<p class="bio-text blurred">{getBlurredBio(profileId)}</p>
+						{:else}
+							<p class="bio-text">{profile.biography ?? profile.bio ?? '--'}</p>
+						{/if}
+					</div>
+
+					<!-- Followers Column -->
+					<div class="card-followers">
+						{#if shouldBlurFollowers}
+							<span class="followers-number blurred">{getBlurredFollowers(profileId)}</span>
+						{:else}
+							<span class="followers-number">{formatFollowers(profile.followers)}</span>
+						{/if}
+						<span class="followers-label">followers</span>
+					</div>
+
+					<!-- Fit Score Column -->
+					<div class="card-fit">
+						{#if isPreliminary && !hasFitScore}
+							<div class="fit-analyzing">
+								<div class="fit-analyzing-dots">
+									<span></span><span></span><span></span>
 								</div>
-							</td>
-							<td class="cell-bio">
-								{#if shouldBlurBio}
-									<div class="bio-text blurred">
-										{getBlurredBio(profileId)}
+								<span class="fit-analyzing-text">Analyzing</span>
+							</div>
+						{:else if hasFitScore}
+							{@const fitScore = profile.fit_score ?? 0}
+							<div class="fit-score-display {fitScore >= 80 ? 'excellent' : fitScore >= 60 ? 'good' : 'fair'}">
+								<span class="fit-score-value">{fitScore}</span>
+								<span class="fit-score-max">/100</span>
+								{#if profile.fit_rationale}
+									<div class="fit-tooltip">
+										<div class="fit-tooltip-arrow"></div>
+										<p class="fit-tooltip-content">{profile.fit_rationale}</p>
 									</div>
-								{:else}
-									<div class="bio-text">{profile.biography ?? profile.bio ?? '—'}</div>
 								{/if}
-							</td>
-							<td class="cell-followers">
-								{#if shouldBlurFollowers}
-									<span class="followers-text blurred">
-										{getBlurredFollowers(profileId)}
-									</span>
-								{:else}
-									<span class="followers-text">
-										{profile.followers ? profile.followers.toLocaleString() : 'N/A'}
-									</span>
-								{/if}
-							</td>
-							<td class="cell-fit">
-								{#if isPreliminary && !hasFitScore}
-									<span class="fit-badge analyzing">Analyzing...</span>
-								{:else if hasFitScore}
-									{@const fitScore = profile.fit_score ?? 0}
-									<div class="fit-score-wrapper">
-										<span class="fit-badge {
-											fitScore >= 80 ? 'high' :
-											fitScore >= 60 ? 'medium' :
-											'low'
-										}">
-											{fitScore}/100
-										</span>
-										{#if profile.fit_rationale}
-											<div class="fit-tooltip">
-												<div class="tooltip-arrow"></div>
-												<div class="tooltip-content">{profile.fit_rationale}</div>
-											</div>
-										{/if}
-									</div>
-								{:else}
-									<span class="fit-badge empty">—</span>
-								{/if}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+							</div>
+						{:else}
+							<span class="fit-empty">--</span>
+						{/if}
+					</div>
+
+					<!-- Selected Indicator -->
+					{#if isSelected}
+						<div class="selected-glow"></div>
+					{/if}
+				</article>
+			{/each}
 		</div>
 	{:else if profiles.length > 0}
+		<!-- Empty Filtered State -->
 		<div class="empty-state">
-			<p class="empty-text">
+			<div class="empty-icon">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+					<circle cx="12" cy="12" r="10"/>
+					<path d="M8 15s1.5 2 4 2 4-2 4-2"/>
+					<line x1="9" y1="9" x2="9.01" y2="9"/>
+					<line x1="15" y1="9" x2="15.01" y2="9"/>
+				</svg>
+			</div>
+			<p class="empty-title">
 				{#if showContacted}
-					No contacted influencers found.
+					No contacted creators yet
 				{:else}
-					No uncontacted influencers found.
+					All creators have been contacted
+				{/if}
+			</p>
+			<p class="empty-subtitle">
+				{#if showContacted}
+					Creators you reach out to will appear here
+				{:else}
+					Toggle the filter to view contacted creators
 				{/if}
 			</p>
 		</div>
 	{:else}
+		<!-- Initial Empty State -->
 		<div class="empty-state">
 			{#if status === 'running' || status === 'pending'}
 				<div class="loading-state">
-					<div class="spinner"></div>
-					<p class="loading-title">Processing influencers...</p>
-					<p class="loading-subtitle">Influencers will appear here as they are processed</p>
+					<div class="loading-orbit">
+						<div class="loading-planet"></div>
+						<div class="loading-ring"></div>
+					</div>
+					<h3 class="loading-title">Finding your creators</h3>
+					<p class="loading-subtitle">Curating the perfect matches for your brand</p>
 				</div>
 			{:else if status === 'completed'}
-				<p class="empty-text">No influencers found. Try adjusting your search criteria.</p>
+				<div class="empty-icon">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+						<circle cx="11" cy="11" r="8"/>
+						<path d="M21 21l-4.35-4.35"/>
+					</svg>
+				</div>
+				<p class="empty-title">No creators found</p>
+				<p class="empty-subtitle">Try adjusting your search criteria for better results</p>
 			{:else}
-				<p class="empty-text">No influencers available yet.</p>
+				<div class="empty-icon">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+						<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+						<circle cx="9" cy="7" r="4"/>
+						<path d="M23 21v-2a4 4 0 00-3-3.87"/>
+						<path d="M16 3.13a4 4 0 010 7.75"/>
+					</svg>
+				</div>
+				<p class="empty-title">Your creators await</p>
+				<p class="empty-subtitle">Start a search to discover perfect matches</p>
 			{/if}
 		</div>
 	{/if}
 </div>
 
 <style>
-	/* Container */
-	.influencers-table-wrapper {
+	/* Design System Variables */
+	.influencers-gallery {
+		--coral: #FF6F61;
+		--coral-dark: #e85d50;
+		--coral-light: #fff0ee;
+		--ink: #1a1a1a;
+		--ink-light: #4a4a4a;
+		--ink-muted: #8a8a8a;
+		--paper: #fafaf9;
+		--paper-warm: #f5f4f2;
+		--border: #e8e6e3;
+		--success: #10b981;
+		--success-light: #d1fae5;
+		--warning: #f59e0b;
+		--warning-light: #fef3c7;
+
+		font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+	}
+
+	/* Gallery Container */
+	.influencers-gallery {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 0;
 	}
 
-	/* Header */
-	.table-header {
+	/* Editorial Header */
+	.gallery-header {
 		display: flex;
-		align-items: center;
+		align-items: flex-end;
 		justify-content: space-between;
-		padding-bottom: 16px;
-		border-bottom: 1px solid var(--color-border);
+		padding-bottom: 1.5rem;
+		border-bottom: 1px solid var(--border);
+		margin-bottom: 0;
 	}
 
-	.table-title {
-		font-size: 20px;
-		font-weight: 700;
-		color: var(--color-text);
+	.header-left {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.header-label {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--coral);
+		font-weight: 600;
+	}
+
+	.header-title {
+		font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+		font-size: 1.75rem;
+		font-weight: 400;
+		color: var(--ink);
+		line-height: 1.2;
 		margin: 0;
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
 	}
 
-	.table-count {
-		font-size: 14px;
-		font-weight: 500;
-		color: var(--color-primary);
-		margin-left: 8px;
+	.header-count {
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 1rem;
+		color: var(--coral);
+		font-style: italic;
 	}
 
-	.table-actions {
+	/* Header Actions */
+	.header-actions {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 0.75rem;
 	}
 
 	.action-btn {
-		display: flex;
+		display: inline-flex;
 		align-items: center;
-		gap: 6px;
-		padding: 10px 20px;
-		font-size: 13px;
-		font-weight: 600;
-		border: none;
-		border-radius: 8px;
+		gap: 0.5rem;
+		padding: 0.625rem 1.125rem;
+		font-size: 0.8rem;
+		font-weight: 500;
+		letter-spacing: 0.01em;
+		border: 1px solid var(--border);
+		border-radius: 2rem;
+		background: white;
+		color: var(--ink-light);
 		cursor: pointer;
-		transition: all 0.2s;
+		transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
-	.action-btn .btn-icon {
-		width: 16px;
-		height: 16px;
+	.action-btn:hover {
+		border-color: var(--ink);
+		color: var(--ink);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 	}
 
-	.action-btn.find-more {
-		background: #10b981;
-		color: var(--color-bg-elevated);
+	.action-btn:active {
+		transform: translateY(0);
 	}
 
-	.action-btn.find-more:hover:not(:disabled) {
-		background: #059669;
-	}
-
-	.action-btn.find-more:disabled {
+	.action-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+		transform: none;
 	}
 
-	.action-btn.export {
-		background: #3b82f6;
-		color: var(--color-bg-elevated);
+	.action-icon {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
 	}
 
-	.action-btn.export:hover {
-		background: #2563eb;
+	.action-btn-discover {
+		background: var(--coral);
+		border-color: var(--coral);
+		color: white;
 	}
 
-	.action-btn.toggle-contacted {
-		background: var(--color-bg-subtle);
-		color: var(--color-text-secondary);
+	.action-btn-discover:hover:not(:disabled) {
+		background: var(--coral-dark);
+		border-color: var(--coral-dark);
+		color: white;
+		box-shadow: 0 4px 16px rgba(255, 111, 97, 0.35);
 	}
 
-	.action-btn.toggle-contacted:hover {
-		background: var(--color-border);
+	.action-btn-filter.active {
+		background: var(--success);
+		border-color: var(--success);
+		color: white;
 	}
 
-	.action-btn.toggle-contacted.active {
-		background: #10b981;
-		color: var(--color-bg-elevated);
+	.action-btn-filter.active:hover {
+		background: #059669;
+		border-color: #059669;
+		color: white;
 	}
 
-	/* Table Container */
-	.table-container {
-		border-radius: 12px;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg-elevated);
+	/* Analysis Banner */
+	.analysis-banner {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.875rem 1.25rem;
+		background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+		border-bottom: 1px solid #c7d2fe;
 	}
 
-	.table-container.preliminary {
+	.analysis-pulse {
+		width: 10px;
+		height: 10px;
+		background: #6366f1;
+		border-radius: 50%;
+		animation: pulse-ring 1.5s ease-out infinite;
+	}
+
+	@keyframes pulse-ring {
+		0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5); }
+		70% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
+		100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+	}
+
+	.analysis-text {
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: #4338ca;
+	}
+
+	/* Table Header Row - Minimal Editorial */
+	.table-header-row {
+		display: grid;
+		grid-template-columns: 48px 240px 1fr 120px 120px;
+		align-items: center;
+		padding: 1rem 0;
+		background: transparent;
+		border-bottom: 2px solid var(--ink);
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+	}
+
+	.table-header-row > div {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ink-light);
+	}
+
+	.th-select {
+		display: flex;
+		justify-content: center;
+	}
+
+	.th-followers,
+	.th-fit {
+		text-align: center;
+	}
+
+	.select-all-checkbox {
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+	}
+
+	.select-all-label {
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		font-size: 0.65rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--ink-muted);
+		transition: color 0.2s ease;
+	}
+
+	.select-all-label:hover {
+		color: var(--coral);
+	}
+
+	/* Checkbox Editorial Style */
+	.checkbox-editorial {
+		width: 22px;
+		height: 22px;
+		border: 2px solid var(--border);
+		border-radius: 6px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		background: white;
+	}
+
+	.checkbox-editorial:hover {
+		border-color: var(--coral);
+		transform: scale(1.08);
+	}
+
+	.checkbox-editorial.checked {
+		background: var(--coral);
+		border-color: var(--coral);
+		animation: checkbox-pop 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+	}
+
+	.checkbox-editorial.checked svg {
+		width: 14px;
+		height: 14px;
+		color: white;
+	}
+
+	.checkbox-editorial.partial {
+		background: var(--coral);
+		border-color: var(--coral);
+	}
+
+	.checkbox-dash {
+		width: 10px;
+		height: 2px;
+		background: white;
+		border-radius: 1px;
+	}
+
+	@keyframes checkbox-pop {
+		0% { transform: scale(1); }
+		50% { transform: scale(1.2); }
+		100% { transform: scale(1); }
+	}
+
+	/* Profiles List */
+	.profiles-list {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.profiles-list.preliminary-mode {
 		max-height: 600px;
 		overflow: hidden;
 	}
 
-	.preliminary-banner {
-		display: flex;
+	/* Profile Row - Editorial Style */
+	.profile-card {
+		display: grid;
+		grid-template-columns: 48px 240px 1fr 120px 120px;
 		align-items: center;
-		gap: 8px;
-		padding: 12px 24px;
-		background: color-mix(in srgb, #3b82f6 10%, transparent);
-		border-bottom: 1px solid color-mix(in srgb, #3b82f6 20%, transparent);
-		font-size: 13px;
-		color: #1e40af;
-		font-weight: 500;
+		padding: 1.5rem 0;
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		border-bottom: 1px solid var(--border);
+		position: relative;
+		transition: background 0.2s ease;
 	}
 
-	.banner-icon {
-		width: 16px;
-		height: 16px;
-		animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+	.profile-card.selectable {
+		cursor: pointer;
 	}
 
-	/* Table */
-	.influencers-table {
-		width: 100%;
-		border-collapse: collapse;
-		table-layout: fixed;
+	.profile-card.selectable:hover {
+		background: rgba(255, 111, 97, 0.03);
 	}
 
-	.influencers-table thead {
-		background: var(--color-bg-subtle);
-		position: sticky;
-		top: 0;
-		z-index: 10;
+	.profile-card.selected {
+		background: rgba(255, 111, 97, 0.05);
+		border-left: 3px solid var(--coral);
+		padding-left: calc(1.25rem - 3px);
+		margin-left: -1.25rem;
 	}
 
-	.influencers-table th {
-		padding: 16px 20px;
-		text-align: left;
-		font-weight: 600;
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text-muted);
+	.profile-card.contacted {
+		opacity: 0.6;
 	}
 
-	.col-checkbox {
-		width: 50px;
-		padding: 16px 10px;
+	.selected-glow {
+		display: none;
 	}
 
-	.col-name {
-		width: 220px;
-		padding-left: 12px;
-	}
-
-	.col-bio {
-		width: auto;
-	}
-
-	.col-followers {
-		width: 140px;
-	}
-
-	.col-fit {
-		width: 140px;
-	}
-
-	.col-header {
-		display: block;
-	}
-
-	/* Select All Buttons */
-	.select-all-btn-checkbox {
+	/* Card Select */
+	.card-select {
 		display: flex;
-		align-items: center;
 		justify-content: center;
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-		transition: all 0.2s;
 	}
 
-	.select-all-text-btn {
+	/* Creator Column */
+	.card-creator {
 		display: flex;
 		align-items: center;
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-		transition: all 0.2s;
+		min-width: 0;
 	}
 
-	.select-all-text-btn:hover .select-all-text {
-		color: var(--color-primary);
-	}
-
-	.select-all-btn-checkbox:hover .checkbox.empty {
-		border-color: var(--color-primary);
-	}
-
-	.select-all-text {
-		font-size: 11px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text);
-		transition: color 0.2s;
-	}
-
-	/* Checkbox */
-	.checkbox {
-		display: flex;
+	.platform-badge-inline {
+		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		width: 20px;
 		height: 20px;
-		border-radius: 6px;
-		border: 2px solid var(--color-border);
-		transition: all 0.2s;
-	}
-
-	.checkbox.empty:hover {
-		border-color: var(--color-primary);
-		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
-	}
-
-	.checkbox.checked {
-		background: var(--color-primary);
-		border-color: var(--color-primary);
-	}
-
-	.checkbox.indeterminate {
-		background: var(--color-primary);
-		border-color: var(--color-primary);
-	}
-
-	.check-icon {
-		width: 12px;
-		height: 12px;
-		color: var(--color-bg-elevated);
-	}
-
-	.indeterminate-icon {
-		width: 10px;
-		height: 2px;
-		background: var(--color-bg-elevated);
-		border-radius: 1px;
-	}
-
-	/* Table Rows */
-	.table-row {
-		border-bottom: 1px solid var(--color-border);
-		transition: all 0.15s ease;
-	}
-
-	.table-row.selectable {
-		cursor: pointer;
-	}
-
-	.table-row.selectable:hover {
-		background: color-mix(in srgb, var(--color-primary) 4%, transparent);
-	}
-
-	.table-row.selected {
-		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-		border-left: 3px solid var(--color-primary);
-	}
-
-	.table-row.selected:hover {
-		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-	}
-
-	.table-row.contacted {
-		background: color-mix(in srgb, #10b981 5%, transparent);
-		opacity: 0.7;
-		cursor: not-allowed;
-	}
-
-	.table-row.contacted:hover {
-		background: color-mix(in srgb, #10b981 8%, transparent);
-	}
-
-	/* Table Cells */
-	.influencers-table td {
-		padding: 16px 20px;
-		vertical-align: middle;
-	}
-
-	.cell-checkbox {
-		width: 50px;
-		text-align: center;
-		padding: 16px 10px;
-	}
-
-	/* Name Cell */
-	.cell-name {
-		width: 220px;
-		white-space: nowrap;
-		overflow: hidden;
-		padding-left: 12px;
-	}
-
-	.name-content {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		min-width: 0;
-	}
-
-	.platform-icons {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 6px;
+		border-radius: 4px;
 		flex-shrink: 0;
 	}
 
-	.platform-icon {
+	.platform-badge-inline :global(svg) {
+		width: 12px;
+		height: 12px;
+	}
+
+	.creator-details {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	.creator-name-row {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		width: 24px;
-		height: 24px;
+		gap: 0.5rem;
 	}
 
-	.email-icon {
-		color: var(--color-text-muted);
-		transition: color 0.2s;
-	}
-
-	.email-icon:hover {
-		color: var(--color-primary);
-	}
-
-	.email-icon .icon {
-		width: 16px;
-		height: 16px;
-	}
-
-	.name-text {
-		min-width: 0;
-		flex: 1;
-	}
-
-	.profile-link {
-		display: block;
-		font-size: 14px;
-		font-weight: 500;
-		color: #2563eb;
+	.creator-name {
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--ink);
 		text-decoration: none;
+		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
-		transition: color 0.2s;
+		transition: color 0.2s ease;
 	}
 
-	.profile-link:hover {
-		color: #1e40af;
-		text-decoration: underline;
+	a.creator-name:hover {
+		color: var(--coral);
 	}
 
-	.profile-name {
-		font-size: 14px;
-		font-weight: 500;
-		color: var(--color-text);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	.creator-handle {
+		font-size: 0.8rem;
+		color: var(--ink-muted);
 	}
 
-	/* Bio Cell */
-	.cell-bio {
-		font-size: 13px;
-		color: var(--color-text-muted);
+	/* Bio Column */
+	.card-bio {
+		padding-right: 2rem;
+		min-width: 0;
 	}
 
 	.bio-text {
+		font-size: 0.85rem;
+		color: var(--ink-light);
+		line-height: 1.5;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
-		line-height: 1.5;
-		word-break: break-word;
+		margin: 0;
 	}
 
 	.bio-text.blurred {
-		color: var(--color-border);
-		filter: blur(3px);
+		filter: blur(4px);
 		user-select: none;
+		color: var(--ink-muted);
 	}
 
-	/* Followers Cell */
-	.cell-followers {
-		width: 140px;
-		white-space: nowrap;
-	}
-
-	.followers-text {
-		font-size: 13px;
-		color: var(--color-text-muted);
-	}
-
-	.followers-text.blurred {
-		color: var(--color-border);
-		filter: blur(3px);
-		user-select: none;
-	}
-
-	/* Fit Score Cell */
-	.cell-fit {
-		width: 140px;
-		white-space: nowrap;
-	}
-
-	.fit-score-wrapper {
-		position: relative;
-		display: inline-block;
-	}
-
-	.fit-badge {
-		display: inline-flex;
+	/* Followers Column */
+	.card-followers {
+		display: flex;
+		flex-direction: column;
 		align-items: center;
-		justify-content: center;
-		padding: 6px 14px;
-		border-radius: 999px;
-		font-size: 12px;
-		font-weight: 600;
-		transition: all 0.2s;
+		gap: 0.125rem;
 	}
 
-	.fit-badge.high {
-		background: #d1fae5;
+	.followers-number {
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 1.5rem;
+		font-weight: 400;
+		color: var(--ink);
+		line-height: 1;
+	}
+
+	.followers-number.blurred {
+		filter: blur(4px);
+		user-select: none;
+	}
+
+	.followers-label {
+		font-size: 0.65rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--ink-muted);
+	}
+
+	/* Fit Score Column */
+	.card-fit {
+		display: flex;
+		justify-content: center;
+	}
+
+	.fit-score-display {
+		position: relative;
+		display: flex;
+		align-items: baseline;
+		gap: 2px;
+		padding: 0.25rem 0;
+		cursor: default;
+	}
+
+	.fit-score-display.excellent {
+	}
+
+	.fit-score-display.good {
+	}
+
+	.fit-score-display.fair {
+	}
+
+	.fit-score-value {
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 1.25rem;
+		font-weight: 400;
+		line-height: 1;
+	}
+
+	.fit-score-display.excellent .fit-score-value {
 		color: #065f46;
 	}
 
-	.fit-badge.medium {
-		background: #fef3c7;
+	.fit-score-display.good .fit-score-value {
 		color: #92400e;
 	}
 
-	.fit-badge.low {
-		background: #fee2e2;
+	.fit-score-display.fair .fit-score-value {
 		color: #991b1b;
 	}
 
-	.fit-badge.analyzing {
-		background: var(--color-bg-subtle);
-		color: var(--color-text-muted);
-	}
-
-	.fit-badge.empty {
-		background: transparent;
-		color: var(--color-text-muted);
-		padding: 0;
+	.fit-score-max {
+		font-size: 0.75rem;
+		color: var(--ink-muted);
 	}
 
 	.fit-tooltip {
 		position: absolute;
 		right: 0;
 		top: calc(100% + 8px);
-		width: 280px;
-		padding: 12px;
-		background: var(--color-text);
-		color: var(--color-bg-elevated);
-		font-size: 12px;
-		line-height: 1.5;
-		border-radius: 8px;
-		box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+		width: 260px;
+		padding: 1rem;
+		background: var(--ink);
+		color: white;
+		border-radius: 0.75rem;
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
 		opacity: 0;
-		pointer-events: none;
-		transition: opacity 0.2s;
+		visibility: hidden;
+		transform: translateY(-4px);
+		transition: all 0.2s ease;
 		z-index: 50;
 	}
 
-	.fit-score-wrapper:hover .fit-tooltip {
+	.fit-score-display:hover .fit-tooltip {
 		opacity: 1;
+		visibility: visible;
+		transform: translateY(0);
 	}
 
-	.tooltip-arrow {
+	.fit-tooltip-arrow {
 		position: absolute;
-		right: 20px;
+		right: 24px;
 		bottom: 100%;
-		width: 0;
-		height: 0;
-		border-left: 6px solid transparent;
-		border-right: 6px solid transparent;
-		border-bottom: 6px solid var(--color-text);
+		border: 6px solid transparent;
+		border-bottom-color: var(--ink);
 	}
 
-	.tooltip-content {
-		white-space: normal;
+	.fit-tooltip-content {
+		font-size: 0.8rem;
+		line-height: 1.5;
+		margin: 0;
+	}
+
+	.fit-analyzing {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.375rem;
+	}
+
+	.fit-analyzing-dots {
+		display: flex;
+		gap: 4px;
+	}
+
+	.fit-analyzing-dots span {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--ink-muted);
+		animation: dot-bounce 1.4s infinite ease-in-out;
+	}
+
+	.fit-analyzing-dots span:nth-child(1) { animation-delay: 0s; }
+	.fit-analyzing-dots span:nth-child(2) { animation-delay: 0.16s; }
+	.fit-analyzing-dots span:nth-child(3) { animation-delay: 0.32s; }
+
+	@keyframes dot-bounce {
+		0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+		40% { transform: scale(1.2); opacity: 1; }
+	}
+
+	.fit-analyzing-text {
+		font-size: 0.7rem;
+		color: var(--ink-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.fit-empty {
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 1.25rem;
+		color: var(--ink-muted);
 	}
 
 	/* Empty States */
 	.empty-state {
-		padding: 48px 24px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 4rem 2rem;
 		text-align: center;
 	}
 
-	.empty-text {
-		font-size: 14px;
-		color: var(--color-text-muted);
+	.empty-icon {
+		width: 64px;
+		height: 64px;
+		margin-bottom: 1.5rem;
+		color: var(--ink-muted);
+		opacity: 0.5;
+	}
+
+	.empty-icon svg {
+		width: 100%;
+		height: 100%;
+	}
+
+	.empty-title {
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 1.25rem;
+		color: var(--ink);
+		margin: 0 0 0.5rem;
+	}
+
+	.empty-subtitle {
+		font-size: 0.9rem;
+		color: var(--ink-muted);
 		margin: 0;
 	}
 
+	/* Loading State */
 	.loading-state {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 12px;
+		gap: 1.5rem;
 	}
 
-	.spinner {
-		width: 32px;
-		height: 32px;
-		border: 3px solid var(--color-bg-subtle);
-		border-top-color: var(--color-primary);
+	.loading-orbit {
+		position: relative;
+		width: 64px;
+		height: 64px;
+	}
+
+	.loading-planet {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 20px;
+		height: 20px;
+		margin: -10px 0 0 -10px;
+		background: var(--coral);
 		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
+		animation: planet-pulse 1.5s ease-in-out infinite;
+	}
+
+	.loading-ring {
+		position: absolute;
+		inset: 0;
+		border: 2px solid var(--border);
+		border-top-color: var(--coral);
+		border-radius: 50%;
+		animation: ring-spin 1s linear infinite;
+	}
+
+	@keyframes planet-pulse {
+		0%, 100% { transform: scale(1); }
+		50% { transform: scale(1.1); }
+	}
+
+	@keyframes ring-spin {
+		to { transform: rotate(360deg); }
 	}
 
 	.loading-title {
-		font-size: 14px;
-		font-weight: 600;
-		color: var(--color-text);
+		font-family: 'Instrument Serif', Georgia, serif;
+		font-size: 1.25rem;
+		color: var(--ink);
 		margin: 0;
 	}
 
 	.loading-subtitle {
-		font-size: 12px;
-		color: var(--color-text-muted);
+		font-size: 0.9rem;
+		color: var(--ink-muted);
 		margin: 0;
 	}
 
-	/* Animations */
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
+	/* Responsive */
+	@media (max-width: 1024px) {
+		.table-header-row,
+		.profile-card {
+			grid-template-columns: 40px 180px 1fr 100px 100px;
+		}
+
+		.table-header-row {
+			padding: 0.875rem 0;
+		}
+
+		.profile-card {
+			padding: 1.25rem 0;
+		}
+
+		.creator-avatar {
+			width: 44px;
+			height: 44px;
+		}
+
+		.platform-badge {
+			width: 20px;
+			height: 20px;
+		}
+
+		.followers-number {
+			font-size: 1.25rem;
 		}
 	}
 
-	@keyframes pulse {
-		0%, 100% {
-			opacity: 1;
+	@media (max-width: 768px) {
+		.gallery-header {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 1rem;
 		}
-		50% {
-			opacity: 0.5;
+
+		.header-actions {
+			width: 100%;
+			flex-wrap: wrap;
+		}
+
+		.action-btn {
+			flex: 1;
+			min-width: 120px;
+			justify-content: center;
+		}
+
+		.table-header-row {
+			display: none;
+		}
+
+		.profile-card {
+			display: flex;
+			flex-direction: column;
+			gap: 1rem;
+			padding: 1.5rem 0;
+			border-bottom: 1px solid var(--border);
+		}
+
+		.profile-card.selected {
+			border-left: none;
+			border-top: 2px solid var(--coral);
+			padding-left: 0;
+			margin-left: 0;
+			padding-top: calc(1.5rem - 2px);
+		}
+
+		.card-select {
+			position: absolute;
+			top: 1.5rem;
+			right: 0;
+		}
+
+		.card-creator {
+			width: 100%;
+		}
+
+		.card-bio {
+			padding-right: 0;
+		}
+
+		.card-followers,
+		.card-fit {
+			align-self: flex-start;
+		}
+
+		.card-followers {
+			flex-direction: row;
+			gap: 0.5rem;
+		}
+
+		.followers-label {
+			margin-top: 0.25rem;
 		}
 	}
 </style>

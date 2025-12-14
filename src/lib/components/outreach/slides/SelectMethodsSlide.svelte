@@ -3,7 +3,7 @@
 	export let className = '';
 </script>
 
-	{#if active}
+{#if active}
 	<div class={`h-full flex flex-col ${className}`}>
 		<slot />
 	</div>

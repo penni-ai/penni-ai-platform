@@ -41,11 +41,11 @@
 </script>
 
 {#if show}
-	<div class="border-t border-gray-200 bg-white px-6 py-5" transition:fade={{ duration: 300 }}>
+	<div class="border-t border-gray-100 bg-white px-6 py-4" transition:fade={{ duration: 300 }}>
 		<form class="mx-auto flex w-full max-w-3xl items-center gap-3" onsubmit={handleSubmit}>
 			<input
 				type="text"
-				class="flex-1 rounded-full border border-gray-300 px-5 py-3 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10"
+				class="flex-1 border-b border-gray-200 bg-transparent px-2 py-3 text-sm placeholder:text-gray-400 focus:border-[#FF6F61] focus:outline-none transition-colors"
 				placeholder="Type your reply..."
 				value={localDraft}
 				oninput={handleInput}

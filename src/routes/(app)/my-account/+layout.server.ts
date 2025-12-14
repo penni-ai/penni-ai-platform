@@ -4,7 +4,10 @@ import type { UserStripeState, SubscriptionSnapshot } from '$lib/server/core';
 
 function formatPeriodEnd(periodEnd: number | null) {
 	if (!periodEnd) return null;
-	return new Date(periodEnd * 1000).toISOString();
+	// Webhook stores timestamps in milliseconds (already multiplied by 1000)
+	// Check if value is in ms (> 1e12 = year 2001+) or seconds
+	const ms = periodEnd > 1e12 ? periodEnd : periodEnd * 1000;
+	return new Date(ms).toISOString();
 }
 
 export const load: LayoutServerLoad = async ({ locals }) => {
@@ -20,7 +23,20 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	}
 
 	const userSnap = await userDocRef(uid).get();
-	const userData = userSnap.data() as (UserStripeState & { profile?: { fullName?: string; locale?: string } }) | undefined;
+	const userData = userSnap.data() as (UserStripeState & {
+		profile?: { fullName?: string; locale?: string };
+		eventCredits?: {
+			influencersRemaining?: number;
+			outreachRemaining?: number;
+			additionalInboxes?: number;
+		};
+		currentPlan?: {
+			scheduledPlanChange?: string;
+			changeAt?: number;
+			downgradeTo?: string;
+			cancelAt?: number;
+		};
+	}) | undefined;
 
 	const subsSnap = await userDocRef(uid)
 		.collection('subscriptions')
@@ -84,9 +100,14 @@ const format = (seconds: number | null) => (seconds ? new Date(seconds * 1000).t
 				currentPeriodEndRaw: subscriptionData.currentPeriodEnd ?? null,
 				trialEnd: formatPeriodEnd(subscriptionData.trialEnd ?? null),
 				trialEndRaw: subscriptionData.trialEnd ?? null,
-				cancelAtPeriodEnd: subscriptionData.cancelAtPeriodEnd ?? false
+				cancelAtPeriodEnd: subscriptionData.cancelAtPeriodEnd ?? false,
+				cancelAt: subscriptionData.cancelAt ?? userData?.currentPlan?.cancelAt ?? null,
+				scheduledPlanChange: userData?.currentPlan?.scheduledPlanChange ?? null,
+				changeAt: userData?.currentPlan?.changeAt ?? null,
+				downgradeTo: userData?.currentPlan?.downgradeTo ?? null
 			}
 			: null,
+		eventCredits: userData?.eventCredits ?? null,
 		usage: fallbackUsage,
 		userEmail
 	};

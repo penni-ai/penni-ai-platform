@@ -10,7 +10,7 @@
 	let { data, children } = $props();
 
 	onMount(() => {
-		theme.init();
+		theme.sync();
 	});
 
 	// Track current pathname to handle navigation transitions

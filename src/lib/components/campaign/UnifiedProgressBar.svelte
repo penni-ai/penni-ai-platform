@@ -169,18 +169,14 @@
 <style>
   .progress-container {
     padding: 20px 24px;
-    background: rgba(255, 255, 255, 0.9);
-    backdrop-filter: blur(10px);
+    background: #fff;
     border: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
   }
 
   .progress-track {
     display: flex;
-    height: 14px;
+    height: 6px;
     background: rgba(0, 0, 0, 0.04);
-    border-radius: 999px;
     overflow: hidden;
     gap: 2px;
   }
@@ -190,29 +186,27 @@
     flex: 1;
     height: 100%;
     overflow: hidden;
-    border-radius: 999px;
   }
 
   .progress-segment.search {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(0, 0, 0, 0.04);
   }
 
   .progress-segment.analysis {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(0, 0, 0, 0.04);
   }
 
   .progress-fill {
     height: 100%;
-    border-radius: 999px;
     transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .progress-segment.search .progress-fill {
-    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    background: #FF6F61;
   }
 
   .progress-segment.analysis .progress-fill {
-    background: linear-gradient(90deg, #6366f1, #818cf8);
+    background: #1a1a1a;
   }
 
   .progress-segment.active .progress-fill {
@@ -226,11 +220,9 @@
   @keyframes pulse-glow {
     0%, 100% {
       opacity: 1;
-      filter: brightness(1);
     }
     50% {
-      opacity: 0.85;
-      filter: brightness(1.1);
+      opacity: 0.7;
     }
   }
 
@@ -257,7 +249,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 14px;
+    margin-top: 16px;
   }
 
   .stage-info {
@@ -267,28 +259,26 @@
   }
 
   .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #22c55e;
+    width: 6px;
+    height: 6px;
+    background: #FF6F61;
     animation: pulse-dot 1.5s ease-in-out infinite;
   }
 
   @keyframes pulse-dot {
     0%, 100% {
       opacity: 1;
-      transform: scale(1);
     }
     50% {
-      opacity: 0.6;
-      transform: scale(0.9);
+      opacity: 0.5;
     }
   }
 
   .stage-label {
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 500;
     color: rgba(0, 0, 0, 0.85);
+    letter-spacing: -0.01em;
   }
 
   .progress-meta {
@@ -298,22 +288,24 @@
   }
 
   .time-remaining {
-    font-size: 12px;
+    font-size: 11px;
     color: rgba(0, 0, 0, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
   }
 
   .progress-percent {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
-    color: rgba(0, 0, 0, 0.6);
+    color: #FF6F61;
     min-width: 40px;
     text-align: right;
   }
 
   .status-message {
-    margin: 8px 0 0 0;
-    font-size: 13px;
+    margin: 10px 0 0 0;
+    font-size: 12px;
     color: rgba(0, 0, 0, 0.5);
-    line-height: 1.4;
+    line-height: 1.5;
   }
 </style>

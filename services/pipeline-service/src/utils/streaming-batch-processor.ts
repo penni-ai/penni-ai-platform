@@ -417,10 +417,10 @@ export async function processBatchedCollectionStreaming(
       .map(async (snapshot) => {
         try {
           const progress = await checkSnapshotProgress(snapshot.snapshot_id, apiKey, baseUrl);
-          
+
           if (progress.status === 'ready' || progress.status === 'completed') {
             processedSnapshots.add(snapshot.snapshot_id);
-            
+
             // Process this batch immediately
             const batchCallback: BatchCompleteCallback | undefined = onBatchComplete ? async (result) => {
               totalProfiles += result.profiles.length;
@@ -431,12 +431,15 @@ export async function processBatchedCollectionStreaming(
               console.error(`[Streaming] Failed to process batch ${snapshot.batch_index + 1}:`, error);
               failedBatches++;
             });
-            
+
             processingPromises.push(processPromise);
           } else if (progress.status === 'failed') {
             processedSnapshots.add(snapshot.snapshot_id);
             failedBatches++;
             console.error(`[Streaming] Batch ${snapshot.batch_index + 1} failed`);
+          } else {
+            // Log status for debugging stuck batches
+            console.log(`[Streaming] Batch ${snapshot.batch_index + 1} status: ${progress.status}`);
           }
         } catch (error) {
           console.error(`[Streaming] Error checking snapshot ${snapshot.snapshot_id}:`, error);

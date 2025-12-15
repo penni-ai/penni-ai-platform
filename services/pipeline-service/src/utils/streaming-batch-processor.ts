@@ -348,15 +348,19 @@ export async function processBatchedCollectionStreaming(
   
   const instagramBatches = createBatches(instagramUrls, batchSize);
   const tiktokBatches = createBatches(tiktokUrls, batchSize);
-  
+
+  // Track the number of cached batches to offset BrightData batch indices
+  const cachedBatchCount = completedBatches;
+
   const allBatches: Array<{ urls: string[]; platform: BrightDataPlatform; batchIndex: number }> = [];
-  
+
+  // BrightData batch indices start AFTER cached batches to avoid overwriting batch files
   instagramBatches.forEach((batch) => {
-    allBatches.push({ urls: batch, platform: 'instagram', batchIndex: allBatches.length });
+    allBatches.push({ urls: batch, platform: 'instagram', batchIndex: cachedBatchCount + allBatches.length });
   });
-  
+
   tiktokBatches.forEach((batch) => {
-    allBatches.push({ urls: batch, platform: 'tiktok', batchIndex: allBatches.length });
+    allBatches.push({ urls: batch, platform: 'tiktok', batchIndex: cachedBatchCount + allBatches.length });
   });
   
   console.log(`[Streaming] Created ${allBatches.length} batches (${instagramBatches.length} Instagram, ${tiktokBatches.length} TikTok)`);

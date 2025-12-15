@@ -347,7 +347,8 @@ export async function processBatchedCollectionStreaming(
   console.log(`[Streaming] Created ${allBatches.length} batches (${instagramBatches.length} Instagram, ${tiktokBatches.length} TikTok)`);
 
   // Step 2: Trigger all batches with concurrency control (max 20 at once)
-  const snapshots: Array<{ snapshot_id: string; platform: BrightDataPlatform; batch_index: number }> = [];
+  const BATCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per batch
+  const snapshots: Array<{ snapshot_id: string; platform: BrightDataPlatform; batch_index: number; triggered_at: number }> = [];
   const maxTriggerConcurrency = Math.min(maxConcurrentBatches, 20); // Cap at 20 concurrent batches
 
   if (timingTracker) {
@@ -368,10 +369,10 @@ export async function processBatchedCollectionStreaming(
         if (!snapshot) {
           throw new Error(`No snapshot returned for ${batch.platform} batch`);
         }
-        return { snapshot_id: snapshot.snapshot_id, platform: batch.platform, batch_index: batch.batchIndex };
+        return { snapshot_id: snapshot.snapshot_id, platform: batch.platform, batch_index: batch.batchIndex, triggered_at: Date.now() };
       })
     );
-    
+
     for (const result of chunkResults) {
       if (result.status === 'fulfilled') {
         snapshots.push(result.value);
@@ -438,8 +439,16 @@ export async function processBatchedCollectionStreaming(
             failedBatches++;
             console.error(`[Streaming] Batch ${snapshot.batch_index + 1} failed`);
           } else {
-            // Log status for debugging stuck batches
-            console.log(`[Streaming] Batch ${snapshot.batch_index + 1} status: ${progress.status}`);
+            // Check if batch has timed out (5 minutes)
+            const batchAge = Date.now() - snapshot.triggered_at;
+            if (batchAge >= BATCH_TIMEOUT_MS) {
+              processedSnapshots.add(snapshot.snapshot_id);
+              failedBatches++;
+              console.error(`[Streaming] Batch ${snapshot.batch_index + 1} timed out after ${Math.round(batchAge / 1000)}s (status: ${progress.status})`);
+            } else {
+              // Log status for debugging stuck batches
+              console.log(`[Streaming] Batch ${snapshot.batch_index + 1} status: ${progress.status} (${Math.round(batchAge / 1000)}s elapsed)`);
+            }
           }
         } catch (error) {
           console.error(`[Streaming] Error checking snapshot ${snapshot.snapshot_id}:`, error);

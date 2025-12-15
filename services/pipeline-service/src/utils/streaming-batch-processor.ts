@@ -252,6 +252,7 @@ export async function processBatchedCollectionStreaming(
   failedBatches: number;
   totalProfiles: number;
   cacheHits: number;
+  skippedBrightData?: boolean;
 }> {
   const batchSize = config.batchSize || 20;
   const maxConcurrentBatches = config.maxConcurrentBatches || 20;
@@ -315,6 +316,20 @@ export async function processBatchedCollectionStreaming(
       failedBatches: 0,
       totalProfiles,
       cacheHits: cachedProfiles.size,
+    };
+  }
+
+  // Skip BrightData if cache hit rate is >= 50% (we have enough data)
+  const cacheHitRate = cachedProfiles.size / urls.length;
+  if (cacheHitRate >= 0.5) {
+    console.log(`[Streaming] Cache hit rate ${(cacheHitRate * 100).toFixed(0)}% >= 50%, skipping BrightData for ${uncachedUrls.length} uncached profiles`);
+    return {
+      totalBatches: completedBatches,
+      completedBatches,
+      failedBatches: 0,
+      totalProfiles,
+      cacheHits: cachedProfiles.size,
+      skippedBrightData: true,
     };
   }
 

@@ -139,10 +139,17 @@ $effect(() => {
   if (!authReady || !pipelineId) return;
 
   let loadedProfilesForPipeline: string | null = null;
+  let lastLoadedProgressiveCount = 0;
+  let lastLoadedProfilesCount = 0;
 
   // Fetch profiles via API (avoids CORS issues with direct storage access)
-  const loadProfiles = async () => {
-    if (loadedProfilesForPipeline === pipelineId) return;
+  const loadProfiles = async (progressiveCount: number = 0, profilesCount: number = 0) => {
+    // Skip if already loaded and counts haven't changed
+    if (loadedProfilesForPipeline === pipelineId &&
+        progressiveCount <= lastLoadedProgressiveCount &&
+        profilesCount <= lastLoadedProfilesCount) {
+      return;
+    }
     try {
       const response = await fetch(`/api/pipeline/${pipelineId}`);
       if (response.ok) {
@@ -160,6 +167,8 @@ $effect(() => {
           is_progressive: data.is_progressive ?? false,
         } as PipelineStatus;
         loadedProfilesForPipeline = pipelineId;
+        lastLoadedProgressiveCount = progressiveCount;
+        lastLoadedProfilesCount = profilesCount;
       }
     } catch {
       // Will retry on next snapshot
@@ -195,11 +204,12 @@ $effect(() => {
       pipelineError = null;
       const data = snapshot.data();
 
-      // Load profiles when available (including Weaviate candidates)
-      if ((data.profiles_count ?? 0) > 0 ||
-          (data.progressive_profiles_count ?? 0) > 0 ||
-          (data.weaviate_search?.candidates_count ?? 0) > 0) {
-        void loadProfiles();
+      // Load profiles when available (including Weaviate candidates and progressive updates)
+      const progressiveCount = data.progressive_profiles_count ?? 0;
+      const profilesCount = data.profiles_count ?? 0;
+      const candidatesCount = data.weaviate_search?.candidates_count ?? 0;
+      if (profilesCount > 0 || progressiveCount > 0 || candidatesCount > 0) {
+        void loadProfiles(progressiveCount, profilesCount);
       }
 
       // Update status, preserving loaded profiles and preliminary candidates

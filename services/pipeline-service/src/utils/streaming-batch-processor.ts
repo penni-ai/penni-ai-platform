@@ -289,20 +289,29 @@ export async function processBatchedCollectionStreaming(
       cachedByPlatform.get(platform)!.push(profile);
     }
 
-    // Create synthetic batch results for cached profiles
+    // Create synthetic batch results for cached profiles - process in PARALLEL
+    const cachedBatchPromises: Promise<void>[] = [];
     let cachedBatchIndex = 0;
+
     for (const [platform, profiles] of cachedByPlatform) {
-      await onBatchComplete({
-        batchIndex: cachedBatchIndex++,
-        platform,
-        snapshotId: 'cached',
-        profiles,
-        normalizedProfiles: [],
-        analyzedProfiles: [],
-      });
-      totalProfiles += profiles.length;
-      completedBatches++;
+      const batchIndex = cachedBatchIndex++;
+      cachedBatchPromises.push(
+        onBatchComplete({
+          batchIndex,
+          platform,
+          snapshotId: 'cached',
+          profiles,
+          normalizedProfiles: [],
+          analyzedProfiles: [],
+        }).then(() => {
+          totalProfiles += profiles.length;
+          completedBatches++;
+        })
+      );
     }
+
+    // Wait for all cached batches to complete in parallel
+    await Promise.all(cachedBatchPromises);
 
     console.log(`[Streaming] Processed ${cachedProfiles.size} cached profiles`);
   }

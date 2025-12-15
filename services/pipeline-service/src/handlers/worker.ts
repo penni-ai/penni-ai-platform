@@ -539,9 +539,8 @@ export async function handlePipelineExecution(messageData: {
     let batchesCompleted = 0;
     let batchesFailed = 0;
 
-    // Calculate total batches
+    // Note: Actual batch count depends on cache hits, so we track completed count instead
     const batchSize = streamingConfig.batchSize || 20;
-    const totalBatches = Math.ceil(topProfileUrls.length / batchSize);
 
     // Track cache stats for cost calculation
     let cacheHits = 0;
@@ -568,7 +567,8 @@ export async function handlePipelineExecution(messageData: {
               throw new Error(`Batch ${batchResult.batchIndex + 1} profiles is not an array: ${typeof batchResult.profiles}`);
             }
             
-            console.log(`[Worker] Batch ${batchResult.batchIndex + 1}/${totalBatches}: ${batchResult.profiles.length} ${batchResult.platform} profiles`);
+            const isCached = batchResult.snapshotId === 'cached';
+            console.log(`[Worker] Batch ${batchResult.batchIndex + 1}${isCached ? ' (cached)' : ''}: ${batchResult.profiles.length} ${batchResult.platform} profiles`);
 
             // Track BrightData batch start
             timingTracker.addBatchTiming('brightdata_collection', batchResult.batchIndex, batchRelativeStart);
@@ -619,8 +619,9 @@ export async function handlePipelineExecution(messageData: {
             allAnalyzedProfiles.push(...analyzedProfiles);
 
             batchesCompleted++;
-            const batchesProcessing = totalBatches - batchesCompleted - batchesFailed;
-            await updateBatchCounters(jobId, batchesCompleted, batchesProcessing, batchesFailed, totalBatches);
+            // Note: We don't know total batches until streaming completes (depends on cache)
+            // Use placeholder for in-progress updates
+            await updateBatchCounters(jobId, batchesCompleted, 0, batchesFailed, batchesCompleted + batchesFailed);
 
             // Update progressive top-N so frontend can show best results found so far
             try {
@@ -630,17 +631,11 @@ export async function handlePipelineExecution(messageData: {
               console.warn(`[Worker] Failed to update progressive top-N for batch ${batchResult.batchIndex + 1}:`, progressiveError);
             }
 
-            // Update progress after each batch completes (incremental from 50%)
-            await updateProgress(jobId, 'brightdata_collection', undefined, {
-              completed: batchesCompleted,
-              total: totalBatches,
-            });
-
             // Track BrightData batch end
             const batchRelativeEnd = Date.now() / 1000 - timingTracker.getPipelineStartTime();
             timingTracker.addBatchTiming('brightdata_collection', batchResult.batchIndex, batchRelativeStart, batchRelativeEnd);
 
-            console.log(`[Worker] Batch ${batchResult.batchIndex + 1}/${totalBatches} complete: ${analyzedProfiles.length} analyzed`);
+            console.log(`[Worker] Batch ${batchResult.batchIndex + 1} complete: ${analyzedProfiles.length} analyzed`);
 
           } catch (error) {
             // Handle cancellation separately
@@ -649,8 +644,7 @@ export async function handlePipelineExecution(messageData: {
             }
             console.error(`[Worker] Error processing batch ${batchResult.batchIndex + 1}:`, error);
             batchesFailed++;
-            const batchesProcessing = totalBatches - batchesCompleted - batchesFailed;
-            await updateBatchCounters(jobId, batchesCompleted, batchesProcessing, batchesFailed, totalBatches);
+            await updateBatchCounters(jobId, batchesCompleted, 0, batchesFailed, batchesCompleted + batchesFailed);
           }
         }
       );
@@ -668,8 +662,8 @@ export async function handlePipelineExecution(messageData: {
 
       console.log(`[Worker] Collection complete: ${batchesCompleted} batches, ${batchesFailed} failed`);
 
-      // Merge all batch files into final profiles.json
-      const mergedProfiles = await mergeBatchResults(jobId, totalBatches);
+      // Merge all batch files into final profiles.json (use completed count, not pre-calculated total)
+      const mergedProfiles = await mergeBatchResults(jobId, batchesCompleted);
 
       // Mark progressive results as complete
       try {

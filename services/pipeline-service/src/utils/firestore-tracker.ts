@@ -548,19 +548,16 @@ export async function storeRemainingProfiles(
     throw error;
   }
 
-  // Generate signed URL for direct frontend access
-  const signedUrl = await generateSignedUrl(filePath);
-
   // Update Firestore with remaining profiles metadata
+  // Note: Frontend API loads from storage path directly, no signed URL needed
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
-    remaining_profiles_signed_url: signedUrl,
     remaining_profiles_storage_path: filePath,
     remaining_profiles_count: remainingProfiles.length,
     updated_at: Timestamp.now(),
   });
 
   console.log(`[Storage] Stored ${remainingProfiles.length} remaining profiles: ${jobId}`);
-  return signedUrl;
+  return filePath;
 }
 
 /**
@@ -590,8 +587,8 @@ export async function storePipelineResults(
     throw new Error(`Invalid profiles data: expected array, got ${typeof profiles}`);
   }
 
-  // Save profiles to Storage and get signed URL
-  const { path: storagePath, signedUrl } = await saveProfilesToStorage(jobId, profiles);
+  // Save profiles to Storage
+  const { path: storagePath } = await saveProfilesToStorage(jobId, profiles);
 
   // Verify the file was saved correctly by reading it back
   try {
@@ -613,9 +610,8 @@ export async function storePipelineResults(
     throw error;
   }
 
-  // Store metadata in Firestore with signed URL for direct frontend access
+  // Store metadata in Firestore (frontend API loads from storage path directly)
   const updates: any = {
-    profiles_signed_url: signedUrl,
     profiles_storage_path: storagePath,
     profiles_count: profiles.length,
     updated_at: Timestamp.now(),
@@ -708,27 +704,13 @@ async function loadProfilesFromStorage(jobId: string): Promise<Array<BrightDataU
 }
 
 /**
- * Generate a signed URL for a Storage file (7 days expiration)
- */
-async function generateSignedUrl(filePath: string): Promise<string> {
-  const bucket = getBucket();
-  const file = bucket.file(filePath);
-
-  const [signedUrl] = await file.getSignedUrl({
-    action: 'read',
-    expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
-  });
-
-  return signedUrl;
-}
-
-/**
- * Save profiles to Storage and return signed URL for direct frontend access
+ * Save profiles to Storage and return storage path
+ * Note: Frontend API loads from storage path directly, no signed URL needed
  */
 async function saveProfilesToStorage(
   jobId: string,
   profiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string }>
-): Promise<{ path: string; signedUrl: string }> {
+): Promise<{ path: string }> {
   const bucket = getBucket();
   const filePath = getProfilesStoragePath(jobId);
   const file = bucket.file(filePath);
@@ -748,10 +730,7 @@ async function saveProfilesToStorage(
     },
   });
 
-  // Generate signed URL for direct frontend access (7 days expiration)
-  const signedUrl = await generateSignedUrl(filePath);
-
-  return { path: filePath, signedUrl };
+  return { path: filePath };
 }
 
 /**
@@ -942,12 +921,11 @@ export async function mergeBatchResults(jobId: string, totalBatches: number): Pr
     }
   }
   
-  // Save merged results to main profiles.json and get signed URL
-  const { path: storagePath, signedUrl } = await saveProfilesToStorage(jobId, allProfiles);
+  // Save merged results to main profiles.json
+  const { path: storagePath } = await saveProfilesToStorage(jobId, allProfiles);
 
-  // Update Firestore with final storage URL (signed for direct frontend access)
+  // Update Firestore with storage path (frontend API loads from storage path directly)
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
-    profiles_signed_url: signedUrl,
     profiles_storage_path: storagePath,
     profiles_count: allProfiles.length,
     updated_at: Timestamp.now(),
@@ -1073,12 +1051,9 @@ export async function updateProgressiveTopN(
     },
   });
 
-  // Generate signed URL for direct frontend access
-  const signedUrl = await generateSignedUrl(filePath);
-
   // Update Firestore with progressive profiles metadata
+  // Note: Frontend API loads from storage path directly, no signed URL needed
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
-    progressive_profiles_signed_url: signedUrl,
     progressive_profiles_storage_path: filePath,
     progressive_profiles_count: progressiveTopN.length,
     progressive_is_complete: false,

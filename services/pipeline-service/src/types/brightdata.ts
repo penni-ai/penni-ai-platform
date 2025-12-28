@@ -33,8 +33,8 @@ export interface BrightDataInstagramProfile {
   /** Average engagement rate (can be null) */
   avg_engagement: number | null;
   
-  /** External URL from bio */
-  external_url: string | null;
+  /** External URL(s) from bio (BrightData can return a single string or an array) */
+  external_url: string | string[] | null;
   
   /** Biography text */
   biography: string | null;
@@ -180,8 +180,8 @@ export interface BrightDataTikTokProfile {
   /** Like engagement rate */
   like_engagement_rate: number;
   
-  /** Bio link */
-  bio_link: string | null;
+  /** Bio link (BrightData can return a single string or an array) */
+  bio_link: string | string[] | null;
   
   /** Predicted language */
   predicted_lang: string;
@@ -473,4 +473,3 @@ export interface BrightDataCacheDoc {
   /** Timestamp when cache expires (Unix ms) - cached_at + 14 days */
   expires_at: number;
 }
-

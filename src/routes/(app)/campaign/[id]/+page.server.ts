@@ -47,8 +47,18 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			campaign
 		};
 	} catch (err) {
+		// Preserve framework control-flow errors (redirects / HttpError).
+		if (
+			typeof err === 'object' &&
+			err !== null &&
+			'status' in err &&
+			(typeof (err as { status?: unknown }).status === 'number') &&
+			(('location' in err && typeof (err as { location?: unknown }).location === 'string') || 'body' in err)
+		) {
+			throw err;
+		}
+
 		console.error('[campaign] Failed to load campaign', { campaignId, error: err });
 		throw error(500, 'Failed to load campaign. Please try again.');
 	}
 };
-

@@ -51,21 +51,24 @@ export const POST = handleApiRoute(async (event) => {
 		});
 	}
 
-	const logger = event.locals.logger.child({
-		campaignId,
-		userId: user.uid,
-		action: 'draft_outreach_message_stream',
-		platform
-	});
+		const logger = event.locals.logger.child({
+			campaignId,
+			userId: user.uid,
+			action: 'draft_outreach_message_stream',
+			platform
+		});
 
-	const abortController = new AbortController();
-	const stream = new ReadableStream({
-		async start(controller) {
-			const send = (event: string, data: unknown) => {
-				controller.enqueue(
-					encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-				);
-			};
+		const abortController = new AbortController();
+		const stream = new ReadableStream({
+			async start(controller) {
+				const send = (event: string, data: unknown) => {
+					if (abortController.signal.aborted) return;
+					try {
+						controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+					} catch {
+						// Stream already closed/cancelled by the client.
+					}
+				};
 
 			try {
 				// Fetch campaign data
@@ -162,23 +165,23 @@ ${formatGuidance}:`;
 					hasCustomInstructions: !!customInstructions
 				});
 
-				const response = await openaiClient.responses.create({
-					model,
-					input: [
-						{
-							type: 'message',
-							role: 'user',
-							content: prompt
-						}
-					],
-					text: {
-						format: {
-							type: 'text'
+					const response = await openaiClient.responses.create({
+						model,
+						input: [
+							{
+								type: 'message',
+								role: 'user',
+								content: prompt
+							}
+						],
+						text: {
+							format: {
+								type: 'text'
+							},
+							verbosity: 'medium'
 						},
-						verbosity: 'medium'
-					},
-					store: false
-				});
+						store: false
+					}, { signal: abortController.signal });
 
 				// Extract text content from response
 				let messageContent = '';
@@ -213,7 +216,7 @@ ${formatGuidance}:`;
 				const trimmedContent = messageContent.trim();
 
 				// Stream the content character by character
-				await streamMessage(trimmedContent, send);
+					await streamMessage(trimmedContent, send, abortController.signal);
 
 				// Send final message
 				send('final', { 
@@ -230,18 +233,22 @@ ${formatGuidance}:`;
 				});
 
 				controller.close();
-			} catch (error) {
-				logger.error('Failed to draft outreach message (streaming)', { error, platform });
-				send('error', { 
-					message: error instanceof Error ? error.message : `Failed to draft ${platform} outreach message.`
-				});
-				controller.close();
+				} catch (error) {
+					if (abortController.signal.aborted) {
+						controller.close();
+						return;
+					}
+					logger.error('Failed to draft outreach message (streaming)', { error, platform });
+					send('error', { 
+						message: error instanceof Error ? error.message : `Failed to draft ${platform} outreach message.`
+					});
+					controller.close();
+				}
+			},
+			cancel() {
+				abortController.abort();
 			}
-		},
-		cancel() {
-			abortController.abort();
-		}
-	});
+		});
 
 	return new Response(stream, {
 		headers: {
@@ -253,14 +260,15 @@ ${formatGuidance}:`;
 	});
 }, { component: 'outreach' });
 
-async function streamMessage(text: string, send: (event: string, data: unknown) => void) {
-	const chunks = chunkMessage(text);
-	
-	for (const chunk of chunks) {
-		send('delta', { delta: chunk });
-		await wait(30); // Slightly faster than chat streaming for better UX
+	async function streamMessage(text: string, send: (event: string, data: unknown) => void, signal?: AbortSignal) {
+		const chunks = chunkMessage(text);
+		
+		for (const chunk of chunks) {
+			if (signal?.aborted) return;
+			send('delta', { delta: chunk });
+			await wait(30); // Slightly faster than chat streaming for better UX
+		}
 	}
-}
 
 function chunkMessage(text: string): string[] {
 	const parts: string[] = [];

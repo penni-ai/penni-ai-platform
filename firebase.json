@@ -25,6 +25,10 @@
     "firestore": {
       "port": 6201
     },
+    "storage": {
+      "host": "127.0.0.1",
+      "port": 9199
+    },
     "ui": {
       "enabled": true,
       "port": 6202

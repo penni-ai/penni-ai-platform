@@ -113,42 +113,40 @@
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  STAGE 3: PROFILE EXTRACTION (Progress: 30%)                                │
+│  STAGE 3: CANDIDATE POOL + PREVIEW (Progress: 30%)                          │
 │  ──────────────────────────────────────────────────────────────────────────  │
 │                                                                               │
-│  Extract top N profile URLs from search results                              │
+│  Extract Weaviate candidate pool (weaviate_top_n = max(500, top_n*4))        │
+│  Save candidates to Storage for immediate frontend preview                   │
 │  Filter by platform if specified                                             │
 │                                                                               │
-│  Output: Array of profile URLs (e.g., top 30)                                │
+│  Output: Array of candidate profiles (urls + lightweight fields)             │
 └───────────────────────────────┬───────────────────────────────────────────────┘
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  STAGE 4 & 5: CONCURRENT PROCESSING (Progress: 50% → 100%)                  │
+│  STAGE 4 & 5: CACHE-FIRST PROCESSING (Progress: 50% → 100%)                 │
 │  ──────────────────────────────────────────────────────────────────────────  │
 │                                                                               │
 │  ┌──────────────────────────────────┐  ┌──────────────────────────────────┐ │
-│  │  STAGE 4: BRIGHTDATA COLLECTION  │  │  STAGE 5: LLM FIT ANALYSIS      │ │
-│  │  (Streaming Batches)             │  │  (Concurrent Processing)        │ │
+│  │  STAGE 4: BRIGHTDATA (AS-NEEDED)  │  │  STAGE 5: LLM FIT ANALYSIS        │ │
+│  │  (Cache-first + 5 in-flight)      │  │  (≤100 concurrent)                │ │
 │  │                                  │  │                                  │ │
-│  │  Service: BrightData API         │  │  Service: OpenAI (gpt-4o-mini)   │ │
-│  │  Input: Profile URLs             │  │  Input: Normalized profiles +    │ │
-│  │  Output: Normalized profiles     │  │        business_description      │ │
-│  │                                  │  │  Output: Fit scores (0-100),     │ │
-│  │  Process:                        │  │        rationale, summary         │ │
-│  │  - Process in batches (size: 20) │  │                                  │ │
-│  │  - Stream results as batches      │  │  Process:                        │ │
-│  │    complete                      │  │  - Analyze profiles concurrently  │ │
-│  │  - Update Firestore incrementally│  │  - Max 5 concurrent requests     │ │
-│  │                                  │  │  - Overlaps with BrightData      │ │
-│  │  Duration: ~5-30 minutes         │  │                                  │ │
-│  │  (depends on batch size)         │  │  Duration: Overlaps with         │ │
-│  │                                  │  │        BrightData collection    │ │
-│  │  Updates Firestore:              │  │                                  │ │
-│  │  - brightdata.status = "running" │  │  Updates Firestore:              │ │
-│  │  - brightdata.batches_completed  │  │  - llm_analysis.status          │ │
-│  │  - brightdata.profiles_collected │  │  - llm_analysis.profiles_analyzed│ │
-│  │  - Incremental batch results     │  │  - llm_analysis.duration_seconds │ │
+│  │  Phase A: Firestore cache         │  │  Service: OpenAI (OPENAI_MODEL)   │ │
+│  │  - batch get brightdata_cache     │  │  Input: Normalized profiles +     │ │
+│  │  - analyze cached first           │  │        business_description       │ │
+│  │                                  │  │  Output: fit_score (0-100),       │ │
+│  │  Phase B: BrightData API          │  │        rationale, summary         │ │
+│  │  - only for cache misses          │  │                                  │ │
+│  │  - 20 urls per batch              │  │  Process:                         │ │
+│  │  - keep 5 batches in-flight       │  │  - analyze each ready batch       │ │
+│  │  - download when snapshot ready   │  │  - update progressive top-N       │ │
+│  │  - write-through cache            │  │  - stop early once >= top_n with  │ │
+│  │                                  │  │    fit_score >= 90 (9/10+)        │ │
+│  │  Updates Firestore:               │  │                                  │ │
+│  │  - brightdata_collection.*        │  │  Updates Firestore:               │ │
+│  │    (cache_hits, api_calls,        │  │  - llm_analysis.*                 │ │
+│  │     batches_completed/failed)     │  │  - progressive_profiles_*         │ │
 │  └──────────────┬───────────────────┘  └──────────────┬───────────────────┘ │
 │                 │                                      │                      │
 │                 └──────────────┬───────────────────────┘                      │
@@ -159,8 +157,11 @@
 │  │  ───────────────────────────────────────────────────────────────────  │  │
 │  │                                                                        │  │
 │  │  Storage: Cloud Storage                                                │  │
-│  │    Path: pipeline_jobs/{job_id}/profiles.json                         │  │
-│  │    Format: JSON array of profiles with fit scores                     │  │
+│  │    candidates: pipeline_jobs/{job_id}/candidates.json                  │  │
+│  │    progressive: pipeline_jobs/{job_id}/profiles_progressive.json       │  │
+│  │    batches: pipeline_jobs/{job_id}/profiles_batch_{i}.json             │  │
+│  │    final: pipeline_jobs/{job_id}/profiles.json                         │  │
+│  │    remaining: pipeline_jobs/{job_id}/profiles_remaining.json           │  │
 │  │                                                                        │  │
 │  │  Metadata: Firestore                                                   │  │
 │  │    Document: pipeline_jobs/{job_id}                                    │  │
@@ -168,8 +169,9 @@
 │  │      - status: "completed"                                            │  │
 │  │      - overall_progress: 100                                           │  │
 │  │      - current_stage: null                                             │  │
-│  │      - stage data (queries, results, timing)                           │  │
-│  │      - summary statistics                                              │  │
+│  │      - candidates_storage_path / progressive_profiles_storage_path      │  │
+│  │      - profiles_storage_path / remaining_profiles_storage_path          │  │
+│  │      - stage data (queries, results, timing, cache)                     │  │
 │  │                                                                        │  │
 │  │  Final Status Update:                                                  │  │
 │  │    - status = "completed"                                              │  │
@@ -179,9 +181,9 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          CLIENT POLLING                                      │
+│                    CLIENT REALTIME LISTENER (Firestore)                      │
 │                                                                               │
-│  Client polls Firestore document: pipeline_jobs/{job_id}                    │
+│  Client listens to Firestore document: pipeline_jobs/{job_id} (onSnapshot)   │
 │                                                                               │
 │  Status values:                                                               │
 │    - "pending" → Job created, waiting for Pub/Sub                            │
@@ -195,8 +197,11 @@
 │    - current_stage: "query_expansion" | "weaviate_search" | ...              │
 │    - Stage-specific data (queries, results, timing)                          │
 │                                                                               │
-│  Download results:                                                            │
-│    GET Cloud Storage: pipeline_jobs/{job_id}/profiles.json                   │
+│  Load results (server API):                                                   │
+│    GET /api/pipeline/{job_id}                                                 │
+│                                                                               │
+│  Cancel pipeline:                                                             │
+│    POST /api/pipeline/{job_id}/cancel                                         │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ## External Services Integration
@@ -215,9 +220,9 @@
 │ - LLM        │  │ - Hybrid     │  │ - TikTok     │  │              │
 │   Analysis   │  │   Search     │  │   Profiles   │  │              │
 │              │  │              │  │              │  │              │
-│ Model:       │  │ Collection:  │  │ Datasets:    │  │ Model:       │
+│ Models:      │  │ Collection:  │  │ Datasets:    │  │ Model:       │
 │ gpt-4o-mini  │  │ influencer_ │  │ - Instagram  │  │ Qwen/Qwen3-  │
-│              │  │ profiles     │  │ - TikTok     │  │ Embedding-8B │
+│ OPENAI_MODEL │  │ profiles     │  │ - TikTok     │  │ Embedding-8B │
 └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
@@ -333,4 +338,3 @@ Endpoints:
 - **Pub/Sub**: Handles high message throughput
 - **Concurrent Processing**: Configurable concurrency limits
 - **Batch Processing**: Efficient API usage with batching
-

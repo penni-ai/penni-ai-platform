@@ -232,8 +232,12 @@ export async function updatePipelineJobStatus(
     updated_at: Timestamp.now(),
   };
   
-  if (status === 'completed' || status === 'error') {
+  if (status === 'completed' || status === 'error' || status === 'cancelled') {
     updates.end_time = Timestamp.now();
+  }
+
+  if (status === 'cancelled') {
+    updates.cancel_requested = true;
   }
   
   if (errorMessage !== undefined) {
@@ -683,26 +687,6 @@ function getProgressiveProfilesStoragePath(jobId: string): string {
 /**
  * Load existing profiles from Storage
  */
-async function loadProfilesFromStorage(jobId: string): Promise<Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string }>> {
-  const bucket = getBucket();
-  const filePath = getProfilesStoragePath(jobId);
-  const file = bucket.file(filePath);
-  
-  try {
-    const [exists] = await file.exists();
-    if (!exists) {
-      return [];
-    }
-    
-    const [contents] = await file.download();
-    const profiles = JSON.parse(contents.toString('utf-8'));
-    return Array.isArray(profiles) ? profiles : [];
-  } catch (error) {
-    console.error(`[Storage] Error loading profiles from ${filePath}:`, error);
-    return [];
-  }
-}
-
 /**
  * Save profiles to Storage and return storage path
  * Note: Frontend API loads from storage path directly, no signed URL needed
@@ -902,37 +886,70 @@ export async function appendBatchResults(
  * Merge all batch files into final profiles.json
  * This should be called once at the end after all batches are complete
  */
-export async function mergeBatchResults(jobId: string, totalBatches: number): Promise<Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string; fit_summary?: string }>> {
+export async function mergeBatchResults(
+  jobId: string,
+  totalBatches?: number
+): Promise<Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string; fit_summary?: string }>> {
   const allProfiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string; fit_summary?: string }> = [];
-  
-  // Load all batch files
-  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-    const batchProfiles = await loadBatchFromStorage(jobId, batchIndex);
-    allProfiles.push(...batchProfiles);
-  }
-  
-  // Validate total count matches expected
-  const jobDoc = await db.collection(PIPELINE_COLLECTION).doc(jobId).get();
+
+  const jobRef = db.collection(PIPELINE_COLLECTION).doc(jobId);
+  const jobDoc = await jobRef.get();
+
+  let batchIndices: number[] = [];
+  let expectedCount = 0;
+
   if (jobDoc.exists) {
     const data = jobDoc.data() as PipelineJobDocument;
-    const expectedCount = data.brightdata_collection?.profiles_collected || 0;
-    if (allProfiles.length !== expectedCount) {
-      console.warn(`[Storage] Profile count mismatch: expected ${expectedCount}, found ${allProfiles.length} in batch files`);
+    expectedCount = data.brightdata_collection?.profiles_collected || 0;
+
+    const completedBatchIndices = data.brightdata_collection?.completed_batch_indices;
+    if (Array.isArray(completedBatchIndices) && completedBatchIndices.length > 0) {
+      batchIndices = Array.from(
+        new Set(completedBatchIndices.filter((idx) => typeof idx === 'number' && Number.isFinite(idx)))
+      ).sort((a, b) => a - b);
+    } else if (typeof totalBatches === 'number' && Number.isFinite(totalBatches) && totalBatches > 0) {
+      batchIndices = Array.from({ length: totalBatches }, (_, i) => i);
+    } else {
+      const completedCount = data.brightdata_collection?.batches_completed;
+      if (typeof completedCount === 'number' && Number.isFinite(completedCount) && completedCount > 0) {
+        batchIndices = Array.from({ length: completedCount }, (_, i) => i);
+      }
+    }
+  } else if (typeof totalBatches === 'number' && Number.isFinite(totalBatches) && totalBatches > 0) {
+    batchIndices = Array.from({ length: totalBatches }, (_, i) => i);
+  }
+
+  // Load only the actually completed batch files when possible (handles gaps/out-of-order completion)
+  for (const batchIndex of batchIndices) {
+    try {
+      const batchProfiles = await loadBatchFromStorage(jobId, batchIndex);
+      allProfiles.push(...batchProfiles);
+    } catch (err) {
+      console.warn(`[Storage] Could not load batch ${batchIndex} for job ${jobId}:`, err);
     }
   }
-  
+
+  // Validate total count matches expected
+  if (jobDoc.exists) {
+    if (allProfiles.length !== expectedCount) {
+      console.warn(
+        `[Storage] Profile count mismatch: expected ${expectedCount}, found ${allProfiles.length} in batch files`
+      );
+    }
+  }
+
   // Save merged results to main profiles.json
   const { path: storagePath } = await saveProfilesToStorage(jobId, allProfiles);
 
   // Update Firestore with storage path (frontend API loads from storage path directly)
-  await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
+  await jobRef.update({
     profiles_storage_path: storagePath,
     profiles_count: allProfiles.length,
     updated_at: Timestamp.now(),
   });
-  
-  console.log(`[Storage] Merged ${totalBatches} batches into ${allProfiles.length} profiles for job ${jobId}`);
-  
+
+  console.log(`[Storage] Merged ${batchIndices.length} batches into ${allProfiles.length} profiles for job ${jobId}`);
+
   return allProfiles;
 }
 

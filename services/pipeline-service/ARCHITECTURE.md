@@ -4,6 +4,8 @@
 
 The Pipeline Service is a **monolithic Cloud Run service** that combines HTTP orchestration and Pub/Sub-triggered background processing into a single application. This architecture provides fast response times for job creation while enabling long-running asynchronous pipeline execution.
 
+The pipeline is **cache-first** (BrightData Firestore cache), **streams results to the frontend** (Firestore + progressive Storage artifacts), and **stops early** once enough high-fit profiles are found.
+
 ## Architecture Pattern: Orchestrator-Worker with Pub/Sub
 
 ```
@@ -45,18 +47,26 @@ The Pipeline Service is a **monolithic Cloud Run service** that combines HTTP or
 │  └──────────────────────────────────┘  │
 └─────────────────────────────────────────┘
          │
-         │ Updates job status
+         │ Streams status + pointers
          ▼
 ┌─────────────────┐
 │   Firestore     │
 │   (Job metadata)│
 └─────────────────┘
          │
-         │ Stores large results
+         │ Stores large results + progressive snapshots
          ▼
 ┌─────────────────┐
 │ Cloud Storage   │
 │ (Profile data)  │
+└─────────────────┘
+         ▲
+         │
+         │ BrightData cache (raw profiles, TTL)
+         │
+┌─────────────────┐
+│   Firestore     │
+│ brightdata_cache│
 └─────────────────┘
 ```
 
@@ -168,30 +178,84 @@ The Pipeline Service is a **monolithic Cloud Run service** that combines HTTP or
 - **Duration**: ~10-30 seconds
 - **Updates**: `weaviate_search` stage in Firestore
 
-### Stage 3: Extract Top N Profiles
-- **Logic**: Filters and extracts top N profile URLs
-- **Output**: Array of Instagram/TikTok profile URLs
+### Stage 3: Candidate Pool + Preliminary Preview
+- **Logic**: Extract a Weaviate candidate pool of `weaviate_top_n = max(500, top_n * 4)`
+- **Output**: Candidate profile URLs + lightweight fields (platform, followers, bio, display_name)
+- **Frontend preview**: Candidates are saved to Storage for quick UI preview
 - **Duration**: < 1 second
 
-### Stage 4: BrightData Collection (50% progress)
-- **Service**: BrightData API
-- **Input**: Top N profile URLs
-- **Output**: Detailed profile data (followers, posts, engagement, etc.)
-- **Duration**: ~5-20 minutes (depends on batch size)
-- **Pattern**: Streaming batches (processes as data becomes available)
-- **Updates**: `brightdata_collection` stage in Firestore
+### Stage 4-5: Cache-first collection + LLM fit (50%+ progress)
+This stage is optimized for “time-to-first-scored-profiles”.
 
-### Stage 5: LLM Analysis (60% progress)
-- **Service**: OpenAI (gpt-4o-mini)
-- **Input**: Normalized profiles + business description
-- **Output**: Fit scores, rationale, summaries for each profile
-- **Duration**: ~2-10 minutes (concurrent batch processing)
-- **Updates**: `llm_analysis` stage in Firestore
+- **Fit model**: OpenAI (`OPENAI_MODEL`, default `gpt-5-nano`)
+
+**Phase A — BrightData cache hits first**
+- **Service**: Firestore (`brightdata_cache`)
+- **Input**: Weaviate candidate URLs (up to `weaviate_top_n`)
+- **Action**: Load cached raw BrightData rows in bulk, normalize, run LLM fit immediately
+- **Output**: Scored profiles stored incrementally (per-batch files + progressive top-N)
+- **Stop condition**: If we already found `top_n` profiles with `fit_score >= 90` (9/10+), skip BrightData entirely
+
+**Phase B — BrightData live collection only for cache misses**
+- **Service**: BrightData API + Firestore cache write-through
+- **Input**: Remaining (uncached) URLs from the Weaviate pool
+- **Batching**: 20 urls per batch, keep 5 batches in-flight when possible (≈100 urls)
+- **Processing**: As each snapshot becomes ready → download → normalize → LLM fit → persist batch → update progressive top-N
+- **Stop condition**: Stop early as soon as `top_n` profiles with `fit_score >= 90` are found, or end when the pool is exhausted
+
+**LLM concurrency**
+- Hard cap of 100 concurrent profile analyses (env-configurable but clamped to ≤100 in worker)
 
 ### Finalization
 - **Storage**: Results stored in Cloud Storage (large data) + Firestore (metadata)
 - **Status**: Job status updated to "completed"
 - **Progress**: Finalized at 100%
+
+## Streaming Results to the Frontend
+
+The UI experience is built around **realtime Firestore updates** and **Storage-backed payloads**:
+
+- The campaign page listens to `pipeline_jobs/{job_id}` via Firestore `onSnapshot` (realtime).
+- When counts/paths change (e.g. `weaviate_search.candidates_count`, `progressive_profiles_count`, `profiles_count`), the page fetches `GET /api/pipeline/{job_id}` to load JSON from Storage server-side (avoids CORS and keeps bucket access private).
+- During execution, the worker writes:
+  - **Weaviate candidates** → `candidates_storage_path` (preliminary list)
+  - **Batch results** → `pipeline_jobs/{job_id}/profiles_batch_{i}.json` (one file per batch)
+  - **Progressive top-N** → `progressive_profiles_storage_path` (updated after each batch)
+  - **Final merged results** → `profiles_storage_path` once the worker finishes (or cancels/errors after some progress)
+
+## Before vs After (Pipeline Optimization)
+
+### Previous approach (pre-cache-first)
+
+```
+Weaviate candidates → BrightData batches (streaming, high concurrency) → LLM fit all → merge → return
+```
+
+**Issues**
+- Spent time and money collecting profiles that were already cached.
+- No “good-fit” early-stop: often processed the full candidate pool even after enough 9/10+ matches were found.
+- Higher BrightData concurrency (more in-flight batches than needed) increased cost/pressure and didn’t improve time-to-first-good-result.
+
+### Current approach (cache-first + early stop)
+
+```
+Weaviate pool (>=500, or top_n*4)
+  → Firestore BrightData cache lookup
+     → LLM fit cached first → progressive results to frontend
+        → if enough (>= top_n with fit >= 90): stop
+        → else: trigger BrightData only for cache misses (20 urls/batch, 5 in-flight)
+              → download → normalize → LLM fit → progressive results
+              → stop when target reached or pool exhausted
+```
+
+**Pros**
+- Much faster time-to-first-scored-profiles when cache hits exist.
+- Lower BrightData spend via cache hits + early stop.
+- Predictable operational limits (≤100 urls in-flight to BrightData, ≤100 concurrent LLM analyses).
+
+**Cons / Trade-offs**
+- In cache-heavy scenarios, BrightData triggers start later (intentional to avoid unnecessary calls).
+- Still uses Storage for large payloads; the frontend does an extra fetch when Firestore signals updates.
 
 ## Why This Architecture?
 
@@ -262,22 +326,21 @@ Content-Type: application/json
 }
 ```
 
-### Client Polling
-```http
-GET /firestore/pipeline_jobs/{job_id}
-```
+### Client Realtime Updates + Result Loading
 
-Response:
+- Firestore listener: `pipeline_jobs/{job_id}`
+- Results API: `GET /api/pipeline/{job_id}` (loads candidates/profiles from Storage)
+
+Firestore snapshot example:
 ```json
 {
   "status": "running",
-  "progress": 45,
+  "overall_progress": 45,
   "current_stage": "brightdata_collection",
-  "stages": {
-    "query_expansion": { "status": "completed", ... },
-    "weaviate_search": { "status": "completed", ... },
-    "brightdata_collection": { "status": "running", ... }
-  }
+  "query_expansion": { "status": "completed", "queries": ["..."] },
+  "weaviate_search": { "status": "completed", "candidates_count": 500 },
+  "brightdata_collection": { "status": "running", "batches_completed": 1, "total_batches": 25 },
+  "llm_analysis": { "status": "running", "profiles_analyzed": 20 }
 }
 ```
 
@@ -310,7 +373,7 @@ Response:
 - `PUBSUB_TOPIC_NAME`: `pipeline.start`
 - `WEAVIATE_COLLECTION_NAME`: `influencer_profiles`
 - `MAX_CONCURRENT_WEAVIATE_SEARCHES`: `12`
-- `MAX_CONCURRENT_LLM_REQUESTS`: `5`
+- `MAX_CONCURRENT_LLM_REQUESTS`: `<= 100` (worker clamps to 100)
 
 ### Secrets (via Secret Manager)
 - `OPENAI_API_KEY`
@@ -340,5 +403,4 @@ Response:
 2. **Dead Letter Queue**: Route failed messages to DLQ for manual inspection
 3. **Batch Processing**: Process multiple jobs in single worker invocation
 4. **Caching**: Cache query expansion results for similar business descriptions
-5. **Webhooks**: Notify client when job completes instead of polling
-
+5. **True streaming transport**: optional SSE/WebSocket endpoint, but Firestore listeners already provide realtime delivery of progress pointers

@@ -1,0 +1,67 @@
+{
+  "query": "coffee",
+  "collection": "influencer_profiles",
+  "limit": 5,
+  "alpha": 0.2,
+  "embedding_model": "Qwen/Qwen3-Embedding-8B",
+  "embedding_dimensions": 4096,
+  "count": 5,
+  "results": [
+    {
+      "id": "id_1",
+      "score": 0.800000011920929,
+      "data": {
+        "profile_url": "https://instagram.com/example_user_1/",
+        "platform": "instagram",
+        "display_name": "example_user_1",
+        "biography": "user@example.com",
+        "followers": 11648
+      }
+    },
+    {
+      "id": "id_2",
+      "score": 0.5184942483901978,
+      "data": {
+        "profile_url": "https://instagram.com/example_user_2/",
+        "platform": "instagram",
+        "display_name": "example_user_2",
+        "biography": "user@example.com",
+        "followers": 714537
+      }
+    },
+    {
+      "id": "id_3",
+      "score": 0.5024577975273132,
+      "data": {
+        "profile_url": "https://instagram.com/example_user_3/",
+        "platform": "instagram",
+        "display_name": "example_user_3",
+        "biography": "user@example.com",
+        "followers": 16804
+      }
+    },
+    {
+      "id": "id_4",
+      "score": 0.460772842168808,
+      "data": {
+        "profile_url": "https://instagram.com/example_user_4/",
+        "platform": "instagram",
+        "display_name": "example_user_4",
+        "biography": "user@example.com",
+        "followers": 462661
+      }
+    },
+    {
+      "id": "id_5",
+      "score": 0.41637858748435974,
+      "data": {
+        "profile_url": "https://instagram.com/example_user_5/",
+        "platform": "instagram",
+        "display_name": "example_user_5",
+        "biography": "user@example.com",
+        "followers": 16152
+      }
+    }
+  ],
+  "timestamp": "2025-12-28T00:06:29.216Z"
+}

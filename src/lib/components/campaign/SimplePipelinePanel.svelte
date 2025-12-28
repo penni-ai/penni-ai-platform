@@ -78,6 +78,43 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     return planKey === 'growth' || planKey === 'event';
   });
 
+  const activePipelineId = $derived(() => {
+    const campaignPipelineId = effectiveCampaign?.pipeline_id ?? null;
+    if (typeof campaignPipelineId === 'string' && campaignPipelineId) return campaignPipelineId;
+
+    const statusPipelineId = (pipelineStatus as any)?.job_id;
+    return typeof statusPipelineId === 'string' && statusPipelineId ? statusPipelineId : null;
+  });
+
+  let isCancellingPipeline = $state(false);
+  let cancelPipelineError = $state<string | null>(null);
+
+  async function cancelPipeline(): Promise<void> {
+    if (!browser) return;
+    const pipelineId = activePipelineId;
+    if (!pipelineId || isCancellingPipeline) return;
+
+    cancelPipelineError = null;
+    const confirmed = window.confirm('Cancel this influencer search?');
+    if (!confirmed) return;
+
+    isCancellingPipeline = true;
+    try {
+      const response = await fetch(`/api/pipeline/${pipelineId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) {
+        const message = await response.text().catch(() => '');
+        throw new Error(message || 'Failed to cancel pipeline');
+      }
+    } catch (error) {
+      cancelPipelineError = error instanceof Error ? error.message : 'Failed to cancel pipeline';
+    } finally {
+      isCancellingPipeline = false;
+    }
+  }
+
   let brand = $state('');
   let website = $state('');
   let about = $state('');
@@ -1782,17 +1819,17 @@ let showGmailTypeModal = $state(false);
                   </button>
                 {/if}
               </div>
-            {:else}
-              <!-- Show pipeline status when still running (progressive results) -->
-              {@const batchesCompleted = pipelineStatus?.stages?.brightdata_collection?.batches_completed ?? 0}
-              {@const totalBatches = pipelineStatus?.stages?.brightdata_collection?.total_batches ?? 0}
-              {@const progress = pipelineStatus?.overall_progress ?? 0}
-              <div style="flex: 1; display: flex; align-items: center; gap: 16px;">
-                <!-- Animated pulse indicator -->
-                <div style="width: 10px; height: 10px; background: var(--color-primary); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; flex-shrink: 0;"></div>
+	            {:else}
+	              <!-- Show pipeline status when still running (progressive results) -->
+	              {@const batchesCompleted = pipelineStatus?.stages?.brightdata_collection?.batches_completed ?? 0}
+	              {@const totalBatches = pipelineStatus?.stages?.brightdata_collection?.total_batches ?? 0}
+	              {@const progress = pipelineStatus?.overall_progress ?? 0}
+	              <div style="flex: 1; display: flex; align-items: center; gap: 16px;">
+	                <!-- Animated pulse indicator -->
+	                <div style="width: 10px; height: 10px; background: var(--color-primary); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; flex-shrink: 0;"></div>
 
-                <!-- Progress bar and text -->
-                <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+	                <!-- Progress bar and text -->
+	                <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
                   <div style="display: flex; align-items: center; justify-content: space-between;">
                     <span style="font-size: 14px; font-weight: 500; color: var(--color-text);">
                       Showing best {pipelineStatus?.profiles?.length ?? 0} matches so far
@@ -1805,15 +1842,33 @@ let showGmailTypeModal = $state(false);
                   <div style="height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden;">
                     <div style="height: 100%; width: {$tweenedProgress}%; background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover)); border-radius: 3px;"></div>
                   </div>
-                  {#if batchesCompleted > 0 && totalBatches > 0}
-                    <span style="font-size: 11px; color: var(--color-text-muted);">
-                      {batchesCompleted} of {totalBatches} batches complete — results update as more finish
-                    </span>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-          </div>
+	                  {#if batchesCompleted > 0 && totalBatches > 0}
+	                    <span style="font-size: 11px; color: var(--color-text-muted);">
+	                      {batchesCompleted} of {totalBatches} batches complete — results update as more finish
+	                    </span>
+	                  {/if}
+	                </div>
+
+	                {#if pipelineStatus?.status === 'running' || pipelineStatus?.status === 'pending'}
+	                  <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0;">
+	                    <Button
+	                      variant="outline"
+	                      size="sm"
+	                      onclick={() => void cancelPipeline()}
+	                      disabled={isCancellingPipeline || !activePipelineId}
+	                    >
+	                      {isCancellingPipeline ? 'Cancelling…' : 'Cancel search'}
+	                    </Button>
+	                    {#if cancelPipelineError}
+	                      <span style="font-size: 11px; color: var(--color-error); max-width: 240px; text-align: right;">
+	                        {cancelPipelineError}
+	                      </span>
+	                    {/if}
+	                  </div>
+	                {/if}
+	              </div>
+	            {/if}
+	          </div>
             
             <!-- Status indicators & Action row -->
             <div style="padding: 20px 32px; display: flex; align-items: center; justify-content: flex-end; gap: 12px;">

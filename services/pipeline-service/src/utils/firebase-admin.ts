@@ -4,10 +4,10 @@ import { getAuth } from 'firebase-admin/auth';
 import { getStorage } from 'firebase-admin/storage';
 
 const isFunctionsEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
-const isDevelopment = process.env.NODE_ENV === 'development';
+const isProduction = process.env.NODE_ENV === 'production';
 
-// Only ignore storage emulator in production (not in development or Functions emulator)
-if (!isFunctionsEmulator && !isDevelopment) {
+// Only ignore storage emulator in production (not in development/test or Functions emulator)
+if (!isFunctionsEmulator && isProduction) {
   const storageEmulatorKeys = [
     'FIREBASE_STORAGE_EMULATOR_HOST',
     'STORAGE_EMULATOR_HOST',
@@ -23,6 +23,18 @@ if (!isFunctionsEmulator && !isDevelopment) {
       delete process.env[key];
     }
   }
+}
+
+// Firebase tools sets FIREBASE_STORAGE_EMULATOR_HOST (no protocol); google-cloud-storage expects STORAGE_EMULATOR_HOST with protocol.
+if (process.env.FIREBASE_STORAGE_EMULATOR_HOST && !process.env.STORAGE_EMULATOR_HOST) {
+  const rawHost = process.env.FIREBASE_STORAGE_EMULATOR_HOST.trim();
+  if (rawHost) {
+    process.env.STORAGE_EMULATOR_HOST = rawHost.startsWith('http') ? rawHost : `http://${rawHost}`;
+  }
+}
+
+if (process.env.STORAGE_EMULATOR_HOST && !process.env.STORAGE_EMULATOR_HOST.startsWith('http')) {
+  process.env.STORAGE_EMULATOR_HOST = `http://${process.env.STORAGE_EMULATOR_HOST}`;
 }
 
 interface FirebaseEnvConfig {
@@ -246,4 +258,3 @@ export function getStorageInstance() {
 
 export const resolvedFirebaseProjectId = resolvedProjectId;
 export const resolvedStorageBucketName = resolvedStorageBucket;
-

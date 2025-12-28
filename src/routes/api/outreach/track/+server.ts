@@ -89,17 +89,12 @@ export const POST = handleApiRoute(async (event) => {
 				let contactId = influencer.influencerId;
 				if (!contactId || contactId.trim() === '') {
 					contactId = `contact_${now}_${Math.random().toString(36).substring(2, 9)}`;
-				} else {
-					contactId = contactId.replace(/[/\\]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '_');
-				}
-				
-				// Ensure contactId is never empty
-				if (!contactId || contactId.trim() === '') {
-					contactId = `contact_${now}_${Math.random().toString(36).substring(2, 9)}`;
-				}
-				
-				await contactsRef.doc(contactId).set(contact, { merge: true });
-				await profilesRef.doc(influencer.influencerId).set(
+					} else {
+						contactId = contactId.replace(/[/\\]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '_');
+					}
+					
+					await contactsRef.doc(contactId).set(contact, { merge: true });
+					await profilesRef.doc(influencer.influencerId).set(
 					{
 						contact_status: {
 							[body.platform]: {

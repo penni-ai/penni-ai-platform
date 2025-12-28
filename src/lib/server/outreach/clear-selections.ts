@@ -91,7 +91,7 @@ export async function clearSelectionsForContacted(
 			selectedInfluencerIds: updatedSelectedInfluencerIds,
 			selectedMethods: updatedSelectedMethods,
 			updatedAt: Date.now()
-		}, { merge: true });
+		});
 	}
 }
 
@@ -123,6 +123,9 @@ export async function clearSelectionsAfterSend(
 	const updatedSelectedMethods: Record<string, string[]> = {};
 	if (currentState.selectedMethods) {
 		Object.entries(currentState.selectedMethods).forEach(([influencerKey, methods]) => {
+			if (influencerIds.includes(influencerKey)) {
+				return;
+			}
 			const methodsToRemoveForInfluencer = methodsToRemove[influencerKey] || [];
 			const remainingMethods = (methods || []).filter(
 				method => !methodsToRemoveForInfluencer.includes(method)
@@ -141,6 +144,5 @@ export async function clearSelectionsAfterSend(
 		selectedInfluencerIds: updatedSelectedInfluencerIds,
 		selectedMethods: updatedSelectedMethods,
 		updatedAt: Date.now()
-	}, { merge: true });
+	});
 }
-

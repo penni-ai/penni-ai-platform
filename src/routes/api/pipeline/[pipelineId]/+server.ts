@@ -544,16 +544,17 @@ export const GET = handleApiRoute(async (event) => {
 		});
 	}
 	
-	// Load profiles from Storage if available (final LLM-analyzed profiles)
-	let profiles: any[] = [];
-	let isProgressiveResults = false;
+		// Load profiles from Storage if available (final LLM-analyzed profiles)
+		let profiles: any[] = [];
+		let isProgressiveResults = false;
 
-	// Check if we should use progressive results (pipeline still running, has progressive data)
-	const shouldUseProgressiveResults =
-		data.status === 'running' &&
-		!data.profiles_storage_path &&
-		data.progressive_profiles_storage_path &&
-		(data.current_stage === 'brightdata_collection' || data.current_stage === 'llm_analysis');
+		// Use progressive results when we don't have finalized results yet.
+		// This is used while running, and also for cancelled/errored pipelines so users can still see partial results.
+		const shouldUseProgressiveResults =
+			(data.status === 'running' || data.status === 'cancelled' || data.status === 'error') &&
+			!data.profiles_storage_path &&
+			data.progressive_profiles_storage_path &&
+			(data.current_stage === 'brightdata_collection' || data.current_stage === 'llm_analysis');
 
 	if (shouldUseProgressiveResults && data.progressive_profiles_storage_path) {
 		// Load progressive results (best profiles found so far during analysis)

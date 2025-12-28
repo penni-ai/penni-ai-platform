@@ -54,6 +54,18 @@ if (!process.env.FIREBASE_STORAGE_BUCKET) {
 	process.env.FIREBASE_STORAGE_BUCKET = resolvedStorageBucket;
 }
 
+// Firebase tools sets FIREBASE_STORAGE_EMULATOR_HOST (no protocol); google-cloud-storage expects STORAGE_EMULATOR_HOST with protocol.
+if (process.env.FIREBASE_STORAGE_EMULATOR_HOST && !process.env.STORAGE_EMULATOR_HOST) {
+	const rawHost = process.env.FIREBASE_STORAGE_EMULATOR_HOST.trim();
+	if (rawHost) {
+		process.env.STORAGE_EMULATOR_HOST = rawHost.startsWith('http') ? rawHost : `http://${rawHost}`;
+	}
+}
+
+if (process.env.STORAGE_EMULATOR_HOST && !process.env.STORAGE_EMULATOR_HOST.startsWith('http')) {
+	process.env.STORAGE_EMULATOR_HOST = `http://${process.env.STORAGE_EMULATOR_HOST}`;
+}
+
 let adminConfigLogged = false;
 
 function createAdminApp(): App {

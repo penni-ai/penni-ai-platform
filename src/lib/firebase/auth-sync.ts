@@ -209,3 +209,7 @@ export function isAuthenticatedWith(uid: string): boolean {
 	return firebaseAuth.currentUser?.uid === uid;
 }
 
+export const __test = {
+	waitForAuthUser,
+	waitForIdToken
+};

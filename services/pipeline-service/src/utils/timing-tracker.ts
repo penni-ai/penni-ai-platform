@@ -97,7 +97,7 @@ export class PipelineTimingTracker {
     const relativeTime = this.getRelativeTime();
     const startTime = this.activeStages.get(stage);
     
-    if (!startTime) {
+    if (startTime === undefined) {
       console.warn(`[TimingTracker] Attempted to end stage ${stage} that was not started`);
       return;
     }
@@ -149,7 +149,7 @@ export class PipelineTimingTracker {
     const key = `${stage}.${subStage}`;
     const startTime = this.activeSubStages.get(key);
 
-    if (!startTime) {
+    if (startTime === undefined) {
       console.warn(`[TimingTracker] Attempted to end sub-stage ${stage}.${subStage} that was not started`);
       return;
     }
@@ -245,4 +245,3 @@ export class PipelineTimingTracker {
     return this.pipelineStartTime;
   }
 }
-

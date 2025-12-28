@@ -138,7 +138,7 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
 
     // Derive weaviate_top_n and llm_top_n from top_n
     const topN = data.top_n;
-    const weaviateTopN = Math.max(topN * 4, 200); // 4x top_n for Weaviate candidates, minimum 200
+    const weaviateTopN = Math.max(topN * 4, 500); // 4x top_n for Weaviate candidates, minimum 500
     const llmTopN = topN; // Same as top_n for final LLM results
 
     console.log(`[Orchestrator] Pipeline start request:`, {
@@ -270,4 +270,3 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
     });
   }
 }
-

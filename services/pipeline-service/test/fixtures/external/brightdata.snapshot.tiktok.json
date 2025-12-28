@@ -1,0 +1,31 @@
+[
+  {
+    "account_id": "example_user_1",
+    "nickname": "example_user_2",
+    "predicted_lang": "vi",
+    "is_verified": false,
+    "followers": 154000,
+    "following": 530,
+    "likes": 959400,
+    "videos_count": 0,
+    "create_time": "2018-08-15T06:44:09.000Z",
+    "id": "id_1",
+    "url": "https://tiktok.com/@example_user_1",
+    "profile_pic_url": "https://example.com/redacted",
+    "like_count": 959400,
+    "digg_count": 0,
+    "is_private": true,
+    "profile_pic_url_hd": "https://example.com/redacted",
+    "secu_id": "id_2",
+    "open_favorite": false,
+    "is_ad_virtual": false,
+    "is_commerce_user": false,
+    "top_posts_data": null,
+    "pinned_posts": null,
+    "timestamp": "2025-12-28T00:10:17.600Z",
+    "input": {
+      "url": "https://tiktok.com/@example_user_1",
+      "country": ""
+    }
+  }
+]

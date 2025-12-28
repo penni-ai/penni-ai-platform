@@ -1,0 +1,241 @@
+{
+  "name": "Influencer_profiles",
+  "invertedIndex": {
+    "bm25": {
+      "b": 0.75,
+      "k1": 1.2
+    },
+    "cleanupIntervalSeconds": 60,
+    "stopwords": {
+      "additions": [],
+      "preset": "en",
+      "removals": []
+    },
+    "indexNullState": false,
+    "indexPropertyLength": false,
+    "indexTimestamps": false
+  },
+  "multiTenancy": {
+    "autoTenantActivation": false,
+    "autoTenantCreation": false,
+    "enabled": false
+  },
+  "properties": [
+    {
+      "name": "lance_db_id",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "platform",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "username",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "display_name",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "biography",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "profile_url",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "external_url",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "followers",
+      "dataType": "int",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": false,
+      "tokenization": "none"
+    },
+    {
+      "name": "following",
+      "dataType": "int",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": false,
+      "tokenization": "none"
+    },
+    {
+      "name": "posts_count",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "profile_text",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "post_text",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    },
+    {
+      "name": "hashtag_text",
+      "dataType": "text",
+      "indexFilterable": true,
+      "indexInverted": false,
+      "indexRangeFilters": false,
+      "indexSearchable": true,
+      "tokenization": "word"
+    }
+  ],
+  "references": [],
+  "replication": {
+    "factor": 1,
+    "asyncEnabled": false,
+    "deletionStrategy": "NoAutomatedResolution"
+  },
+  "sharding": {
+    "virtualPerPhysical": 128,
+    "desiredCount": 1,
+    "actualCount": 1,
+    "desiredVirtualCount": 128,
+    "actualVirtualCount": 128,
+    "key": "_id",
+    "strategy": "hash",
+    "function": "murmur3"
+  },
+  "vectorizers": {
+    "hashtag": {
+      "vectorizer": {
+        "name": "none",
+        "config": {}
+      },
+      "indexConfig": {
+        "cleanupIntervalSeconds": 300,
+        "distance": "cosine",
+        "dynamicEfMin": 100,
+        "dynamicEfMax": 500,
+        "dynamicEfFactor": 8,
+        "ef": -1,
+        "efConstruction": 128,
+        "filterStrategy": "sweeping",
+        "flatSearchCutoff": 40000,
+        "maxConnections": 32,
+        "quantizer": {
+          "bits": 8,
+          "rescoreLimit": 20,
+          "type": "rq"
+        },
+        "skip": false,
+        "vectorCacheMaxObjects": 1000000000000,
+        "type": "hnsw"
+      },
+      "indexType": "hnsw"
+    },
+    "post": {
+      "vectorizer": {
+        "name": "none",
+        "config": {}
+      },
+      "indexConfig": {
+        "cleanupIntervalSeconds": 300,
+        "distance": "cosine",
+        "dynamicEfMin": 100,
+        "dynamicEfMax": 500,
+        "dynamicEfFactor": 8,
+        "ef": -1,
+        "efConstruction": 128,
+        "filterStrategy": "sweeping",
+        "flatSearchCutoff": 40000,
+        "maxConnections": 32,
+        "quantizer": {
+          "bits": 8,
+          "rescoreLimit": 20,
+          "type": "rq"
+        },
+        "skip": false,
+        "vectorCacheMaxObjects": 1000000000000,
+        "type": "hnsw"
+      },
+      "indexType": "hnsw"
+    },
+    "profile": {
+      "vectorizer": {
+        "name": "none",
+        "config": {}
+      },
+      "indexConfig": {
+        "cleanupIntervalSeconds": 300,
+        "distance": "cosine",
+        "dynamicEfMin": 100,
+        "dynamicEfMax": 500,
+        "dynamicEfFactor": 8,
+        "ef": -1,
+        "efConstruction": 128,
+        "filterStrategy": "sweeping",
+        "flatSearchCutoff": 40000,
+        "maxConnections": 32,
+        "quantizer": {
+          "bits": 8,
+          "rescoreLimit": 20,
+          "type": "rq"
+        },
+        "skip": false,
+        "vectorCacheMaxObjects": 1000000000000,
+        "type": "hnsw"
+      },
+      "indexType": "hnsw"
+    }
+  }
+}

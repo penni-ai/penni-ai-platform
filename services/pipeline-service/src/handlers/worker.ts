@@ -6,7 +6,6 @@
 import { generateSearchQueriesFromDescription } from '../utils/search-query-generator.js';
 import { performParallelHybridSearches } from '../utils/weaviate-search.js';
 import { normalizeProfiles } from '../utils/profile-normalizer.js';
-import { processBatchedCollectionStreaming, type StreamingBatchConfig } from '../utils/streaming-batch-processor.js';
 import { analyzeProfileFitBatch } from '../utils/llm-analysis.js';
 import {
   updatePipelineJobStatus,
@@ -28,8 +27,44 @@ import {
   updateProgressiveTopN,
   finalizeProgressiveResults,
 } from '../utils/firestore-tracker.js';
+import {
+  getCachedProfilesBatch,
+  setCachedProfilesBatch,
+  detectPlatformFromUrl,
+  extractProfileUrl,
+} from '../utils/brightdata-cache.js';
+import {
+  getBrightDataApiKey,
+  getBrightDataBaseUrl,
+  triggerCollection,
+  checkProgress,
+  downloadResults,
+} from '../utils/brightdata-internal.js';
 import { PipelineTimingTracker } from '../utils/timing-tracker.js';
-import type { BrightDataUnifiedProfile } from '../types/brightdata.js';
+import type { BrightDataProfile, BrightDataPlatform, BrightDataUnifiedProfile } from '../types/brightdata.js';
+
+function getGoodFitThreshold(): number {
+  // 9/10 or 10/10 on the underlying 1-10 scale → fit_score >= 90 on our 0-100 scale
+  return 90;
+}
+
+function isGoodFit(profile: { fit_score?: number }): boolean {
+  return (profile.fit_score ?? 0) >= getGoodFitThreshold();
+}
+
+function getMaxConcurrentLLMRequests(): number {
+  const raw = Number(process.env.MAX_CONCURRENT_LLM_REQUESTS || process.env.MAX_CONCURRENT_LLM_ANALYSES || '100');
+  const configured = Number.isFinite(raw) ? Math.floor(raw) : 100;
+  return Math.min(100, Math.max(1, configured));
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
 
 /**
  * Extract top N candidates (full data) from search results
@@ -86,11 +121,6 @@ function extractTopCandidates(results: any[], topN: number, platform?: string | 
 /**
  * Extract top N profile URLs from search results
  */
-function extractTopProfiles(results: any[], topN: number, platform?: string | null): string[] {
-  const candidates = extractTopCandidates(results, topN, platform);
-  return candidates.map(c => c.profile_url);
-}
-
 /**
  * Handle Pub/Sub message for pipeline execution
  */
@@ -336,8 +366,6 @@ export async function handlePipelineExecution(messageData: {
     await timingTracker.saveToFirestore();
 
     let queries: string[] = [];
-    const queryExpansionStartTime = Date.now();
-    const MIN_QUERY_EXPANSION_DURATION_MS = 0; // No artificial delay
     
     try {
       // Check for cancellation
@@ -353,30 +381,6 @@ export async function handlePipelineExecution(messageData: {
       // Check for cancellation again
       if (await isJobCancelled(jobId)) {
         throw new Error('Pipeline job was cancelled');
-      }
-
-      // Calculate elapsed time
-      const elapsedTime = Date.now() - queryExpansionStartTime;
-      const remainingTime = Math.max(0, MIN_QUERY_EXPANSION_DURATION_MS - elapsedTime);
-      
-      // If query expansion finished too quickly, wait the remaining time
-      // This ensures the UI shows progress for a minimum duration
-      if (remainingTime > 0) {
-        console.log(`[Worker] Query expansion completed in ${elapsedTime}ms, waiting ${remainingTime}ms to meet minimum duration`);
-        
-        // Wait in smaller chunks to respect cancellation checks
-        const checkInterval = 500; // Check every 500ms
-        let waited = 0;
-        while (waited < remainingTime) {
-          // Check for cancellation during wait
-          if (await isJobCancelled(jobId)) {
-            throw new Error('Pipeline job was cancelled');
-          }
-          
-          const waitTime = Math.min(checkInterval, remainingTime - waited);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          waited += waitTime;
-        }
       }
 
       timingTracker.endStage('query_expansion');
@@ -410,6 +414,9 @@ export async function handlePipelineExecution(messageData: {
     console.log(`[Worker] Step 2: Performing parallel hybrid searches (job: ${jobId})...`);
 
     const alphaValues = [0.2, 0.8];
+    // NOTE: We run multiple alphas per query, but alpha variants often overlap heavily.
+    // Size the per-search limit based primarily on the number of unique queries so we can still reach weaviate_top_n.
+    const perSearchLimit = Math.max(500, Math.ceil((weaviateTopN * 1.25) / Math.max(1, queries.length)));
     let deduplicatedResults: any[] = [];
     let queriesExecuted = 0;
     let totalResultsFromSearch = 0;
@@ -421,12 +428,12 @@ export async function handlePipelineExecution(messageData: {
       }
 
       // Perform parallel hybrid searches directly (no HTTP call needed)
-      // Request 300 results per search to ensure we have enough after deduplication
+      // Request enough results per search to reliably reach weaviate_top_n after deduplication/filtering.
       // Pass excludeProfileUrls to filter out already-found profiles (for "find more" functionality)
       const searchResult = await performParallelHybridSearches(
         queries,
         alphaValues,
-        500, // Hardcoded: 300 results per search
+        perSearchLimit,
         minFollowers ?? undefined,
         maxFollowers ?? undefined,
         platform ?? undefined,
@@ -517,7 +524,7 @@ export async function handlePipelineExecution(messageData: {
       return;
     }
 
-    // Stage 4: BrightData Collection (Streaming) + Stage 5: LLM Analysis (Concurrent)
+    // Stage 4: BrightData Collection (Cache-first) + Stage 5: LLM Analysis (Adaptive Stop)
     await updateProgress(jobId, 'brightdata_collection'); // 50% - starting batch processing
     timingTracker.startStage('brightdata_collection');
     await updateBrightDataStage(jobId, 'running', topProfileUrls.length);
@@ -525,197 +532,401 @@ export async function handlePipelineExecution(messageData: {
     await updateLLMAnalysisStage(jobId, 'running');
     await timingTracker.saveToFirestore();
 
-    console.log(`[Worker] Step 4-5: Collecting & analyzing ${topProfileUrls.length} profiles...`);
+    console.log(`[Worker] Step 4-5: Cache-first analyze + BrightData as-needed (${topProfileUrls.length} candidates, target=${llmTopN} good fits, threshold=${getGoodFitThreshold()})`);
 
-    const streamingConfig: StreamingBatchConfig = {
-      batchSize: 20,
-      maxConcurrentBatches: 10,
-      pollingInterval: 10,
-      maxWaitTime: 3600,
-    };
+    const goodFitThreshold = getGoodFitThreshold();
+    const targetGoodCount = llmTopN;
+    const maxConcurrentLLM = getMaxConcurrentLLMRequests();
 
-    // Track all processed profiles
-    const allAnalyzedProfiles: Array<BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string; fit_summary: string }> = [];
+    // BrightData constraints: 20 urls per batch, keep 5 batches in flight when possible (≈100 profiles)
+    const batchSize = 20;
+    const maxInFlightBatches = 5;
+    const pollingIntervalSec = 10;
+    const maxWaitTimeSec = 3600;
+    const BATCH_TIMEOUT_MS = 5 * 60 * 1000;
+
+    // Track cache + cost stats
+    let cacheHits = 0;
+    let apiCalls = 0; // Count profiles fetched from BrightData (approx cost driver)
+
+    // Track stopping condition
+    let goodFound = 0;
+
+    // Track stage stats locally (mirrored into Firestore via updateBatchCounters)
     let batchesCompleted = 0;
     let batchesFailed = 0;
 
-    // Note: Actual batch count depends on cache hits, so we track completed count instead
-    const batchSize = streamingConfig.batchSize || 20;
+    // Track batch indices to avoid collisions between cache + BrightData batches
+    let nextBatchIndex = 0;
 
-    // Track cache stats for cost calculation
-    let cacheHits = 0;
-    let apiCalls = 0;
+    // Helper: normalize + analyze + store a batch, update progressive results and counters.
+    const processAndStoreBatch = async (options: {
+      batchIndex: number;
+      platform: BrightDataPlatform;
+      snapshotId: string;
+      profiles: BrightDataProfile[];
+    }): Promise<void> => {
+      const { batchIndex, platform, snapshotId, profiles } = options;
+      const isCached = snapshotId === 'cached';
+      const batchRelativeStart = Date.now() / 1000 - timingTracker.getPipelineStartTime();
 
-    try {
-      // Use streaming processor - processes batches as they become ready
-      const streamingResult = await processBatchedCollectionStreaming(
-        topProfileUrls,
-        streamingConfig,
-        timingTracker,
-        async (batchResult) => {
-          // This callback is called for each batch as it completes
-          const batchRelativeStart = Date.now() / 1000 - timingTracker.getPipelineStartTime();
-          
-          try {
-            // Check for cancellation before processing batch
-            if (await isJobCancelled(jobId)) {
-              throw new Error('Pipeline job was cancelled');
-            }
-
-            // Validate profiles array
-            if (!batchResult.profiles || !Array.isArray(batchResult.profiles)) {
-              throw new Error(`Batch ${batchResult.batchIndex + 1} profiles is not an array: ${typeof batchResult.profiles}`);
-            }
-            
-            const isCached = batchResult.snapshotId === 'cached';
-            console.log(`[Worker] Batch ${batchResult.batchIndex + 1}${isCached ? ' (cached)' : ''}: ${batchResult.profiles.length} ${batchResult.platform} profiles`);
-
-            // Track BrightData batch start
-            timingTracker.addBatchTiming('brightdata_collection', batchResult.batchIndex, batchRelativeStart);
-
-            // Normalize profiles
-            const normalizationStart = Date.now() / 1000 - timingTracker.getPipelineStartTime();
-            timingTracker.startSubStage('brightdata_collection', 'profile_normalization');
-            const normalizedProfiles = normalizeProfiles(batchResult.profiles);
-            timingTracker.endSubStage('brightdata_collection', 'profile_normalization');
-
-            // Check for cancellation before LLM analysis
-            if (await isJobCancelled(jobId)) {
-              throw new Error('Pipeline job was cancelled');
-            }
-
-            // Track LLM batch start
-            const llmBatchStart = Date.now() / 1000 - timingTracker.getPipelineStartTime();
-            timingTracker.addBatchTiming('llm_analysis', batchResult.batchIndex, llmBatchStart);
-
-            // LLM analysis (concurrent batch processing)
-            const analysisResults = await analyzeProfileFitBatch(
-              normalizedProfiles,
-              fullCampaignDescription,
-              20, // maxConcurrent
-              strictLocationMatching // Pass strict location matching option
-            );
-
-            // Track LLM batch end
-            const llmBatchEnd = Date.now() / 1000 - timingTracker.getPipelineStartTime();
-            timingTracker.addBatchTiming('llm_analysis', batchResult.batchIndex, llmBatchStart, llmBatchEnd);
-
-            // Combine profiles with analysis results
-            const analyzedProfiles: Array<BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string; fit_summary: string }> = normalizedProfiles.map((profile, index) => ({
-              ...profile,
-              fit_score: analysisResults[index]?.fit_score || 0,
-              fit_rationale: analysisResults[index]?.fit_rationale || 'Analysis failed',
-              fit_summary: analysisResults[index]?.fit_summary || 'Unable to analyze',
-            }));
-
-
-            // Sort by fit score
-            analyzedProfiles.sort((a, b) => b.fit_score - a.fit_score);
-
-            // Store batch results incrementally using separate batch files (prevents race conditions)
-            await appendBatchResults(jobId, batchResult.batchIndex, analyzedProfiles);
-
-            // Track for final aggregation
-            allAnalyzedProfiles.push(...analyzedProfiles);
-
-            batchesCompleted++;
-            // Note: We don't know total batches until streaming completes (depends on cache)
-            // Use placeholder for in-progress updates
-            await updateBatchCounters(jobId, batchesCompleted, 0, batchesFailed, batchesCompleted + batchesFailed);
-
-            // Update progressive top-N so frontend can show best results found so far
-            try {
-              await updateProgressiveTopN(jobId, batchesCompleted, llmTopN);
-            } catch (progressiveError) {
-              // Don't fail the pipeline if progressive update fails - it's a nice-to-have
-              console.warn(`[Worker] Failed to update progressive top-N for batch ${batchResult.batchIndex + 1}:`, progressiveError);
-            }
-
-            // Track BrightData batch end
-            const batchRelativeEnd = Date.now() / 1000 - timingTracker.getPipelineStartTime();
-            timingTracker.addBatchTiming('brightdata_collection', batchResult.batchIndex, batchRelativeStart, batchRelativeEnd);
-
-            console.log(`[Worker] Batch ${batchResult.batchIndex + 1} complete: ${analyzedProfiles.length} analyzed`);
-
-          } catch (error) {
-            // Handle cancellation separately
-            if (error instanceof Error && error.message === 'Pipeline job was cancelled') {
-              throw error; // Re-throw to stop processing
-            }
-            console.error(`[Worker] Error processing batch ${batchResult.batchIndex + 1}:`, error);
-            batchesFailed++;
-            await updateBatchCounters(jobId, batchesCompleted, 0, batchesFailed, batchesCompleted + batchesFailed);
-          }
-        }
-      );
-
-      // Capture cache stats from streaming result
-      cacheHits = streamingResult.cacheHits || 0;
-      apiCalls = streamingResult.totalProfiles - cacheHits;
-      console.log(`[Worker] Cache stats: ${cacheHits} cache hits, ${apiCalls} API calls`);
-
-      // Check for cancellation after streaming completes
+      // Cancellation check before any work
       if (await isJobCancelled(jobId)) {
-        await updatePipelineJobStatus(jobId, 'cancelled');
-        return;
+        throw new Error('Pipeline job was cancelled');
       }
 
-      console.log(`[Worker] Collection complete: ${batchesCompleted} batches, ${batchesFailed} failed`);
+      if (!profiles || !Array.isArray(profiles)) {
+        throw new Error(`Batch ${batchIndex + 1} profiles is not an array: ${typeof profiles}`);
+      }
 
-      // Merge all batch files into final profiles.json (use completed count, not pre-calculated total)
-      const mergedProfiles = await mergeBatchResults(jobId, batchesCompleted);
+      console.log(
+        `[Worker] Batch ${batchIndex + 1}${isCached ? ' (cached)' : ''}: ${profiles.length} ${platform} profiles`
+      );
 
-      // Mark progressive results as complete
+      // Track BrightData batch timing (cache batches still count as "collection" work)
+      timingTracker.addBatchTiming('brightdata_collection', batchIndex, batchRelativeStart);
+
+      // Normalize profiles
+      timingTracker.startSubStage('brightdata_collection', 'profile_normalization');
+      const normalizedProfiles = normalizeProfiles(profiles as any);
+      timingTracker.endSubStage('brightdata_collection', 'profile_normalization');
+
+      if (await isJobCancelled(jobId)) {
+        throw new Error('Pipeline job was cancelled');
+      }
+
+      // Track LLM timing
+      const llmBatchStart = Date.now() / 1000 - timingTracker.getPipelineStartTime();
+      timingTracker.addBatchTiming('llm_analysis', batchIndex, llmBatchStart);
+
+      const analysisResults = await analyzeProfileFitBatch(
+        normalizedProfiles,
+        fullCampaignDescription,
+        maxConcurrentLLM,
+        strictLocationMatching
+      );
+
+      const llmBatchEnd = Date.now() / 1000 - timingTracker.getPipelineStartTime();
+      timingTracker.addBatchTiming('llm_analysis', batchIndex, llmBatchStart, llmBatchEnd);
+
+      const analyzedProfiles: Array<
+        BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string; fit_summary: string }
+      > = normalizedProfiles.map((profile, index) => ({
+        ...profile,
+        fit_score: analysisResults[index]?.fit_score || 0,
+        fit_rationale: analysisResults[index]?.fit_rationale || 'Analysis failed',
+        fit_summary: analysisResults[index]?.fit_summary || 'Unable to analyze',
+      }));
+
+      // Update good-fit counter (9/10+)
+      const goodInBatch = analyzedProfiles.filter(isGoodFit).length;
+      goodFound += goodInBatch;
+
+      // Store batch results incrementally (prevents race conditions)
+      analyzedProfiles.sort((a, b) => b.fit_score - a.fit_score);
+      await appendBatchResults(jobId, batchIndex, analyzedProfiles);
+
+      batchesCompleted++;
+      await updateBatchCounters(jobId, batchesCompleted, 0, batchesFailed, totalPlannedBatches);
+
+      try {
+        await updateProgressiveTopN(jobId, batchesCompleted, llmTopN);
+      } catch (progressiveError) {
+        console.warn(`[Worker] Failed to update progressive top-N for batch ${batchIndex + 1}:`, progressiveError);
+      }
+
+      const batchRelativeEnd = Date.now() / 1000 - timingTracker.getPipelineStartTime();
+      timingTracker.addBatchTiming('brightdata_collection', batchIndex, batchRelativeStart, batchRelativeEnd);
+
+      console.log(
+        `[Worker] Batch ${batchIndex + 1} complete: ${analyzedProfiles.length} analyzed (${goodInBatch} >= ${goodFitThreshold}) (good_found=${goodFound}/${targetGoodCount})`
+      );
+    };
+
+    // Build cache + BrightData plans up-front so Firestore can show total_batches.
+    // Cache lookup for the entire candidate pool.
+    console.log(`[Worker] Checking BrightData cache for ${topProfileUrls.length} profiles...`);
+    const cachedProfilesMap = await getCachedProfilesBatch(topProfileUrls);
+    cacheHits = cachedProfilesMap.size;
+    const cachedUrls = new Set(cachedProfilesMap.keys());
+    const uncachedUrls = topProfileUrls.filter((url) => !cachedUrls.has(url));
+    console.log(`[Worker] BrightData cache: ${cacheHits} hits, ${uncachedUrls.length} misses`);
+
+    // Cache batches (chunked) - process fully before any BrightData triggers.
+    const cachedInstagramProfiles: BrightDataProfile[] = [];
+    const cachedTikTokProfiles: BrightDataProfile[] = [];
+
+    for (const url of topProfileUrls) {
+      const cachedProfile = cachedProfilesMap.get(url);
+      if (!cachedProfile) continue;
+      const p = detectPlatformFromUrl(url);
+      if (p === 'instagram') {
+        cachedInstagramProfiles.push(cachedProfile);
+      } else {
+        cachedTikTokProfiles.push(cachedProfile);
+      }
+    }
+
+    const cachedInstagramBatches = chunkArray(cachedInstagramProfiles, batchSize);
+    const cachedTikTokBatches = chunkArray(cachedTikTokProfiles, batchSize);
+
+    // BrightData batches (uncached URLs) - only triggered if needed.
+    const uncachedInstagramUrls: string[] = [];
+    const uncachedTikTokUrls: string[] = [];
+    for (const url of uncachedUrls) {
+      const p = detectPlatformFromUrl(url);
+      if (p === 'instagram') {
+        uncachedInstagramUrls.push(url);
+      } else {
+        uncachedTikTokUrls.push(url);
+      }
+    }
+
+    const uncachedInstagramBatches = chunkArray(uncachedInstagramUrls, batchSize);
+    const uncachedTikTokBatches = chunkArray(uncachedTikTokUrls, batchSize);
+
+    const totalPlannedBatches =
+      cachedInstagramBatches.length +
+      cachedTikTokBatches.length +
+      uncachedInstagramBatches.length +
+      uncachedTikTokBatches.length;
+
+    // Initialize batch counters with a stable total_batches so progress is meaningful.
+    await updateBatchCounters(jobId, 0, 0, 0, totalPlannedBatches);
+
+    try {
+      // Phase A: Cached profiles first
+      for (const batchProfiles of cachedInstagramBatches) {
+        if (await isJobCancelled(jobId)) throw new Error('Pipeline job was cancelled');
+        if (goodFound >= targetGoodCount) break;
+        await processAndStoreBatch({
+          batchIndex: nextBatchIndex++,
+          platform: 'instagram',
+          snapshotId: 'cached',
+          profiles: batchProfiles,
+        });
+      }
+
+      for (const batchProfiles of cachedTikTokBatches) {
+        if (await isJobCancelled(jobId)) throw new Error('Pipeline job was cancelled');
+        if (goodFound >= targetGoodCount) break;
+        await processAndStoreBatch({
+          batchIndex: nextBatchIndex++,
+          platform: 'tiktok',
+          snapshotId: 'cached',
+          profiles: batchProfiles,
+        });
+      }
+
+      const hitTargetFromCache = goodFound >= targetGoodCount;
+      if (hitTargetFromCache) {
+        console.log(`[Worker] Target reached from cache only (good_found=${goodFound}/${targetGoodCount}), skipping BrightData`);
+      }
+
+      // Phase B: BrightData, only if needed
+      if (!hitTargetFromCache && (uncachedInstagramUrls.length > 0 || uncachedTikTokUrls.length > 0)) {
+        const apiKey = getBrightDataApiKey();
+        const baseUrl = getBrightDataBaseUrl();
+
+        const pendingBatches: Array<{ platform: BrightDataPlatform; urls: string[]; batchIndex: number }> = [];
+        for (const urls of uncachedInstagramBatches) {
+          pendingBatches.push({ platform: 'instagram', urls, batchIndex: nextBatchIndex++ });
+        }
+        for (const urls of uncachedTikTokBatches) {
+          pendingBatches.push({ platform: 'tiktok', urls, batchIndex: nextBatchIndex++ });
+        }
+
+        type InFlightSnapshot = {
+          snapshotId: string;
+          platform: BrightDataPlatform;
+          batchIndex: number;
+          triggeredAt: number;
+          urlCount: number;
+        };
+
+        const inFlight = new Map<string, InFlightSnapshot>();
+        let nextToTrigger = 0;
+        const brightdataStart = Date.now();
+        const maxWaitMs = maxWaitTimeSec * 1000;
+
+        const topUpInFlight = async (): Promise<void> => {
+          while (inFlight.size < maxInFlightBatches && nextToTrigger < pendingBatches.length && goodFound < targetGoodCount) {
+            if (await isJobCancelled(jobId)) throw new Error('Pipeline job was cancelled');
+            const batch = pendingBatches[nextToTrigger++];
+            try {
+              const snapshotResults = await triggerCollection(batch.urls, apiKey, baseUrl);
+              const snapshot = snapshotResults.find((s) => s.platform === batch.platform);
+              if (!snapshot) {
+                throw new Error(`No snapshot returned for ${batch.platform} batch`);
+              }
+
+              inFlight.set(snapshot.snapshot_id, {
+                snapshotId: snapshot.snapshot_id,
+                platform: batch.platform,
+                batchIndex: batch.batchIndex,
+                triggeredAt: Date.now(),
+                urlCount: batch.urls.length,
+              });
+
+              console.log(
+                `[Worker] Triggered BrightData batch ${batch.batchIndex + 1} (${batch.platform}) snapshot ${snapshot.snapshot_id} (${batch.urls.length} urls) (in_flight=${inFlight.size}/${maxInFlightBatches})`
+              );
+            } catch (error) {
+              batchesFailed++;
+              await updateBatchCounters(jobId, batchesCompleted, 0, batchesFailed, totalPlannedBatches);
+              console.error(
+                `[Worker] Failed to trigger BrightData batch ${batch.batchIndex + 1} (${batch.platform}):`,
+                error
+              );
+            }
+          }
+        };
+
+        // Initial fill
+        await topUpInFlight();
+
+        while ((inFlight.size > 0 || nextToTrigger < pendingBatches.length) && goodFound < targetGoodCount) {
+          if (await isJobCancelled(jobId)) throw new Error('Pipeline job was cancelled');
+
+          const elapsed = Date.now() - brightdataStart;
+          if (elapsed >= maxWaitMs) {
+            console.error(
+              `[Worker] BrightData timeout after ${Math.round(elapsed / 1000)}s: ${inFlight.size} batches still in-flight, ${pendingBatches.length - nextToTrigger} not triggered`
+            );
+            batchesFailed += inFlight.size + (pendingBatches.length - nextToTrigger);
+            break;
+          }
+
+          const inFlightSnapshots = Array.from(inFlight.values());
+          const progressResults = await Promise.allSettled(
+            inFlightSnapshots.map((snapshot) => checkProgress(snapshot.snapshotId, apiKey, baseUrl))
+          );
+
+          const ready: InFlightSnapshot[] = [];
+
+          for (let i = 0; i < progressResults.length; i++) {
+            const snapshot = inFlightSnapshots[i];
+            const progressResult = progressResults[i];
+
+            // Safety: snapshot may have been removed if duplicates (shouldn't happen)
+            if (!snapshot || !inFlight.has(snapshot.snapshotId)) continue;
+
+            const ageMs = Date.now() - snapshot.triggeredAt;
+            if (ageMs >= BATCH_TIMEOUT_MS) {
+              inFlight.delete(snapshot.snapshotId);
+              batchesFailed++;
+              console.error(
+                `[Worker] BrightData batch ${snapshot.batchIndex + 1} timed out after ${Math.round(ageMs / 1000)}s (snapshot=${snapshot.snapshotId})`
+              );
+              continue;
+            }
+
+            if (progressResult.status !== 'fulfilled') {
+              console.warn(`[Worker] BrightData progress check failed for snapshot ${snapshot.snapshotId}:`, progressResult.reason);
+              continue;
+            }
+
+            const progress = progressResult.value;
+            if (progress.status === 'ready' || progress.status === 'completed') {
+              inFlight.delete(snapshot.snapshotId);
+              ready.push(snapshot);
+            } else if (progress.status === 'failed') {
+              inFlight.delete(snapshot.snapshotId);
+              batchesFailed++;
+              console.error(`[Worker] BrightData batch ${snapshot.batchIndex + 1} failed (snapshot=${snapshot.snapshotId})`);
+            }
+          }
+
+          // Top up as soon as we free slots, before doing any heavy downloads/LLM.
+          await topUpInFlight();
+
+          // Process ready batches sequentially to ensure we never exceed the global LLM concurrency cap.
+          for (const snapshot of ready) {
+            if (await isJobCancelled(jobId)) throw new Error('Pipeline job was cancelled');
+            if (goodFound >= targetGoodCount) break;
+
+            console.log(`[Worker] Downloading BrightData snapshot ${snapshot.snapshotId} (batch ${snapshot.batchIndex + 1})...`);
+            const profiles = await downloadResults(snapshot.snapshotId, apiKey, baseUrl);
+            apiCalls += profiles.length;
+
+            // Cache downloaded profiles asynchronously (best-effort)
+            if (profiles.length > 0) {
+              const profilesToCache = profiles.map((profile) => ({
+                url: extractProfileUrl(profile, snapshot.platform),
+                platform: snapshot.platform,
+                data: profile,
+              }));
+              setCachedProfilesBatch(profilesToCache).catch((err) => {
+                console.warn(`[Worker] Failed to cache profiles for batch ${snapshot.batchIndex + 1}:`, err);
+              });
+            }
+
+            await processAndStoreBatch({
+              batchIndex: snapshot.batchIndex,
+              platform: snapshot.platform,
+              snapshotId: snapshot.snapshotId,
+              profiles,
+            });
+          }
+
+          if (goodFound >= targetGoodCount) {
+            console.log(`[Worker] Target reached during BrightData processing (good_found=${goodFound}/${targetGoodCount}), stopping early`);
+            break;
+          }
+
+          if (ready.length === 0) {
+            // Sleep between polls, but keep cancellation responsive.
+            const waitMs = pollingIntervalSec * 1000;
+            const checkIntervalMs = 500;
+            let waited = 0;
+            while (waited < waitMs) {
+              if (await isJobCancelled(jobId)) throw new Error('Pipeline job was cancelled');
+              const sleepFor = Math.min(checkIntervalMs, waitMs - waited);
+              await new Promise((resolve) => setTimeout(resolve, sleepFor));
+              waited += sleepFor;
+            }
+          }
+        }
+      }
+
+      // If no more work can be done, we finalize with whatever we have.
+      console.log(`[Worker] Collection/analyze complete: ${batchesCompleted} batches, ${batchesFailed} failed (good_found=${goodFound}/${targetGoodCount})`);
+
+      // Ensure Firestore reflects the final counters even if the last events were failures/timeouts.
+      await updateBatchCounters(jobId, batchesCompleted, 0, batchesFailed, totalPlannedBatches);
+
+      // Merge all completed batch files into final profiles.json
+      const mergedProfiles = await mergeBatchResults(jobId);
+
       try {
         await finalizeProgressiveResults(jobId);
       } catch (progressiveError) {
         console.warn(`[Worker] Failed to finalize progressive results:`, progressiveError);
       }
 
-      // Sort all analyzed profiles by fit score (descending - highest fit_score first)
       mergedProfiles.sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
-      
-      // Take top llm_top_n profiles based on fit_score (final results)
-      // All weaviate_top_n profiles were analyzed, now we select the best llm_top_n by fit_score
       const finalProfiles = mergedProfiles.slice(0, llmTopN);
       const remainingProfiles = mergedProfiles.slice(llmTopN);
+
       console.log(`[Worker] Selected top ${finalProfiles.length} profiles (from ${mergedProfiles.length} analyzed)`);
       console.log(`[Worker] Storing ${remainingProfiles.length} remaining profiles separately`);
 
       timingTracker.endStage('brightdata_collection');
       timingTracker.endStage('llm_analysis');
-      await updateBrightDataStage(
-        jobId,
-        'completed',
-        topProfileUrls.length,
-        mergedProfiles.length,
-        null, // no error
-        cacheHits,
-        apiCalls
-      );
+      await updateBrightDataStage(jobId, 'completed', topProfileUrls.length, mergedProfiles.length, null, cacheHits, apiCalls);
       await completeStage(jobId, 'brightdata_collection');
-      await updateLLMAnalysisStage(
-        jobId,
-        'completed',
-        mergedProfiles.length
-      );
+      await updateLLMAnalysisStage(jobId, 'completed', mergedProfiles.length);
       await completeStage(jobId, 'llm_analysis');
       await timingTracker.saveToFirestore();
 
-      // Store remaining profiles (non-top-n) in a separate file
       if (remainingProfiles.length > 0) {
         try {
           await storeRemainingProfiles(jobId, remainingProfiles);
         } catch (error) {
           console.error(`[Worker] Failed to store remaining profiles:`, error);
-          // Don't fail the pipeline if remaining profiles storage fails
         }
       }
 
-      // Finalize: Store results and update status
-      // Cost calculations:
-      // - BrightData: $0.0015 per API call (cached profiles are free)
-      // - OpenAI: ~5000 tokens per profile at $0.30 per 1M tokens = $0.0015 per profile
       const brightdataCost = apiCalls * 0.0015;
       const openaiCost = mergedProfiles.length * 0.0015;
       const totalCost = brightdataCost + openaiCost;
@@ -724,9 +935,8 @@ export async function handlePipelineExecution(messageData: {
         queries_generated: queries.length,
         total_search_results: totalResultsFromSearch,
         deduplicated_results: deduplicatedResults.length,
-        profiles_collected: finalProfiles.length, // Final profiles after fit_score sorting
-        profiles_analyzed: mergedProfiles.length, // All profiles analyzed
-        // Cost tracking
+        profiles_collected: finalProfiles.length,
+        profiles_analyzed: mergedProfiles.length,
         cache_hits: cacheHits,
         api_calls: apiCalls,
         brightdata_cost: brightdataCost,
@@ -736,31 +946,26 @@ export async function handlePipelineExecution(messageData: {
 
       console.log(`[Worker] Pipeline costs: BrightData $${brightdataCost.toFixed(4)}, OpenAI $${openaiCost.toFixed(4)}, Total $${totalCost.toFixed(4)}`);
 
-      // Store final top llm_top_n results sorted by fit_score
       await storePipelineResults(jobId, finalProfiles, pipelineStats);
       timingTracker.endPipeline();
       await timingTracker.saveToFirestore();
       await updatePipelineJobStatus(jobId, 'completed');
-      // Update progress to 100% (finalization)
       await updateProgress(jobId, null);
       await finalizePipelineProgress(jobId);
     } catch (error) {
+      if (error instanceof Error && error.message === 'Pipeline job was cancelled') {
+        timingTracker.endStage('brightdata_collection');
+        timingTracker.endStage('llm_analysis');
+        await timingTracker.saveToFirestore();
+        await updatePipelineJobStatus(jobId, 'cancelled');
+        return;
+      }
+
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       timingTracker.endStage('brightdata_collection');
       timingTracker.endStage('llm_analysis');
-      await updateBrightDataStage(
-        jobId,
-        'error',
-        topProfileUrls.length,
-        undefined,
-        errorMsg
-      );
-      await updateLLMAnalysisStage(
-        jobId,
-        'error',
-        undefined,
-        errorMsg
-      );
+      await updateBrightDataStage(jobId, 'error', topProfileUrls.length, undefined, errorMsg);
+      await updateLLMAnalysisStage(jobId, 'error', undefined, errorMsg);
       await timingTracker.saveToFirestore();
       await updatePipelineJobStatus(jobId, 'error', errorMsg);
       throw error;

@@ -730,3 +730,13 @@ export async function processEmailQueueBatch(): Promise<BatchProcessingResult> {
 		duration
 	};
 }
+
+export const __test__ = {
+	decryptRefreshToken,
+	getCurrentDateKey,
+	getNextMidnightUTC,
+	getDailyInboxUsage,
+	incrementDailyUsage,
+	incrementMonthlyUsage,
+	isRetryableError
+};

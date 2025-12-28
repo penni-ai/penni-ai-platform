@@ -1,0 +1,79 @@
+{
+  "objects": [
+    {
+      "metadata": {
+        "creationTime": {},
+        "updateTime": {},
+        "score": 0,
+        "explainScore": ""
+      },
+      "properties": {
+        "username": "kaprizpubg",
+        "display_name": "example_user_1",
+        "external_url": "https://example.com/redacted",
+        "profile_text": "🏋️‍♂️Ушел в Реал лайф🏋️‍♂️\n💀CASUAL💀\n⬇️ переходи в тг⬇️ Fitness enthusiast fitness casual real life russian gym lifestyle influencer social media telegram transition",
+        "lance_db_id": "id_1",
+        "biography": "🏋️‍♂️Ушел в Реал лайф🏋️‍♂️\n💀CASUAL💀\n⬇️ переходи в тг⬇️",
+        "profile_url": "",
+        "followers": 32000,
+        "following": 297,
+        "posts_count": "497",
+        "post_text": "",
+        "hashtag_text": "",
+        "platform": "tiktok"
+      },
+      "uuid": "id_2",
+      "vectors": {}
+    },
+    {
+      "metadata": {
+        "creationTime": {},
+        "updateTime": {},
+        "score": 0,
+        "explainScore": ""
+      },
+      "properties": {
+        "followers": 158000,
+        "following": 543,
+        "profile_text": "https://example.com/redacted",
+        "lance_db_id": "id_3",
+        "platform": "tiktok",
+        "display_name": "example_user_2",
+        "biography": "https://example.com/redacted",
+        "profile_url": "https://tiktok.com/@example_user_1",
+        "posts_count": "686",
+        "post_text": "",
+        "hashtag_text": "",
+        "username": "cam3007",
+        "external_url": "https://example.com/redacted"
+      },
+      "uuid": "id_4",
+      "vectors": {}
+    },
+    {
+      "metadata": {
+        "creationTime": {},
+        "updateTime": {},
+        "score": 0,
+        "explainScore": ""
+      },
+      "properties": {
+        "platform": "tiktok",
+        "username": "jessiwills",
+        "biography": "user@example.com",
+        "profile_url": "https://tiktok.com/@example_user_2",
+        "external_url": "https://example.com/redacted",
+        "following": 106,
+        "posts_count": "902",
+        "display_name": "example_user_3",
+        "followers": 126500,
+        "profile_text": "user@example.com",
+        "post_text": "This audio kills me 🤪🤪🤪 but also… WINX REBOOT SOON! I’m so excited 😭😭🧚‍♀️🌸 @Winx Club I’ve LOVED seeing all the new Winx content!! Countdown to the new show! 💕🌸🧚‍♀️ @Winx Club DID SOMEONE SA…<truncated>",
+        "hashtag_text": "cinderella disneyvillains anastasiaanddrizella stepsisters hamilton musicaltheatre mariareynolds freakierfriday freakyfriday pfchangs disneycreator pinkslip jamieleecurtis chadmichaelmurray",
+        "lance_db_id": "id_5"
+      },
+      "uuid": "id_6",
+      "vectors": {}
+    }
+  ]
+}

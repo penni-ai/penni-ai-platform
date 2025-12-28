@@ -64,6 +64,20 @@ function extractEmailAddress(text: string | null): string | null {
   return validEmails.length > 0 ? (validEmails[0] || null) : null;
 }
 
+function coerceExternalUrl(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  if (Array.isArray(value)) {
+    const first = value.find((item) => typeof item === 'string' && item.trim().length > 0);
+    return typeof first === 'string' ? first.trim() : null;
+  }
+
+  return null;
+}
+
 /**
  * Normalize Instagram post to unified format
  */
@@ -301,8 +315,8 @@ export function normalizeInstagramProfile(
     
     // Basic info
     display_name: profile.full_name || profile.profile_name || profile.account,
-    biography: profile.biography,
-    profile_image_url: profile.profile_image_link,
+    biography: profile.biography ?? null,
+    profile_image_url: profile.profile_image_link ?? null,
     
     // Stats
     followers: profile.followers,
@@ -310,13 +324,13 @@ export function normalizeInstagramProfile(
     posts_count: profile.posts_count,
     
     // Engagement
-    avg_engagement_rate: profile.avg_engagement,
+    avg_engagement_rate: profile.avg_engagement ?? null,
     
     // Links
-    external_url: profile.external_url,
+    external_url: coerceExternalUrl(profile.external_url),
     
     // Email address (from profile or extracted from biography)
-    email_address: profile.email_address || extractEmailAddress(profile.biography),
+    email_address: profile.email_address || extractEmailAddress(profile.biography ?? null),
     
     // Hashtags aggregated from posts
     hashtags: aggregateHashtagsFromPosts(limitedPostsData),
@@ -360,8 +374,8 @@ export function normalizeTikTokProfile(
     
     // Basic info
     display_name: profile.nickname || profile.account_id || 'Unknown',
-    biography: profile.biography,
-    profile_image_url: profile.profile_pic_url,
+    biography: profile.biography ?? null,
+    profile_image_url: profile.profile_pic_url ?? null,
     
     // Stats
     followers: profile.followers,
@@ -369,13 +383,13 @@ export function normalizeTikTokProfile(
     posts_count: profile.videos_count,
     
     // Engagement
-    avg_engagement_rate: profile.awg_engagement_rate,
+    avg_engagement_rate: Number.isFinite(profile.awg_engagement_rate) ? profile.awg_engagement_rate : null,
     
     // Links
-    external_url: profile.bio_link,
+    external_url: coerceExternalUrl(profile.bio_link),
     
     // Email address (extracted from biography)
-    email_address: extractEmailAddress(profile.biography),
+    email_address: extractEmailAddress(profile.biography ?? null),
     
     // Hashtags aggregated from posts
     hashtags: aggregateHashtagsFromPosts(limitedPostsData),
@@ -449,4 +463,3 @@ export function normalizeProfiles(
   }
   return profiles.map(normalizeProfile);
 }
-

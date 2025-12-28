@@ -56,12 +56,6 @@ function toMillis(value: unknown): number | null {
 	return null;
 }
 
-function followerBound(value: unknown): number | null {
-	if (typeof value !== 'number') return null;
-	if (!Number.isFinite(value)) return null;
-	return Math.round(value);
-}
-
 // Firestore read timeout (3 seconds) - prevents page loads from hanging
 const FIRESTORE_READ_TIMEOUT_MS = 3000;
 

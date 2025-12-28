@@ -365,12 +365,7 @@ export const POST = handleApiRoute(async (event) => {
 						contactId = contactId.replace(/[/\\]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '_');
 					}
 					
-					// Ensure contactId is never empty
-					if (!contactId || contactId.trim() === '') {
-						contactId = `contact_${now}_${Math.random().toString(36).substring(2, 9)}`;
-					}
-					
-					await contactsRef.doc(contactId).set(contact, { merge: true }); // Use merge to avoid overwriting if exists
+						await contactsRef.doc(contactId).set(contact, { merge: true }); // Use merge to avoid overwriting if exists
 
 					// Update campaign profile contact status if profile exists
 					if (recipient.influencerId) {

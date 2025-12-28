@@ -85,3 +85,6 @@ export interface SendOutreachSequenceProps {
 	getPlatformColor: (platform: string | null | undefined) => string;
 	canProceedToDraft: () => boolean;
 }
+
+const __outreachTypesModule = true;
+void __outreachTypesModule;

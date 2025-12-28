@@ -85,8 +85,6 @@ const fallbackUsage = usageRows.length
 		{ metric: 'Creators invited', quantity: 28, recordedAt: new Date(Date.now() - 86400000).toISOString() }
 	];
 
-const format = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toISOString() : null);
-
 	return {
 		profile: {
 			full_name: userData?.profile?.fullName ?? '',
@@ -112,4 +110,3 @@ const format = (seconds: number | null) => (seconds ? new Date(seconds * 1000).t
 		userEmail
 	};
 };
-

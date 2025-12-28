@@ -133,11 +133,6 @@ async function hasAnyConnection(uid: string): Promise<boolean> {
 	return !snapshot.empty;
 }
 
-async function hasPrimaryConnection(uid: string): Promise<boolean> {
-	const snapshot = await gmailConnectionsCollectionRef(uid).where('primary', '==', true).limit(1).get();
-	return !snapshot.empty;
-}
-
 async function setPrimaryFlag(uid: string, connectionId: string): Promise<void> {
 	await firestore.runTransaction(async (tx) => {
 		const colRef = gmailConnectionsCollectionRef(uid);

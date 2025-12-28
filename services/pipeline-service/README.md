@@ -26,10 +26,10 @@ SvelteKit App → Cloud Run (HTTP) → Pub/Sub → Cloud Run (Worker) → Firest
 4. **Worker executes pipeline stages**:
    - Query expansion (OpenAI)
    - Parallel hybrid search (Weaviate)
-   - BrightData collection (streaming batches)
-   - LLM fit analysis (concurrent)
+   - Candidate pool + preliminary preview (Storage)
+   - Cache-first BrightData + LLM fit (early-stop when enough 9/10+ matches found)
 5. **Results stored** in Firestore (metadata) and Cloud Storage (profiles)
-6. **App polls** Firestore for status updates and downloads results from Storage
+6. **App listens** to Firestore for status/progress updates and loads candidates/progressive/final results from Storage (typically via an app API to avoid direct bucket access)
 
 ## Pipeline Stages
 
@@ -45,24 +45,21 @@ SvelteKit App → Cloud Run (HTTP) → Pub/Sub → Cloud Run (Worker) → Firest
 - **Service**: Weaviate (vector search)
 - **Duration**: ~10-30 seconds (with batch embedding generation)
 
-### 3. BrightData Collection (Streaming)
-- **Input**: Top N profile URLs
-- **Output**: Normalized profile data (Instagram/TikTok unified format)
-- **Service**: BrightData API
-- **Duration**: ~5-30 minutes (depends on batch size and API response time)
-- **Processing**: Batches processed incrementally as they complete (streaming)
+### 3. Candidate Pool (Weaviate)
+- **Sizing**: `weaviate_top_n = max(500, top_n * 4)`
+- **Output**: Candidate profiles saved to Storage for preliminary UI preview
 
-### 4. LLM Fit Analysis (Concurrent)
-- **Input**: Normalized profiles + business description
-- **Output**: Fit scores (0-100), rationale, summary for each profile
-- **Service**: OpenAI (gpt-4o-mini)
-- **Duration**: Overlaps with BrightData collection (concurrent processing)
-- **Concurrency**: Max 5 concurrent requests (configurable)
+### 4. Cache-first BrightData + LLM Fit (Adaptive Stop)
+- **Cache hits first**: Bulk lookup in Firestore `brightdata_cache`, then immediate LLM fit analysis
+- **BrightData only for cache misses**: 20 urls per batch, keep 5 batches in-flight when possible (≈100 urls)
+- **Stop condition**: End early once `top_n` profiles with `fit_score >= 90` (9/10+) are found, or stop after exhausting the Weaviate pool
+- **LLM concurrency**: `MAX_CONCURRENT_LLM_REQUESTS` (worker clamps to ≤100)
 
-### 5. Result Storage
-- **Storage**: Cloud Storage (`pipeline_jobs/{job_id}/profiles.json`)
-- **Metadata**: Firestore (`pipeline_jobs/{job_id}`)
-- **Format**: JSON array of profiles with fit scores
+### 5. Result Storage (Progressive + Final)
+- **Candidates**: `pipeline_jobs/{job_id}/candidates.json`
+- **Progressive** (updated per-batch): `pipeline_jobs/{job_id}/profiles_progressive.json`
+- **Final**: `pipeline_jobs/{job_id}/profiles.json`
+- **Remaining** (non-top-n): `pipeline_jobs/{job_id}/profiles_remaining.json`
 
 ## Prerequisites
 

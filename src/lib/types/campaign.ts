@@ -126,3 +126,5 @@ export type FollowerRange = {
 
 export type CollectedData = Record<string, string | undefined>;
 
+const __campaignTypesModule = true;
+void __campaignTypesModule;

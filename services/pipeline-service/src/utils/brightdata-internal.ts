@@ -10,7 +10,13 @@ import type {
   BrightDataTriggerRequest,
   BrightDataProgressResponse,
   BrightDataPlatform,
+  BrightDataInstagramProfile,
+  BrightDataTikTokProfile,
 } from '../types/brightdata.js';
+import { isFixtureMode, loadFixture } from './test-mode.js';
+
+const fixtureSnapshots = new Map<string, { urls: string[]; platform: BrightDataPlatform }>();
+let fixtureSnapshotCounter = 0;
 
 /**
  * Create a configured axios instance for BrightData API
@@ -34,6 +40,9 @@ function createBrightDataClient(baseUrl: string, apiKey: string): AxiosInstance 
  * Get BrightData API key from environment variables
  */
 export function getBrightDataApiKey(): string {
+  if (isFixtureMode()) {
+    return 'fixture-key';
+  }
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) {
     throw new Error('BRIGHTDATA_API_KEY environment variable is required');
@@ -102,6 +111,32 @@ export async function triggerCollection(
   apiKey: string,
   baseUrl: string
 ): Promise<{ snapshot_id: string; platform: BrightDataPlatform }[]> {
+  if (isFixtureMode()) {
+    const snapshots: { snapshot_id: string; platform: BrightDataPlatform }[] = [];
+    const instagramUrls: string[] = [];
+    const tiktokUrls: string[] = [];
+
+    for (const url of urls) {
+      const platform = detectPlatform(url);
+      if (platform === 'instagram') instagramUrls.push(url);
+      if (platform === 'tiktok') tiktokUrls.push(url);
+    }
+
+    if (instagramUrls.length > 0) {
+      const snapshotId = `fixture_instagram_${fixtureSnapshotCounter++}`;
+      fixtureSnapshots.set(snapshotId, { urls: instagramUrls, platform: 'instagram' });
+      snapshots.push({ snapshot_id: snapshotId, platform: 'instagram' });
+    }
+
+    if (tiktokUrls.length > 0) {
+      const snapshotId = `fixture_tiktok_${fixtureSnapshotCounter++}`;
+      fixtureSnapshots.set(snapshotId, { urls: tiktokUrls, platform: 'tiktok' });
+      snapshots.push({ snapshot_id: snapshotId, platform: 'tiktok' });
+    }
+
+    return snapshots;
+  }
+
   // Group URLs by platform
   const instagramUrls: string[] = [];
   const tiktokUrls: string[] = [];
@@ -203,6 +238,18 @@ function extractSnapshotId(triggerData: any): string {
  * API returns: { snapshot_id, dataset_id, status: "running" | "ready" | "failed" }
  */
 export async function checkProgress(snapshotId: string, apiKey: string, baseUrl: string): Promise<BrightDataProgressResponse> {
+  if (isFixtureMode()) {
+    return {
+      snapshot_id: snapshotId,
+      dataset_id: 'fixture',
+      status: 'ready',
+      progress: 100,
+      total: 100,
+      completed: 100,
+      failed: 0,
+    };
+  }
+
   const client = createBrightDataClient(baseUrl, apiKey);
   
   try {
@@ -241,6 +288,18 @@ export async function checkProgress(snapshotId: string, apiKey: string, baseUrl:
  * API endpoint: GET /datasets/v3/snapshot/{snapshot_id}?format=json
  */
 export async function downloadResults(snapshotId: string, apiKey: string, baseUrl: string): Promise<BrightDataProfile[]> {
+  if (isFixtureMode()) {
+    const entry = fixtureSnapshots.get(snapshotId);
+    if (!entry) {
+      return [];
+    }
+
+    if (entry.platform === 'instagram') {
+      return buildFixtureInstagramProfiles(entry.urls);
+    }
+    return buildFixtureTikTokProfiles(entry.urls);
+  }
+
   const client = createBrightDataClient(baseUrl, apiKey);
   
   try {
@@ -318,6 +377,193 @@ export async function downloadResults(snapshotId: string, apiKey: string, baseUr
   }
 }
 
+function buildFixtureInstagramProfiles(urls: string[]): BrightDataInstagramProfile[] {
+  const fallbackProfile: BrightDataInstagramProfile = {
+    account: 'fixture_account',
+    fbid: 'fixture_fbid',
+    id: 'fixture_id',
+    followers: 12500,
+    posts_count: 12,
+    is_business_account: false,
+    is_professional_account: true,
+    is_verified: false,
+    avg_engagement: 0.02,
+    external_url: null,
+    biography: 'Fixture Instagram profile',
+    business_category_name: null,
+    category_name: null,
+    post_hashtags: null,
+    following: 200,
+    posts: [],
+    profile_image_link: null,
+    profile_url: 'https://instagram.com/fixture_account',
+    profile_name: 'fixture_account',
+    highlights_count: 0,
+    highlights: [],
+    full_name: 'Fixture Account',
+    is_private: false,
+    bio_hashtags: null,
+    url: 'https://instagram.com/fixture_account',
+    is_joined_recently: false,
+    has_channel: false,
+    partner_id: '',
+    business_address: null,
+    related_accounts: [],
+    email_address: null,
+  };
+
+  const base = loadFixture<BrightDataInstagramProfile[]>(
+    'brightdata.snapshot.instagram.json',
+    [fallbackProfile]
+  )[0] ?? fallbackProfile;
+
+  return urls.map((url, index) => {
+    const handle = extractHandle(url);
+    const profile = structuredClone(base);
+    profile.account = handle;
+    profile.profile_url = url;
+    profile.url = url;
+    profile.profile_name = handle;
+    profile.full_name = `Example ${handle}`;
+    profile.followers = base.followers + index * 1000;
+    profile.posts = buildInstagramPosts(handle, index);
+    profile.email_address = `${handle}@example.com`;
+    return profile;
+  });
+}
+
+function buildFixtureTikTokProfiles(urls: string[]): BrightDataTikTokProfile[] {
+  const fallbackProfile: BrightDataTikTokProfile = {
+    account_id: 'fixture_account',
+    nickname: 'Fixture Account',
+    biography: 'Fixture TikTok profile',
+    awg_engagement_rate: 0.01,
+    comment_engagement_rate: 0.002,
+    like_engagement_rate: 0.008,
+    bio_link: null,
+    predicted_lang: 'en',
+    is_verified: false,
+    followers: 15000,
+    following: 300,
+    likes: 1000,
+    videos_count: 5,
+    create_time: new Date().toISOString(),
+    id: 'fixture_id',
+    url: 'https://tiktok.com/@fixture_account',
+    profile_pic_url: null,
+    like_count: 1000,
+    digg_count: 1000,
+    is_private: false,
+    profile_pic_url_hd: null,
+    secu_id: null,
+    short_id: null,
+    ftc: null,
+    relation: null,
+    open_favorite: false,
+    comment_setting: null,
+    duet_setting: null,
+    stitch_setting: null,
+    is_ad_virtual: false,
+    room_id: null,
+    is_under_age_18: null,
+    top_videos: [],
+    signature: null,
+    discovery_input: {},
+    is_commerce_user: false,
+    top_posts_data: [],
+  };
+
+  const base = loadFixture<BrightDataTikTokProfile[]>(
+    'brightdata.snapshot.tiktok.json',
+    [fallbackProfile]
+  )[0] ?? fallbackProfile;
+
+  return urls.map((url, index) => {
+    const handle = extractHandle(url);
+    const profile = structuredClone(base);
+    profile.account_id = handle;
+    profile.nickname = `Example ${handle}`;
+    profile.url = url;
+    profile.followers = base.followers + index * 800;
+    profile.top_videos = buildTikTokVideos(handle, index);
+    profile.top_posts_data = buildTikTokPosts(handle, index);
+    profile.biography = `Creator focused on ${handle} content.`;
+    return profile;
+  });
+}
+
+function buildInstagramPosts(handle: string, index: number) {
+  const now = Date.now();
+  return [
+    {
+      id: `ig_${handle}_${index}_1`,
+      caption: `${handle} post one`,
+      datetime: new Date(now - 1000 * 60 * 60 * 2).toISOString(),
+      likes: 120 + index,
+      comments: 10 + index,
+      content_type: 'Photo',
+      url: `https://instagram.com/p/${handle}_${index}_1/`,
+      image_url: `https://example.com/${handle}/photo1.jpg`,
+      is_pinned: false,
+    },
+    {
+      id: `ig_${handle}_${index}_2`,
+      caption: `${handle} post two`,
+      datetime: new Date(now - 1000 * 60 * 60 * 24).toISOString(),
+      likes: 90 + index,
+      comments: 7 + index,
+      content_type: 'Video',
+      url: `https://instagram.com/p/${handle}_${index}_2/`,
+      video_url: `https://example.com/${handle}/video1.mp4`,
+      is_video: true,
+      is_pinned: false,
+    },
+  ];
+}
+
+function buildTikTokVideos(handle: string, index: number) {
+  const now = Date.now();
+  return [
+    {
+      commentcount: 12 + index,
+      cover_image: `https://example.com/${handle}/cover1.jpg`,
+      create_date: new Date(now - 1000 * 60 * 60 * 6).toISOString(),
+      diggcount: 140 + index,
+      favorites_count: 5 + index,
+      playcount: 1000 + index * 100,
+      share_count: 3 + index,
+      video_id: `tt_${handle}_${index}_1`,
+      video_url: `https://tiktok.com/@${handle}/video/1`,
+    },
+  ];
+}
+
+function buildTikTokPosts(handle: string, index: number) {
+  const now = Date.now();
+  return [
+    {
+      create_time: new Date(now - 1000 * 60 * 60 * 12).toISOString(),
+      description: `${handle} tiktok post`,
+      hashtags: ['#creator', '#fixture'],
+      likes: 200 + index,
+      post_id: `tt_post_${handle}_${index}_1`,
+      post_type: 'video',
+      post_url: `https://tiktok.com/@${handle}/video/1`,
+    },
+  ];
+}
+
+function extractHandle(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const last = parts[parts.length - 1] ?? 'fixture_account';
+    return last.replace('@', '') || 'fixture_account';
+  } catch {
+    return url.replace(/^@/, '').trim() || 'fixture_account';
+  }
+}
+
 /**
  * Wait for collection to complete with polling (supports multiple snapshots)
  * API status values: "running" | "ready" | "failed"
@@ -390,4 +636,3 @@ export async function waitForCompletion(
     await new Promise((resolve) => setTimeout(resolve, pollingInterval * 1000));
   }
 }
-

@@ -27,6 +27,7 @@ import {
   updateProgressiveTopN,
   finalizeProgressiveResults,
 } from '../utils/firestore-tracker.js';
+import { isFixtureMode } from '../utils/test-mode.js';
 import {
   getCachedProfilesBatch,
   setCachedProfilesBatch,
@@ -56,6 +57,15 @@ function getMaxConcurrentLLMRequests(): number {
   const raw = Number(process.env.MAX_CONCURRENT_LLM_REQUESTS || process.env.MAX_CONCURRENT_LLM_ANALYSES || '100');
   const configured = Number.isFinite(raw) ? Math.floor(raw) : 100;
   return Math.min(100, Math.max(1, configured));
+}
+
+function getFixtureDelayMs(): number {
+  const raw = Number(process.env.PIPELINE_MOCK_DELAY_MS || '0');
+  return Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function chunkArray<T>(items: T[], chunkSize: number): T[][] {
@@ -157,6 +167,17 @@ export async function handlePipelineExecution(messageData: {
 
   // Initialize timing tracker
   const timingTracker = new PipelineTimingTracker(jobId);
+
+  if (isFixtureMode()) {
+    const delayMs = getFixtureDelayMs();
+    if (delayMs > 0) {
+      await delay(delayMs);
+      if (await isJobCancelled(jobId)) {
+        await updatePipelineJobStatus(jobId, 'cancelled');
+        return;
+      }
+    }
+  }
 
   // Fetch full campaign details if campaign_id is provided
   let fullCampaignDescription = businessDescription;

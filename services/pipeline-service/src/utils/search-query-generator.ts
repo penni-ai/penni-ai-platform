@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { isFixtureMode } from './test-mode.js';
 
 let cachedClient: OpenAI | null = null;
 
@@ -168,6 +169,30 @@ export async function generateSearchQueriesFromDescription(description: string):
     throw new Error('Description is required for query generation');
   }
 
+  if (isFixtureMode()) {
+    const queries = [
+      'creator',
+      'lifestyle',
+      'foodie',
+      'beauty',
+      'fitness',
+      'coffee',
+      'nyc',
+      'brooklyn',
+      'austin',
+      'travel',
+      'tiktok',
+      'instagram',
+    ];
+
+    return {
+      description: trimmedDescription,
+      queries,
+      rawResponse: queries.join('\n'),
+      prompt: 'fixture-mode',
+    };
+  }
+
   const client = getOpenAIClient();
   const model = getOpenAIModel();
   console.log(`[QueryGeneration] Generating queries using model: ${model}`);
@@ -207,4 +232,3 @@ export async function generateSearchQueriesFromDescription(description: string):
     prompt, // Include the prompt that was sent to the LLM
   };
 }
-

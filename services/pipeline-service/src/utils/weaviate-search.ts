@@ -6,6 +6,7 @@
 import weaviate, { type WeaviateClient } from 'weaviate-client';
 import type { MultiTargetVectorJoin } from 'weaviate-client';
 import type { WeaviateHybridSearchResponse } from '../types/weaviate-search.js';
+import { isFixtureMode, loadFixture } from './test-mode.js';
 
 let cachedWeaviateClient: WeaviateClient | null = null;
 let clientInitPromise: Promise<WeaviateClient> | null = null;
@@ -392,6 +393,37 @@ export async function performParallelHybridSearches(
   batchTimings: Array<{ batchNumber: number; durationMs: number; searchesInBatch: number }>;
   totalRuntimeMs: number;
 }> {
+  if (isFixtureMode()) {
+    const fixture = loadFixture<WeaviateHybridSearchResponse>('weaviate.hybrid.sample.json');
+    const results = Array.isArray(fixture.results) ? fixture.results : [];
+    const targetCount = Math.min(limit, Math.max(results.length, 50));
+
+    const expanded: typeof results = [];
+    while (expanded.length < targetCount) {
+      expanded.push(...results.map((item, index) => ({
+        ...item,
+        id: item.id ? `${item.id}-${expanded.length + index}` : `fixture-${expanded.length + index}`,
+      })));
+    }
+
+    const sliced = expanded.slice(0, targetCount);
+    const response: WeaviateHybridSearchResponse = {
+      ...fixture,
+      limit,
+      count: sliced.length,
+      results: sliced,
+      timestamp: new Date().toISOString(),
+    };
+
+    return {
+      allSearchResults: [response],
+      deduplicatedResults: deduplicateResults(sliced),
+      queriesExecuted: 1,
+      batchTimings: [{ batchNumber: 1, durationMs: 0, searchesInBatch: 1 }],
+      totalRuntimeMs: 0,
+    };
+  }
+
   const startTime = Date.now();
   
   // Initialize Weaviate client once upfront
@@ -534,4 +566,3 @@ export async function performParallelHybridSearches(
     totalRuntimeMs,
   };
 }
-

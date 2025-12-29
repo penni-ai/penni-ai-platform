@@ -7,6 +7,7 @@ import { getStorageInstance } from './firebase-admin.js';
 import { getBrightDataApiKey, getBrightDataBaseUrl, getBrightDataInstagramDatasetId, getBrightDataTikTokDatasetId } from './brightdata-internal.js';
 import { getWeaviateClientInstance } from './weaviate-search.js';
 import OpenAI from 'openai';
+import { isFixtureMode } from './test-mode.js';
 
 interface HealthCheckResult {
   service: string;
@@ -430,6 +431,41 @@ async function checkFirestore(): Promise<HealthCheckResult> {
  */
 export async function runHealthChecks(): Promise<HealthCheckSummary> {
   console.log('[HealthCheck] Running pre-flight health checks...');
+
+  if (isFixtureMode()) {
+    const checks = await Promise.all([
+      checkStorageBucket(),
+      checkFirestore(),
+    ]);
+
+    checks.push(
+      { service: 'OpenAI', status: 'ok', message: 'Fixture mode enabled (OpenAI skipped)' },
+      { service: 'Weaviate', status: 'ok', message: 'Fixture mode enabled (Weaviate skipped)' },
+      { service: 'DeepInfra', status: 'ok', message: 'Fixture mode enabled (DeepInfra skipped)' },
+      { service: 'BrightData', status: 'ok', message: 'Fixture mode enabled (BrightData skipped)' },
+    );
+
+    const errors = checks.filter(check => check.status === 'error');
+    const allHealthy = errors.length === 0;
+
+    const summary: HealthCheckSummary = {
+      allHealthy,
+      checks,
+      errors,
+    };
+
+    console.log('[HealthCheck] Fixture mode health check results:');
+    checks.forEach(check => {
+      const icon = check.status === 'ok' ? '✅' : '❌';
+      console.log(`  ${icon} ${check.service}: ${check.message}`);
+    });
+
+    if (!allHealthy) {
+      console.warn(`[HealthCheck] ⚠️  ${errors.length} health check(s) failed in fixture mode`);
+    }
+
+    return summary;
+  }
   
   const checks = await Promise.all([
     checkStorageBucket(),
@@ -482,4 +518,3 @@ export async function validateHealthChecks(): Promise<void> {
     throw new Error(`Health check failed: ${errorMessages}`);
   }
 }
-

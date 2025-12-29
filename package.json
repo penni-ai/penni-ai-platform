@@ -19,7 +19,8 @@
 		"test:pipeline-service:unit": "npm --prefix services/pipeline-service test",
 		"test:pipeline-service:coverage": "npm --prefix services/pipeline-service run test:coverage",
 		"test:pipeline-service:integration": "npx firebase-tools emulators:exec --only firestore,storage \"npm --prefix services/pipeline-service run test:integration\"",
-		"test:e2e": "playwright test --pass-with-no-tests",
+		"test:e2e:playwright": "playwright test --pass-with-no-tests",
+		"test:e2e": "tsx scripts/e2e/with-emulators.ts",
 		"test": "npm run test:e2e"
 	},
 	"devDependencies": {

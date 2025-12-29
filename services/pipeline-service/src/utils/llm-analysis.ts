@@ -5,6 +5,7 @@
 
 import OpenAI from 'openai';
 import type { BrightDataUnifiedProfile } from '../types/brightdata.js';
+import { isFixtureMode } from './test-mode.js';
 
 /**
  * Get OpenAI API key from environment variables
@@ -377,6 +378,19 @@ export async function analyzeProfileFitBatch(
   maxConcurrent: number = 20,
   strictLocationMatching: boolean = false
 ): Promise<Array<{ fit_score: number; fit_rationale: string; fit_summary: string }>> {
+  if (isFixtureMode()) {
+    return profiles.map((profile, index) => {
+      const baseScore = index < 10 ? 100 - index : 70 - (index % 20);
+      const fitScore = Math.max(10, baseScore);
+      return {
+        fit_score: fitScore,
+        fit_rationale: `Fixture analysis for ${profile.display_name || profile.account_id || 'creator'}.`,
+        fit_summary: `Fixture summary for ${profile.display_name || profile.account_id || 'creator'}. ` +
+          'Content focuses on lifestyle and creator themes.',
+      };
+    });
+  }
+
   const concurrentLimit = maxConcurrent || getMaxConcurrentLLMAnalyses();
   const results: Array<{ fit_score: number; fit_rationale: string; fit_summary: string }> = [];
 
@@ -430,4 +444,3 @@ export async function analyzeProfileFitBatch(
 
   return results;
 }
-

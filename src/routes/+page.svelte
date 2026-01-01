@@ -211,7 +211,7 @@
 	<!-- Inline Header -->
 	<header class="site-header">
 		<a href="/" class="logo">
-			<img src="/images/branding/main%20logo%20SVG.svg" alt="Penni" class="logo-img" />
+			<img src="/images/icon/pink_white_icon.png" alt="Penni" class="logo-img" />
 		</a>
 		<nav class="header-nav">
 			<a href="#how-it-works" class="nav-link">How it works</a>
@@ -621,7 +621,7 @@
 	<footer class="site-footer">
 		<div class="footer-container">
 			<div class="footer-brand">
-				<img src="/images/branding/main%20logo%20SVG.svg" alt="Penni" class="footer-logo" />
+				<img src="/images/icon/pink_white_icon.png" alt="Penni" class="footer-logo" />
 				<p class="footer-tagline">AI-powered influencer marketing</p>
 				<p class="footer-dime">From the creators of <a href="https://www.dimeinc-us.com/" target="_blank" rel="noopener noreferrer">DIME</a></p>
 			</div>

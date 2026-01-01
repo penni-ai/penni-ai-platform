@@ -353,7 +353,7 @@ describe('pipeline worker (cache-first + early stop)', () => {
     expect(strictFlag).toBe(true);
   });
 
-  it('runs BrightData batches only for cache misses and stops once enough 9/10+ are found', async () => {
+  it('runs BrightData batches only for cache misses and stops once enough 10/10s are found', async () => {
     const llmTopN = 10;
     const candidateUrls = makeUrls(140, 'instagram'); // 7 batches @ 20
     const weaviateResults = makeWeaviateResults(candidateUrls, 'instagram');
@@ -378,10 +378,10 @@ describe('pipeline worker (cache-first + early stop)', () => {
       return makeRawProfiles(urls, 'instagram');
     });
 
-    // First batch yields all good fits → pipeline should stop after processing 1 batch
+    // First batch yields all perfect fits → pipeline should stop after processing 1 batch
     llmAnalysis.analyzeProfileFitBatch.mockImplementation(async (profiles: any[]) => {
       const results: FitResult[] = profiles.map((p: any) => ({
-        fit_score: 90,
+        fit_score: 100,
         fit_rationale: `rationale ${p.profile_url}`,
         fit_summary: `summary ${p.profile_url}`,
       }));

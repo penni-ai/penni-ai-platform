@@ -56,8 +56,11 @@ export async function getSearchUsage(uid: string): Promise<SearchUsageResult> {
 	// If no usage record or different month, reset to 0
 	const count = usage?.influencersFound?.month === currentMonth ? (usage.influencersFound.count ?? 0) : 0;
 
-	// Get user's subscription plan limit
-	const planKey = (userData?.currentPlan as { planKey?: string | null } | undefined)?.planKey ?? null;
+	// Get user's subscription plan limit (fallback to feature_capabilities)
+	const planKey =
+		(userData?.currentPlan as { planKey?: string | null } | undefined)?.planKey ??
+		(userData?.feature_capabilities as { planKey?: string | null } | undefined)?.planKey ??
+		null;
 	const subscriptionLimit = getSubscriptionSearchLimit(planKey);
 	const subscriptionRemaining = Math.max(0, subscriptionLimit - count);
 
@@ -105,8 +108,11 @@ export async function incrementSearchUsage(uid: string, amount: number = 1): Pro
 		const userDoc = await tx.get(userRef);
 		const userData = userDoc.data();
 
-		// Get user's subscription plan limit
-		const planKey = (userData?.currentPlan as { planKey?: string | null } | undefined)?.planKey ?? null;
+		// Get user's subscription plan limit (fallback to feature_capabilities)
+		const planKey =
+			(userData?.currentPlan as { planKey?: string | null } | undefined)?.planKey ??
+			(userData?.feature_capabilities as { planKey?: string | null } | undefined)?.planKey ??
+			null;
 		const subscriptionLimit = getSubscriptionSearchLimit(planKey);
 
 		// Get existing usage or initialize with defaults

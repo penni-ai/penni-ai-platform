@@ -21,7 +21,7 @@
 			<div class="flex items-start gap-3">
 				<div class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden">
 					<img
-						src="/images/branding/white%20icon%20with%20pink%20SVG.svg"
+						src="/images/icon/pink_white_icon.png"
 						alt="Penny assistant"
 						class="h-full w-full object-contain"
 					/>
@@ -92,7 +92,7 @@
 		<div class="flex items-start gap-3">
 			<div class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden">
 				<img
-					src="/images/branding/white%20icon%20with%20pink%20SVG.svg"
+					src="/images/icon/pink_white_icon.png"
 					alt="Penny assistant"
 					class="h-full w-full object-contain"
 				/>
@@ -107,4 +107,3 @@
 		</div>
 	</div>
 {/if}
-

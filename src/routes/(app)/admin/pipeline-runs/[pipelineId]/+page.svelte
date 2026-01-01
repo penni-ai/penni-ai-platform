@@ -1,0 +1,328 @@
+<script lang="ts">
+	import type { PageData } from './$types';
+	import type { PipelineRunRecord } from '$lib/server/admin/pipeline-runs';
+
+	let { data }: { data: PageData } = $props();
+	const run = data.run as PipelineRunRecord;
+	const stageOrder = ['query_expansion', 'weaviate_search', 'brightdata_collection', 'llm_analysis'];
+
+	const stageLabels: Record<string, string> = {
+		query_expansion: 'Query Expansion',
+		weaviate_search: 'Weaviate Search',
+		brightdata_collection: 'BrightData Collection',
+		llm_analysis: 'LLM Analysis'
+	};
+
+	const formatDate = (value: number | null | undefined): string => {
+		if (!value) return '—';
+		const date = new Date(value);
+		return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+	};
+
+	const formatDuration = (seconds: number | undefined): string => {
+		if (typeof seconds !== 'number') return '—';
+		if (seconds < 60) return `${seconds.toFixed(1)}s`;
+		const minutes = Math.floor(seconds / 60);
+		const remainder = Math.round(seconds % 60);
+		return `${minutes}m ${remainder}s`;
+	};
+
+	const formatCost = (value: number | undefined): string => {
+		if (typeof value !== 'number') return '—';
+		const formatted = value < 1 ? value.toFixed(4) : value.toFixed(2);
+		return `$${formatted}`;
+	};
+
+	const getStat = (key: string): number | undefined => {
+		const stats = run.pipeline_stats as Record<string, unknown> | null;
+		const value = stats?.[key];
+		return typeof value === 'number' ? value : undefined;
+	};
+</script>
+
+<svelte:head>
+	<title>Pipeline Run {run.job_id ?? run.id} - Admin</title>
+</svelte:head>
+
+<section class="detail-page">
+	<header class="detail-header">
+		<div>
+			<a class="back-link" href="/admin/pipeline-runs">← Back to runs</a>
+			<h2>Pipeline Run</h2>
+			<p class="mono">{run.job_id ?? run.id}</p>
+		</div>
+		<span class={`status-pill status-${run.status ?? 'unknown'}`}>{run.status ?? 'unknown'}</span>
+	</header>
+
+	<section class="summary-grid">
+		<div class="summary-card">
+			<h3>Run Summary</h3>
+			<div class="summary-item"><span>Status</span><strong>{run.status ?? '—'}</strong></div>
+			<div class="summary-item"><span>Current Stage</span><strong>{run.current_stage ?? '—'}</strong></div>
+			<div class="summary-item"><span>Progress</span><strong>{typeof run.overall_progress === 'number' ? `${Math.round(run.overall_progress)}%` : '—'}</strong></div>
+			<div class="summary-item"><span>Profiles</span><strong>{run.profiles_count ?? '—'}</strong></div>
+			<div class="summary-item"><span>Created</span><strong>{formatDate(run.created_at)}</strong></div>
+			<div class="summary-item"><span>Updated</span><strong>{formatDate(run.updated_at)}</strong></div>
+		</div>
+
+		<div class="summary-card">
+			<h3>Cost & Usage</h3>
+			<div class="summary-item"><span>Queries</span><strong>{getStat('queries_generated') ?? '—'}</strong></div>
+			<div class="summary-item"><span>Search Results</span><strong>{getStat('total_search_results') ?? '—'}</strong></div>
+			<div class="summary-item"><span>Deduplicated</span><strong>{getStat('deduplicated_results') ?? '—'}</strong></div>
+			<div class="summary-item"><span>Profiles Analyzed</span><strong>{getStat('profiles_analyzed') ?? '—'}</strong></div>
+			<div class="summary-item"><span>BrightData Cost</span><strong>{formatCost(getStat('brightdata_cost'))}</strong></div>
+			<div class="summary-item"><span>OpenAI Cost</span><strong>{formatCost(getStat('openai_cost'))}</strong></div>
+			<div class="summary-item"><span>Total Cost</span><strong>{formatCost(getStat('total_cost'))}</strong></div>
+		</div>
+
+		<div class="summary-card">
+			<h3>Ownership</h3>
+			<div class="summary-item"><span>User UID</span><strong class="mono">{run.uid ?? '—'}</strong></div>
+			<div class="summary-item"><span>Campaign</span><strong class="mono">{run.campaign_id ?? '—'}</strong></div>
+			<div class="summary-item"><span>Start Time</span><strong>{formatDate(run.start_time)}</strong></div>
+			<div class="summary-item"><span>End Time</span><strong>{formatDate(run.end_time)}</strong></div>
+			<div class="summary-item"><span>Duration</span><strong>{formatDuration((run.timing as any)?.pipeline_duration)}</strong></div>
+		</div>
+	</section>
+
+	<section class="section-card">
+		<h3>Stage Detail</h3>
+		<div class="stage-grid">
+			{#each stageOrder as stageKey}
+				{@const stage = (run.stages as any)?.[stageKey]}
+				<div class="stage-card">
+					<div class="stage-title">
+						<span>{stageLabels[stageKey]}</span>
+						<span class={`status-pill status-${stage?.status ?? 'unknown'}`}>{stage?.status ?? '—'}</span>
+					</div>
+					<div class="stage-body">
+						{#if stage}
+							{#each Object.entries(stage) as [key, value]}
+								{#if key !== 'queries' && key !== 'prompt'}
+									<div class="stage-row">
+										<span>{key}</span>
+										<strong>{typeof value === 'number' ? value : value ?? '—'}</strong>
+									</div>
+								{/if}
+							{/each}
+						{:else}
+							<p class="stage-empty">No data</p>
+						{/if}
+					</div>
+				</div>
+			{/each}
+		</div>
+	</section>
+
+	<section class="section-card">
+		<h3>Storage Paths</h3>
+		<div class="storage-grid">
+			<div>
+				<span>Profiles</span>
+				<strong class="mono">{run.storage?.profiles_storage_path ?? '—'}</strong>
+			</div>
+			<div>
+				<span>Remaining</span>
+				<strong class="mono">{run.storage?.remaining_profiles_storage_path ?? '—'}</strong>
+			</div>
+			<div>
+				<span>Progressive</span>
+				<strong class="mono">{run.storage?.progressive_profiles_storage_path ?? '—'}</strong>
+			</div>
+			<div>
+				<span>Candidates</span>
+				<strong class="mono">{run.storage?.candidates_storage_path ?? '—'}</strong>
+			</div>
+		</div>
+	</section>
+
+	<section class="section-card">
+		<h3>Timing</h3>
+		<pre class="code-block">{JSON.stringify(run.timing ?? {}, null, 2)}</pre>
+	</section>
+</section>
+
+<style>
+	.detail-page {
+		display: flex;
+		flex-direction: column;
+		gap: 24px;
+	}
+
+	.detail-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 12px;
+	}
+
+	.detail-header h2 {
+		margin: 6px 0 4px 0;
+		font-size: 22px;
+		color: #0f172a;
+	}
+
+	.back-link {
+		text-decoration: none;
+		color: rgba(15, 23, 42, 0.6);
+		font-size: 13px;
+	}
+
+	.summary-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+		gap: 16px;
+	}
+
+	.summary-card {
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 16px;
+		padding: 16px;
+		background: #fff;
+	}
+
+	.summary-card h3 {
+		margin: 0 0 12px 0;
+		font-size: 16px;
+		color: #0f172a;
+	}
+
+	.summary-item {
+		display: flex;
+		justify-content: space-between;
+		font-size: 13px;
+		padding: 6px 0;
+		color: rgba(15, 23, 42, 0.6);
+		border-bottom: 1px solid rgba(15, 23, 42, 0.04);
+	}
+
+	.summary-item strong {
+		color: #0f172a;
+		font-weight: 600;
+	}
+
+	.section-card {
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 16px;
+		padding: 16px;
+		background: #fff;
+	}
+
+	.section-card h3 {
+		margin: 0 0 12px 0;
+		font-size: 16px;
+	}
+
+	.stage-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 12px;
+	}
+
+	.stage-card {
+		border: 1px solid rgba(15, 23, 42, 0.06);
+		border-radius: 12px;
+		padding: 12px;
+		background: rgba(15, 23, 42, 0.02);
+	}
+
+	.stage-title {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 13px;
+		color: #0f172a;
+		margin-bottom: 8px;
+	}
+
+	.stage-body {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		font-size: 12px;
+		color: rgba(15, 23, 42, 0.6);
+	}
+
+	.stage-row {
+		display: flex;
+		justify-content: space-between;
+	}
+
+	.stage-row strong {
+		color: #0f172a;
+	}
+
+	.stage-empty {
+		margin: 0;
+		color: rgba(15, 23, 42, 0.5);
+	}
+
+	.storage-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 10px;
+		font-size: 12px;
+		color: rgba(15, 23, 42, 0.6);
+	}
+
+	.storage-grid strong {
+		display: block;
+		margin-top: 4px;
+		color: #0f172a;
+	}
+
+	.code-block {
+		margin: 0;
+		padding: 12px;
+		background: rgba(15, 23, 42, 0.06);
+		border-radius: 12px;
+		font-size: 12px;
+		overflow-x: auto;
+	}
+
+	.mono {
+		font-family: 'SFMono-Regular', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+		font-size: 12px;
+		word-break: break-all;
+	}
+
+	.status-pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 4px 8px;
+		border-radius: 999px;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.status-pending {
+		background: rgba(59, 130, 246, 0.12);
+		color: #2563eb;
+	}
+
+	.status-running {
+		background: rgba(14, 116, 144, 0.12);
+		color: #0e7490;
+	}
+
+	.status-completed {
+		background: rgba(34, 197, 94, 0.12);
+		color: #16a34a;
+	}
+
+	.status-error,
+	.status-cancelled {
+		background: rgba(239, 68, 68, 0.12);
+		color: #dc2626;
+	}
+
+	@media (max-width: 720px) {
+		.detail-header {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+	}
+</style>

@@ -159,7 +159,7 @@ describe('pipeline worker (integration, emulators)', () => {
 		expect(remaining).toHaveLength(10);
 	});
 
-	it('runs BrightData for cache misses, keeps 5 batches in-flight, and stops early', async () => {
+	it('runs BrightData for cache misses, keeps 5 batches in-flight, and stops early on 10/10 fits', async () => {
 		vi.resetModules();
 
 		const urls = makeUrls(120, 'uncached_user'); // 6 batches @ 20 → can keep 5 in-flight
@@ -187,7 +187,7 @@ describe('pipeline worker (integration, emulators)', () => {
 		vi.doMock('../dist/utils/llm-analysis.js', () => ({
 			analyzeProfileFitBatch: vi.fn(async (profiles: any[]) =>
 				profiles.map(() => ({
-					fit_score: 90,
+					fit_score: 100,
 					fit_rationale: 'r',
 					fit_summary: 's'
 				}))

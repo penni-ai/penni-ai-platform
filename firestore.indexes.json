@@ -7,6 +7,30 @@
         { "fieldPath": "pipeline_id", "mode": "ASCENDING" },
         { "fieldPath": "stage", "mode": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "pipeline_jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "mode": "ASCENDING" },
+        { "fieldPath": "created_at", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pipeline_jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "mode": "ASCENDING" },
+        { "fieldPath": "created_at", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pipeline_jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "campaign_id", "mode": "ASCENDING" },
+        { "fieldPath": "created_at", "mode": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

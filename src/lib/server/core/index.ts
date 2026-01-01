@@ -3,6 +3,7 @@
  */
 
 export * from './api';
+export * from './admin';
 export * from './firestore';
 export * from './logger';
 
@@ -14,4 +15,3 @@ export type {
 	OutreachPlatform,
 	OutreachSendStatus
 } from './firestore';
-

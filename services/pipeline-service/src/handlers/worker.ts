@@ -45,8 +45,8 @@ import { PipelineTimingTracker } from '../utils/timing-tracker.js';
 import type { BrightDataProfile, BrightDataPlatform, BrightDataUnifiedProfile } from '../types/brightdata.js';
 
 function getGoodFitThreshold(): number {
-  // 9/10 or 10/10 on the underlying 1-10 scale → fit_score >= 90 on our 0-100 scale
-  return 90;
+  // 10/10 only on the underlying 1-10 scale → fit_score >= 100 on our 0-100 scale
+  return 100;
 }
 
 function isGoodFit(profile: { fit_score?: number }): boolean {
@@ -639,7 +639,7 @@ export async function handlePipelineExecution(messageData: {
         fit_summary: analysisResults[index]?.fit_summary || 'Unable to analyze',
       }));
 
-      // Update good-fit counter (9/10+)
+      // Update good-fit counter (10/10 only)
       const goodInBatch = analyzedProfiles.filter(isGoodFit).length;
       goodFound += goodInBatch;
 

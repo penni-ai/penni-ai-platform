@@ -78,6 +78,12 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     return planKey === 'growth' || planKey === 'event';
   });
 
+  // Creator count should be adjustable for all paid tiers.
+  const canAdjustCreatorCount = $derived(() => {
+    const planKey = user?.currentPlan?.planKey ?? user?.capabilities?.planKey ?? null;
+    return planKey !== null && planKey !== 'free';
+  });
+
   const activePipelineId = $derived(() => {
     const campaignPipelineId = effectiveCampaign?.pipeline_id ?? null;
     if (typeof campaignPipelineId === 'string' && campaignPipelineId) return campaignPipelineId;
@@ -1432,9 +1438,9 @@ let showGmailTypeModal = $state(false);
                   {/if}
                 </div>
 
-                <!-- Creators count slider - unlocked for premium, locked for free -->
+                <!-- Creators count slider - unlocked for paid, locked for free -->
                 <div class="field-group">
-                  {#if isPremiumUser()}
+                  {#if canAdjustCreatorCount()}
                     <!-- Unlocked slider for premium users -->
                     <div class="creators-count-minimal">
                       <div class="slider-header">

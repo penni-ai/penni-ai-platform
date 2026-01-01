@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import { theme } from '$lib/stores/theme';
+import { browser } from '$app/environment';
 
 	interface Props {
 		size?: 'sm' | 'md' | 'lg';
@@ -15,15 +14,8 @@
 		lg: { width: 'w-60', height: 'h-36' }
 	};
 
-	// Light logo (main icon) for dark backgrounds, dark logo (black icon) for light backgrounds
-	const logoSrc = $derived(() => {
-		if (variant === 'light') return '/images/branding/main%20icon%20SVG.svg';
-		if (variant === 'dark') return '/images/branding/black%20icon%20SVG.svg';
-		// Auto: use light logo on dark/mixed sidebar, dark logo on light sidebar
-		return $theme === 'light'
-			? '/images/branding/black%20icon%20SVG.svg'
-			: '/images/branding/main%20icon%20SVG.svg';
-	});
+	// Use the pink/white icon everywhere for now.
+	const logoSrc = $derived(() => '/images/icon/pink_white_icon.png');
 </script>
 
 {#if browser}

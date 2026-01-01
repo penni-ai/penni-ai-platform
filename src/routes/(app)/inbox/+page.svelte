@@ -127,7 +127,6 @@
 	// Outreach tab state
 	let outreachFilter = $state<'all' | 'queued' | 'processing' | 'sent' | 'failed'>('all');
 	let actionLoading = $state<Record<string, boolean>>({});
-	let hoveredErrorId = $state<string | null>(null);
 
 	const selectedEmail = $derived(emails.find((email) => email.id === selectedEmailId) ?? emails[0]);
 	const isDeleted = $derived(deletedConversationIds.includes(selectedEmailId));
@@ -644,15 +643,13 @@
 								{#if email.status === 'failed'}
 									<div
 										class="error-tooltip-wrapper"
-										onmouseenter={() => hoveredErrorId = email.id}
-										onmouseleave={() => hoveredErrorId = null}
 									>
 										<button type="button" class="action-btn action-btn-info" title="View error">
 											<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
 												<path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
 											</svg>
 										</button>
-										{#if hoveredErrorId === email.id && email.lastError}
+										{#if email.lastError}
 											<div class="error-tooltip">
 												{email.lastError}
 											</div>
@@ -1692,6 +1689,17 @@
 		white-space: normal;
 		z-index: 10;
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		transform: translateY(-4px);
+		transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+	}
+
+	.error-tooltip-wrapper:hover .error-tooltip {
+		opacity: 1;
+		visibility: visible;
+		transform: translateY(0);
 	}
 
 	.error-tooltip::after {

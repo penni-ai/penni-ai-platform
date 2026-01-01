@@ -114,22 +114,22 @@
 	}
 
 	/* Dark mode */
-	[data-theme='dark'] .theme-toggle {
+	:global([data-theme='dark']) .theme-toggle {
 		background-color: var(--color-bg-subtle);
 		border-color: var(--color-border);
 	}
 
-	[data-theme='dark'] .theme-option.active {
+	:global([data-theme='dark']) .theme-option.active {
 		background-color: var(--color-bg-elevated);
 	}
 
 	/* Mixed mode */
-	[data-theme='mixed'] .theme-toggle {
+	:global([data-theme='mixed']) .theme-toggle {
 		background-color: var(--color-bg-subtle);
 		border-color: var(--color-border);
 	}
 
-	[data-theme='mixed'] .theme-option.active {
+	:global([data-theme='mixed']) .theme-option.active {
 		background-color: var(--color-bg-elevated);
 	}
 </style>

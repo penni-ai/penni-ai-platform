@@ -159,10 +159,6 @@
 		color: #f5f5f5;
 	}
 
-	.nav-link.active {
-		color: #FF6F61;
-	}
-
 	/* Auth Section */
 	.auth-section {
 		display: flex;

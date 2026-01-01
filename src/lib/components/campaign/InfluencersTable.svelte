@@ -381,10 +381,19 @@
 				{@const shouldBlurBio = isPreliminary && !hasRealBio && !isAnalyzed}
 				{@const shouldBlurFollowers = isPreliminary && !hasRealFollowers && !isAnalyzed}
 
-				<article
+				<div
 					class="profile-card {isContacted ? 'contacted' : ''} {isSelected ? 'selected' : ''} {isSelectable && !isPreliminary ? 'selectable' : ''}"
+					role={isSelectable && !isPreliminary ? 'button' : undefined}
+					aria-pressed={isSelectable && !isPreliminary ? isSelected : undefined}
 					onclick={() => {
 						if (isSelectable && !isPreliminary) {
+							onToggleSelection(profileId);
+						}
+					}}
+					onkeydown={(event) => {
+						if (!isSelectable || isPreliminary) return;
+						if (event.key === 'Enter' || event.key === ' ') {
+							event.preventDefault();
 							onToggleSelection(profileId);
 						}
 					}}
@@ -482,7 +491,7 @@
 					{#if isSelected}
 						<div class="selected-glow"></div>
 					{/if}
-				</article>
+				</div>
 			{/each}
 		</div>
 	{:else if profiles.length > 0}
@@ -719,63 +728,6 @@
 		color: #4338ca;
 	}
 
-	/* Table Header Row - Minimal Editorial */
-	.table-header-row {
-		display: grid;
-		grid-template-columns: 48px 240px 1fr 120px 120px;
-		align-items: center;
-		padding: 1rem 0;
-		background: transparent;
-		border-bottom: 2px solid var(--ink);
-		position: sticky;
-		top: 0;
-		z-index: 20;
-		backdrop-filter: blur(12px);
-		-webkit-backdrop-filter: blur(12px);
-	}
-
-	.table-header-row > div {
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--ink-light);
-	}
-
-	.th-select {
-		display: flex;
-		justify-content: center;
-	}
-
-	.th-followers,
-	.th-fit {
-		text-align: center;
-	}
-
-	.select-all-checkbox {
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-	}
-
-	.select-all-label {
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-		font-size: 0.65rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--ink-muted);
-		transition: color 0.2s ease;
-	}
-
-	.select-all-label:hover {
-		color: var(--coral);
-	}
-
 	/* Checkbox Editorial Style */
 	.checkbox-editorial {
 		width: 22px;
@@ -944,6 +896,7 @@
 		color: var(--ink-light);
 		line-height: 1.5;
 		display: -webkit-box;
+		line-clamp: 2;
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
@@ -997,15 +950,6 @@
 		gap: 2px;
 		padding: 0.25rem 0;
 		cursor: default;
-	}
-
-	.fit-score-display.excellent {
-	}
-
-	.fit-score-display.good {
-	}
-
-	.fit-score-display.fair {
 	}
 
 	.fit-score-value {
@@ -1206,13 +1150,8 @@
 
 	/* Responsive */
 	@media (max-width: 1024px) {
-		.table-header-row,
 		.profile-card {
 			grid-template-columns: 40px 180px 1fr 100px 100px;
-		}
-
-		.table-header-row {
-			padding: 0.875rem 0;
 		}
 
 		.profile-card {
@@ -1250,10 +1189,6 @@
 			flex: 1;
 			min-width: 120px;
 			justify-content: center;
-		}
-
-		.table-header-row {
-			display: none;
 		}
 
 		.profile-card {

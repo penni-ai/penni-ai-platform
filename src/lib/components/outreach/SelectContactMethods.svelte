@@ -117,10 +117,8 @@
 				{@const hasEmailAddr = hasEmail(influencer)}
 				{@const platform = influencer.platform?.toLowerCase()}
 				<div
-					class="flex items-center justify-between p-4 transition-colors"
+					class="contact-method-row flex items-center justify-between p-4 transition-colors"
 					style="border-bottom: 1px solid var(--color-border);"
-					onmouseenter={(e) => e.currentTarget.style.background = 'var(--color-bg-secondary)'}
-					onmouseleave={(e) => e.currentTarget.style.background = 'transparent'}
 				>
 					<div class="flex items-center gap-4 flex-1 min-w-0">
 						<div class="shrink-0 flex flex-col items-center gap-1">
@@ -246,3 +244,9 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	.contact-method-row:hover {
+		background: var(--color-bg-secondary);
+	}
+</style>

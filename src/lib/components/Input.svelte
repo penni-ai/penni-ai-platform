@@ -187,7 +187,7 @@
 	}
 
 	/* Dark mode fine-tuning */
-	[data-theme='dark'] .input-field:focus {
+	:global([data-theme='dark']) .input-field:focus {
 		box-shadow: 0 0 0 1px var(--color-primary);
 	}
 </style>

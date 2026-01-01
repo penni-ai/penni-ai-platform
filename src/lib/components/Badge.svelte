@@ -55,7 +55,7 @@
 	}
 
 	/* Dark mode adjustments */
-	[data-theme="dark"] .badge-coral {
+	:global([data-theme="dark"]) .badge-coral {
 		background-color: rgba(255, 133, 119, 0.15);
 	}
 </style>

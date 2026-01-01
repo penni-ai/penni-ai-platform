@@ -469,8 +469,8 @@ onMount(() => {
 {#if browser && $campaignPanel.isOpen && $campaignPanel.campaignId}
 	<div
 		class="panel-overlay"
-		onclick={closePanel}
-		onkeydown={(e) => e.key === 'Escape' && closePanel()}
+		onclick={(event) => event.currentTarget === event.target && closePanel()}
+		onkeydown={(event) => event.key === 'Escape' && closePanel()}
 		role="dialog"
 		aria-modal="true"
 		tabindex="-1"
@@ -478,7 +478,6 @@ onMount(() => {
 	>
 		<div
 			class="panel-container"
-			onclick={(e) => e.stopPropagation()}
 			transition:fly={{ x: 400, duration: 300 }}
 		>
 			<button

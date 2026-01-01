@@ -776,12 +776,6 @@
 		align-items: center;
 	}
 
-	.network-svg {
-		width: 100%;
-		max-width: 500px;
-		height: auto;
-	}
-
 	/* Hero Steps Carousel - One step at a time */
 	.hero-steps-carousel {
 		position: relative;
@@ -2179,10 +2173,6 @@
 
 		.hero-visual {
 			order: -1;
-		}
-
-		.network-svg {
-			max-width: 400px;
 		}
 
 		.hero-steps-carousel {

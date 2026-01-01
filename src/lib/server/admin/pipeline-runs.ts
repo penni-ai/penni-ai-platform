@@ -157,7 +157,9 @@ export async function listPipelineRuns(filters: PipelineRunFilters) {
 export async function getPipelineRun(pipelineId: string): Promise<PipelineRunRecord | null> {
 	const snap = await firestore.collection(PIPELINE_COLLECTION).doc(pipelineId).get();
 	if (!snap.exists) return null;
-	return serializePipelineRun(snap.id, snap.data());
+	const data = snap.data();
+	if (!data) return null;
+	return serializePipelineRun(snap.id, data);
 }
 
 const serializePipelineRun = (id: string, data: FirebaseFirestore.DocumentData): PipelineRunRecord => {

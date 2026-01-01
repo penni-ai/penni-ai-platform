@@ -57,7 +57,6 @@
 	>
 		<div
 			class="popup-content"
-			onclick={(e) => e.stopPropagation()}
 			transition:fly={{ y: 20, duration: 300 }}
 		>
 			<h3 id="find-more-title" class="popup-title">Find More Influencers</h3>

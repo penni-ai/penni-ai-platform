@@ -210,6 +210,13 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     }, 3000);
   }
 
+  function handleLockedSliderKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleLockedSliderClick();
+    }
+  }
+
   // Non-linear slider position (0-100)
   let sliderPosition = $state(0);
 
@@ -1471,11 +1478,14 @@ let showGmailTypeModal = $state(false);
                     </div>
                   {:else}
                     <!-- Locked slider for free users -->
-                    <button
-                      type="button"
+                    <div
                       class="creators-count-minimal"
                       class:creators-count-minimal-error={sliderLockedError}
+                      role="button"
+                      tabindex="0"
+                      aria-disabled="true"
                       onclick={handleLockedSliderClick}
+                      onkeydown={handleLockedSliderKeydown}
                     >
                       <div class="slider-header">
                         <label for="simple-topn-locked" class="field-label">How many creators do you want?</label>
@@ -1519,7 +1529,7 @@ let showGmailTypeModal = $state(false);
                           </button>
                         </div>
                       {/if}
-                    </button>
+                    </div>
                   {/if}
                 </div>
               </div>
@@ -1806,7 +1816,7 @@ let showGmailTypeModal = $state(false);
                         <div class="hint-content">
                           <span class="hint-icon">👆</span>
                           <span class="hint-text">Now, select influencers to send outreach to!</span>
-                          <button type="button" class="hint-dismiss" onclick={dismissSelectAllHint}>
+                          <button type="button" class="hint-dismiss" onclick={dismissSelectAllHint} aria-label="Dismiss hint">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                               <path d="M18 6L6 18M6 6l12 12"/>
                             </svg>
@@ -2867,10 +2877,6 @@ let showGmailTypeModal = $state(false);
     color: var(--ink-muted);
   }
 
-  .slider-range-labels-muted {
-    color: rgba(255, 255, 255, 0.5);
-  }
-
   /* Locked slider state */
   .editorial-slider-locked {
     cursor: not-allowed;
@@ -3037,55 +3043,6 @@ let showGmailTypeModal = $state(false);
     font-size: 0.8rem;
     color: var(--ink-muted);
     margin: 4px 0 0 0;
-  }
-
-  /* Premium upsell */
-  .premium-upsell {
-    padding: 24px 0;
-    margin-bottom: 24px;
-    border-bottom: 1px solid var(--border-light);
-  }
-
-  .premium-upsell-content {
-    max-width: 100%;
-  }
-
-  .premium-upsell-title {
-    font-family: 'Instrument Serif', Georgia, serif;
-    font-size: 1.25rem;
-    font-weight: 400;
-    color: var(--ink);
-    margin: 0 0 8px 0;
-  }
-
-  .premium-upsell-text {
-    font-size: 0.9rem;
-    color: var(--ink-light);
-    margin: 0 0 20px 0;
-    line-height: 1.6;
-  }
-
-  .premium-upsell-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 24px;
-    font-size: 0.9rem;
-    font-weight: 600;
-    border-radius: 999px;
-    background: var(--coral);
-    color: white;
-    text-decoration: none;
-    transition: all 0.2s ease;
-    border: none;
-    cursor: pointer;
-    font-family: 'DM Sans', system-ui, sans-serif;
-  }
-
-  .premium-upsell-btn:hover {
-    background: var(--coral-dark);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(255, 111, 97, 0.3);
   }
 
   /* Form navigation */
@@ -3429,6 +3386,7 @@ let showGmailTypeModal = $state(false);
       color-mix(in srgb, var(--color-primary) 5%, transparent)
     );
     -webkit-mask: linear-gradient(var(--color-text-inverse) 0 0) content-box, linear-gradient(var(--color-text-inverse) 0 0);
+    mask: linear-gradient(var(--color-text-inverse) 0 0) content-box, linear-gradient(var(--color-text-inverse) 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     opacity: 0;

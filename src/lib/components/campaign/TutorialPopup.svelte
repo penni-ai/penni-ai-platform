@@ -50,18 +50,11 @@
     }
   }
 
-  function handleClickOutside(e: MouseEvent) {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('popup-overlay')) {
-      // Don't close on backdrop click during tutorial - encourage completion
-    }
-  }
 </script>
 
 {#if open}
   <div
     class="popup-overlay"
-    onclick={handleClickOutside}
     role="dialog"
     aria-modal="true"
     aria-labelledby="tutorial-title"

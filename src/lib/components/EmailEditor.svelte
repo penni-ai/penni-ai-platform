@@ -379,11 +379,11 @@
 	}
 
 	/* Dark mode adjustments */
-	[data-theme="dark"] .toolbar {
+	:global([data-theme="dark"]) .toolbar {
 		background-color: var(--color-bg-subtle);
 	}
 
-	[data-theme="dark"] .toolbar-btn:hover {
+	:global([data-theme="dark"]) .toolbar-btn:hover {
 		background-color: var(--color-bg-elevated);
 	}
 </style>

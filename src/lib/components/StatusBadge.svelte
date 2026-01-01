@@ -129,22 +129,22 @@
 	}
 
 	/* Dark mode adjustments */
-	[data-theme='dark'] .status-success {
+	:global([data-theme='dark']) .status-success {
 		background-color: rgba(52, 211, 153, 0.12);
 		color: #6ee7b7;
 	}
 
-	[data-theme='dark'] .status-info {
+	:global([data-theme='dark']) .status-info {
 		background-color: rgba(96, 165, 250, 0.12);
 		color: #93c5fd;
 	}
 
-	[data-theme='dark'] .status-warning {
+	:global([data-theme='dark']) .status-warning {
 		background-color: rgba(251, 191, 36, 0.12);
 		color: #fcd34d;
 	}
 
-	[data-theme='dark'] .status-error {
+	:global([data-theme='dark']) .status-error {
 		background-color: rgba(248, 113, 113, 0.12);
 		color: #fca5a5;
 	}

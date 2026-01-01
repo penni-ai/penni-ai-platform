@@ -148,10 +148,10 @@
 
       <div class="popup-body">
         <div class="section">
-          <label class="section-label">Tone</label>
+          <span id="tone-label" class="section-label">Tone</span>
           <p class="section-hint">Choose the voice for your message</p>
 
-          <div class="tone-options">
+          <div class="tone-options" role="group" aria-labelledby="tone-label">
             <button
               type="button"
               class="tone-option"

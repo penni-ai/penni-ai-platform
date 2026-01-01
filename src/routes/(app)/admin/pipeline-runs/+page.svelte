@@ -62,6 +62,11 @@
 		await goto(query ? `/admin/pipeline-runs?${query}` : '/admin/pipeline-runs');
 	};
 
+	const handleSubmit = (event: SubmitEvent) => {
+		event.preventDefault();
+		void applyFilters();
+	};
+
 	const loadMore = async () => {
 		if (!nextCursor || isLoadingMore) return;
 		isLoadingMore = true;
@@ -95,7 +100,7 @@
 		</div>
 	</header>
 
-	<form class="filter-bar" onsubmit|preventDefault={applyFilters}>
+	<form class="filter-bar" onsubmit={handleSubmit}>
 		<div class="filter-field">
 			<label for="status">Status</label>
 			<select id="status" bind:value={status}>
@@ -156,7 +161,7 @@
 			{#if errorMessage}
 				<p class="error-text">{errorMessage}</p>
 			{/if}
-			<button class="load-more" on:click={loadMore} disabled={!nextCursor || isLoadingMore}>
+			<button class="load-more" onclick={loadMore} disabled={!nextCursor || isLoadingMore}>
 				{#if isLoadingMore}
 					Loading...
 				{:else if nextCursor}

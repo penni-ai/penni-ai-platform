@@ -10,6 +10,8 @@
     closeOnBackdrop?: boolean;
     closeOnEscape?: boolean;
     centerContent?: boolean;
+    children?: any;
+    footer?: any;
   }
 
   let {
@@ -20,7 +22,9 @@
     dismissible = true,
     closeOnBackdrop = true,
     closeOnEscape = true,
-    centerContent = false
+    centerContent = false,
+    children,
+    footer
   }: Props = $props();
 
   const sizes = {
@@ -49,6 +53,7 @@
   <div
     class="modal-backdrop"
     onclick={handleBackdropClick}
+    onkeydown={handleKeydown}
     transition:fade={{ duration: 250 }}
     role="dialog"
     aria-modal="true"
@@ -82,11 +87,11 @@
         </div>
       {/if}
       <div class="modal-body">
-        <slot />
+        {@render children?.()}
       </div>
-      {#if $$slots.footer}
+      {#if footer}
         <div class="modal-footer">
-          <slot name="footer" />
+          {@render footer?.()}
         </div>
       {/if}
     </div>

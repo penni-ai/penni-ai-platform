@@ -2,6 +2,7 @@
 	import type { PageData } from './$types';
 	import type { PipelineBatchRecord, PipelineRunRecord } from '$lib/server/admin/pipeline-runs';
 	import PipelineWaterfallTimeline from '$lib/components/admin/PipelineWaterfallTimeline.svelte';
+	import PipelineInfluencersTable from '$lib/components/admin/PipelineInfluencersTable.svelte';
 
 	let { data }: { data: PageData } = $props();
 	const run = data.run as PipelineRunRecord;
@@ -146,6 +147,11 @@
 	</section>
 
 	<section class="section-card">
+		<h3>Influencers</h3>
+		<PipelineInfluencersTable pipelineId={run.id} />
+	</section>
+
+	<section class="section-card">
 		<h3>Stage Detail</h3>
 		<div class="stage-grid">
 			{#each stageOrder as stageKey}
@@ -165,6 +171,24 @@
 									</div>
 								{/if}
 							{/each}
+
+							{#if stageKey === 'query_expansion' && Array.isArray(stage.queries) && stage.queries.length > 0}
+								<details class="stage-details">
+									<summary>Queries ({stage.queries.length})</summary>
+									<ul class="query-list">
+										{#each stage.queries as q (q)}
+											<li class="mono">{q}</li>
+										{/each}
+									</ul>
+								</details>
+							{/if}
+
+							{#if stageKey === 'query_expansion' && typeof stage.prompt === 'string' && stage.prompt.length > 0}
+								<details class="stage-details">
+									<summary>Prompt</summary>
+									<pre class="code-block">{stage.prompt}</pre>
+								</details>
+							{/if}
 						{:else}
 							<p class="stage-empty">No data</p>
 						{/if}
@@ -395,6 +419,24 @@
 	.stage-empty {
 		margin: 0;
 		color: rgba(15, 23, 42, 0.5);
+	}
+
+	.stage-details {
+		margin-top: 10px;
+	}
+
+	.query-list {
+		margin: 8px 0 0;
+		padding-left: 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		font-size: 12px;
+		color: rgba(15, 23, 42, 0.85);
+	}
+
+	.query-list li {
+		list-style: disc;
 	}
 
 	.storage-grid {

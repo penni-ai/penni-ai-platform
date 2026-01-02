@@ -12,6 +12,16 @@
 
 	let { run, batches }: Props = $props();
 
+	const isRunActive = $derived(run.status === 'running' || run.status === 'pending');
+	const hasAnyAnalysisTiming = $derived(
+		batches.some(
+			(batch) =>
+				typeof batch.analysis_started_at === 'number' || typeof batch.analysis_completed_at === 'number'
+		)
+	);
+	const showNoBatchesNote = $derived(!isRunActive && batches.length === 0);
+	const showMissingAnalysisTimingNote = $derived(!isRunActive && batches.length > 0 && !hasAnyAnalysisTiming);
+
 	let container = $state<HTMLDivElement | null>(null);
 	let timeline: any = null;
 
@@ -70,6 +80,8 @@
 		for (const batch of batches) {
 			if (typeof batch.started_at === 'number') candidates.push(batch.started_at);
 			if (typeof batch.triggered_at === 'number') candidates.push(batch.triggered_at);
+			if (typeof batch.analysis_started_at === 'number') candidates.push(batch.analysis_started_at);
+			if (typeof batch.analysis_completed_at === 'number') candidates.push(batch.analysis_completed_at);
 			if (typeof batch.completed_at === 'number') candidates.push(batch.completed_at);
 			if (typeof batch.created_at === 'number') candidates.push(batch.created_at);
 			if (typeof batch.updated_at === 'number') candidates.push(batch.updated_at);
@@ -120,18 +132,6 @@
 		}
 
 		const groupOrderBase = 10;
-		const batchGroupMap = new Map<string, { id: string; content: string; order: number }>();
-		const ensureBatchGroup = (groupId: string, content: string, order: number) => {
-			if (batchGroupMap.has(groupId)) return;
-			batchGroupMap.set(groupId, { id: groupId, content, order });
-		};
-
-		ensureBatchGroup('batch:cache:instagram', 'Batch • Cache (Instagram)', groupOrderBase + 1);
-		ensureBatchGroup('batch:cache:tiktok', 'Batch • Cache (TikTok)', groupOrderBase + 2);
-		ensureBatchGroup('batch:brightdata:instagram', 'Batch • BrightData (Instagram)', groupOrderBase + 3);
-		ensureBatchGroup('batch:brightdata:tiktok', 'Batch • BrightData (TikTok)', groupOrderBase + 4);
-		ensureBatchGroup('batch:unknown:unknown', 'Batch • Other', groupOrderBase + 9);
-
 		for (const [index, batch] of batches.entries()) {
 			const batchId = typeof batch.batch_id === 'number' ? batch.batch_id : index;
 			const label = `B${batchId + 1}`;
@@ -140,10 +140,13 @@
 			const platform = normalizePlatform(batch.platform);
 			const status = typeof batch.status === 'string' ? batch.status.toLowerCase() : 'unknown';
 
-			const groupId = `batch:${type}:${platform}`;
-			if (!batchGroupMap.has(groupId)) {
-				ensureBatchGroup(groupId, `Batch • ${type} (${platform})`, groupOrderBase + 8);
-			}
+			const groupId = `batch:${batchId}`;
+			const urlsCount = batch.urls?.length ?? 0;
+			groups.push({
+				id: groupId,
+				content: `${label} • ${type} • ${platform} • ${urlsCount} urls`,
+				order: groupOrderBase + batchId + 1
+			});
 
 			const stageStart = getStageMs('brightdata_collection', 'started_at') ?? startMs;
 			const started =
@@ -151,6 +154,8 @@
 				(typeof batch.created_at === 'number' ? batch.created_at : null) ??
 				stageStart;
 			const triggered = typeof batch.triggered_at === 'number' ? batch.triggered_at : null;
+			const analysisStarted = typeof batch.analysis_started_at === 'number' ? batch.analysis_started_at : null;
+			const analysisCompleted = typeof batch.analysis_completed_at === 'number' ? batch.analysis_completed_at : null;
 			const completed =
 				(typeof batch.completed_at === 'number' ? batch.completed_at : null) ??
 				((status === 'completed' || status === 'failed' || status === 'skipped') &&
@@ -159,8 +164,6 @@
 					: null);
 
 			const end = completed ?? Math.min(nowMs, endMs);
-			const urlsCount = batch.urls?.length ?? 0;
-
 			const baseTitle = [
 				`${label}`,
 				`Type: ${type}`,
@@ -169,6 +172,8 @@
 				`URLs: ${urlsCount}`,
 				`Started: ${formatTimestamp(started)}`,
 				`Triggered: ${formatTimestamp(triggered)}`,
+				`Analysis Started: ${formatTimestamp(analysisStarted)}`,
+				`Analysis Completed: ${formatTimestamp(analysisCompleted)}`,
 				`Completed: ${formatTimestamp(completed)}`,
 				batch.snapshot_id ? `Snapshot: ${batch.snapshot_id}` : null,
 				typeof batch.poll_attempts === 'number' ? `Poll Attempts: ${batch.poll_attempts}` : null,
@@ -177,40 +182,65 @@
 				.filter(Boolean)
 				.join('\n');
 
-			if (triggered && triggered > started) {
-				items.push({
-					id: `batch:${batchId}:run`,
-					group: groupId,
-					start: new Date(started),
-					end: new Date(triggered),
-					content: label,
-					title: baseTitle,
-					className: `batch batch-${type} phase-run status-${status}`
-				});
-				items.push({
-					id: `batch:${batchId}:poll`,
-					group: groupId,
-					start: new Date(triggered),
-					end: new Date(end),
-					content: label,
-					title: baseTitle,
-					className: `batch batch-${type} phase-poll status-${status}`
-				});
+			const pushItem = (item: Record<string, unknown>) => {
+				items.push(item);
+			};
+
+			if (type === 'brightdata') {
+				if (triggered && triggered > started) {
+					pushItem({
+						id: `batch:${batchId}:bd-trigger`,
+						group: groupId,
+						start: new Date(started),
+						end: new Date(triggered),
+						content: 'BD',
+						title: `BrightData Trigger\n${baseTitle}`,
+						className: `batch batch-${type} segment-bd-trigger status-${status}`
+					});
+				}
+
+				const bdStart = triggered && triggered > started ? triggered : started;
+				const bdEnd = analysisStarted && analysisStarted > bdStart ? analysisStarted : end;
+				if (bdEnd > bdStart) {
+					pushItem({
+						id: `batch:${batchId}:bd-poll`,
+						group: groupId,
+						start: new Date(bdStart),
+						end: new Date(bdEnd),
+						content: 'BD',
+						title: `BrightData Poll/Download\n${baseTitle}`,
+						className: `batch batch-${type} segment-bd-poll phase-poll status-${status}`
+					});
+				}
+
+				if (analysisStarted && analysisStarted < end) {
+					const llmEnd = analysisCompleted && analysisCompleted > analysisStarted ? analysisCompleted : end;
+					pushItem({
+						id: `batch:${batchId}:llm`,
+						group: groupId,
+						start: new Date(analysisStarted),
+						end: new Date(llmEnd),
+						content: 'LLM',
+						title: `LLM Analysis\n${baseTitle}`,
+						className: `batch batch-${type} segment-llm status-${status}`
+					});
+				}
 			} else {
-				items.push({
-					id: `batch:${batchId}`,
-					group: groupId,
-					start: new Date(started),
-					end: new Date(end),
-					content: label,
-					title: baseTitle,
-					className: `batch batch-${type} phase-run status-${status}`
-				});
+				const llmStart = analysisStarted && analysisStarted > started ? analysisStarted : started;
+				const llmEnd = analysisCompleted && analysisCompleted > llmStart ? analysisCompleted : end;
+				if (llmEnd > llmStart) {
+					pushItem({
+						id: `batch:${batchId}:llm`,
+						group: groupId,
+						start: new Date(llmStart),
+						end: new Date(llmEnd),
+						content: 'LLM',
+						title: `LLM Analysis\n${baseTitle}`,
+						className: `batch batch-${type} segment-llm status-${status}`
+					});
+				}
 			}
 		}
-
-		const batchGroups = Array.from(batchGroupMap.values()).sort((a, b) => a.order - b.order);
-		groups.push(...batchGroups);
 
 		const paddingMs = Math.min(10 * 60_000, Math.max(10_000, Math.round((endMs - startMs) * 0.05)));
 		return {
@@ -234,7 +264,7 @@
 		const itemSet = new DataSet(items);
 
 		timeline = new Timeline(container, itemSet, groupSet, {
-			stack: true,
+			stack: false,
 			verticalScroll: true,
 			horizontalScroll: true,
 			zoomKey: 'ctrlKey',
@@ -242,6 +272,7 @@
 			margin: { item: 10, axis: 8 },
 			orientation: 'top',
 			showCurrentTime: true,
+			groupOrder: 'order',
 			min,
 			max
 		});
@@ -258,8 +289,8 @@
 <div class="waterfall">
 	<div class="waterfall-legend">
 		<span class="legend-item"><span class="legend-swatch stage"></span>Stage</span>
-		<span class="legend-item"><span class="legend-swatch cache"></span>Cache batch</span>
 		<span class="legend-item"><span class="legend-swatch brightdata"></span>BrightData batch</span>
+		<span class="legend-item"><span class="legend-swatch llm"></span>LLM analysis</span>
 		<span class="legend-item"><span class="legend-swatch failed"></span>Failed</span>
 		<span class="legend-item"><span class="legend-swatch skipped"></span>Skipped</span>
 	</div>
@@ -268,6 +299,14 @@
 
 	{#if !browser}
 		<p class="waterfall-note">Timeline renders client-side.</p>
+	{/if}
+
+	{#if browser && showNoBatchesNote}
+		<p class="waterfall-note">No batch timing found for this run. Re-run a pipeline to populate the per-batch waterfall.</p>
+	{/if}
+
+	{#if browser && showMissingAnalysisTimingNote}
+		<p class="waterfall-note">This run does not include per-batch LLM timing yet. Re-run a pipeline to see separate LLM bars.</p>
 	{/if}
 </div>
 
@@ -304,12 +343,12 @@
 		background: rgba(15, 23, 42, 0.35);
 	}
 
-	.legend-swatch.cache {
-		background: rgba(59, 130, 246, 0.5);
-	}
-
 	.legend-swatch.brightdata {
 		background: rgba(245, 158, 11, 0.55);
+	}
+
+	.legend-swatch.llm {
+		background: rgba(168, 85, 247, 0.55);
 	}
 
 	.legend-swatch.failed {
@@ -356,6 +395,12 @@
 		background: rgba(245, 158, 11, 0.22);
 		border: 1px solid rgba(245, 158, 11, 0.5);
 		color: rgba(120, 53, 15, 0.95);
+	}
+
+	:global(.waterfall-canvas .vis-item.segment-llm) {
+		background: rgba(168, 85, 247, 0.22) !important;
+		border: 1px solid rgba(168, 85, 247, 0.5) !important;
+		color: rgba(88, 28, 135, 0.95) !important;
 	}
 
 	:global(.waterfall-canvas .vis-item.status-failed),

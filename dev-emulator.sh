@@ -16,6 +16,16 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}Starting local development environment...${NC}"
 echo ""
 
+# Local admin access (comma-separated allowlist).
+# This is used by server-side admin checks (e.g. /admin routes).
+if [ -z "${ADMIN_EMAIL_ALLOWLIST:-}" ]; then
+    export ADMIN_EMAIL_ALLOWLIST="michaelmqvu@gmail.com"
+    echo -e "${YELLOW}ADMIN_EMAIL_ALLOWLIST not set. Defaulting to: ${ADMIN_EMAIL_ALLOWLIST}${NC}"
+else
+    echo -e "${BLUE}Using ADMIN_EMAIL_ALLOWLIST: ${ADMIN_EMAIL_ALLOWLIST}${NC}"
+fi
+echo ""
+
 # Function to kill processes on specific ports
 kill_port() {
     local port=$1
@@ -253,4 +263,3 @@ echo "Press Ctrl+C to stop all services"
 
 # Wait for all background processes
 wait
-

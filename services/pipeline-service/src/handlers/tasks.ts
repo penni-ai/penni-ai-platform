@@ -96,6 +96,8 @@ type PipelineBatchRecord = {
 	poll_attempts?: number;
 	started_at?: Timestamp | null;
 	triggered_at?: Timestamp | null;
+	analysis_started_at?: Timestamp | null;
+	analysis_completed_at?: Timestamp | null;
 	completed_at?: Timestamp | null;
 	created_at: Timestamp;
 	updated_at: Timestamp;
@@ -288,9 +290,26 @@ async function createBatch(jobId: string, batch: Omit<PipelineBatchRecord, 'crea
 		...batch,
 		started_at: null,
 		triggered_at: null,
+		analysis_started_at: null,
+		analysis_completed_at: null,
 		completed_at: null,
 		created_at: now,
 		updated_at: now,
+	});
+}
+
+async function setBatchTimestampOnce(jobId: string, batchId: number, field: 'analysis_started_at' | 'analysis_completed_at') {
+	await db.runTransaction(async (tx) => {
+		const ref = getBatchRef(jobId, batchId);
+		const doc = await tx.get(ref);
+		if (!doc.exists) return;
+		const data = doc.data() as PipelineBatchRecord;
+		if (data[field]) return;
+		const now = Timestamp.now();
+		tx.update(ref, {
+			[field]: now,
+			updated_at: now,
+		});
 	});
 }
 
@@ -474,12 +493,18 @@ async function processProfilesBatch(options: {
 
 	const normalizedProfiles = normalizeProfiles(profiles as any);
 	const maxConcurrentLLM = getMaxConcurrentLLMRequests();
-	const analysisResults = await analyzeProfileFitBatch(
-		normalizedProfiles,
-		campaignDescription,
-		maxConcurrentLLM,
-		strictLocationMatching
-	);
+	await setBatchTimestampOnce(jobId, batchId, 'analysis_started_at');
+	let analysisResults: Array<{ fit_score?: number; fit_rationale?: string; fit_summary?: string }> = [];
+	try {
+		analysisResults = await analyzeProfileFitBatch(
+			normalizedProfiles,
+			campaignDescription,
+			maxConcurrentLLM,
+			strictLocationMatching
+		);
+	} finally {
+		await setBatchTimestampOnce(jobId, batchId, 'analysis_completed_at');
+	}
 
 	const analyzedProfiles: Array<
 		BrightDataUnifiedProfile & { fit_score: number; fit_rationale: string; fit_summary: string }

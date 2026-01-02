@@ -83,6 +83,27 @@ const toMillis = (value: unknown): number | null => {
 	return null;
 };
 
+const toSerializable = (value: unknown): unknown => {
+	if (value === null || value === undefined) return value;
+	if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+	if (typeof value === 'bigint') return value.toString();
+
+	const millis = toMillis(value);
+	if (millis !== null) return millis;
+
+	if (Array.isArray(value)) {
+		return value.map((item) => toSerializable(item));
+	}
+
+	if (typeof value !== 'object') return null;
+
+	const record: Record<string, unknown> = {};
+	for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+		record[key] = toSerializable(entry);
+	}
+	return record;
+};
+
 export const parsePipelineRunQuery = (params: URLSearchParams) => {
 	const errors: string[] = [];
 	const statusRaw = params.get('status');
@@ -227,13 +248,13 @@ const serializePipelineRun = (id: string, data: FirebaseFirestore.DocumentData):
 		pipeline_stats: data.pipeline_stats ? (data.pipeline_stats as Record<string, unknown>) : null,
 		pipeline_summary: typeof data.pipeline_summary === 'string' ? data.pipeline_summary : null,
 		pipeline_waterfall: typeof data.pipeline_waterfall === 'string' ? data.pipeline_waterfall : null,
-		stages: {
+		stages: toSerializable({
 			query_expansion: data.query_expansion ?? null,
 			weaviate_search: data.weaviate_search ?? null,
 			brightdata_collection: data.brightdata_collection ?? null,
 			llm_analysis: data.llm_analysis ?? null
-		},
-		timing: data.timing ? (data.timing as Record<string, unknown>) : null,
+		}) as Record<string, unknown>,
+		timing: (data.timing ? toSerializable(data.timing) : null) as Record<string, unknown> | null,
 		storage: {
 			profiles_storage_path:
 				typeof data.profiles_storage_path === 'string' ? data.profiles_storage_path : null,

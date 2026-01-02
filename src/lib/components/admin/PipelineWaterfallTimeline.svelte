@@ -18,8 +18,8 @@
 	const stageOrder: Array<{ key: string; label: string; order: number }> = [
 		{ key: 'query_expansion', label: 'Query Expansion', order: 1 },
 		{ key: 'weaviate_search', label: 'Weaviate Search', order: 2 },
-		{ key: 'brightdata_collection', label: 'BrightData + LLM', order: 3 },
-		{ key: 'llm_analysis', label: 'LLM Finalization', order: 4 }
+		{ key: 'brightdata_collection', label: 'BrightData Collection', order: 3 },
+		{ key: 'llm_analysis', label: 'LLM Analysis', order: 4 }
 	];
 
 	const getStageMs = (stageKey: string, field: string): number | null => {

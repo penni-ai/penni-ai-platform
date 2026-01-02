@@ -39,8 +39,8 @@ create_queue() {
 echo ""
 echo "Creating Cloud Tasks queues..."
 create_queue "$QUEUE_STAGE" 2 1
-create_queue "$QUEUE_BATCH" 10 5
-create_queue "$QUEUE_POLL" 10 5
+create_queue "$QUEUE_BATCH" 50 50
+create_queue "$QUEUE_POLL" 50 50
 
 echo ""
 echo "Granting Cloud Tasks service agent token creator on $SERVICE_ACCOUNT..."

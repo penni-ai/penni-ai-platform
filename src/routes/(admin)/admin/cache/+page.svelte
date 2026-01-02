@@ -1,15 +1,21 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
-	import type { BrightdataCacheRecord } from '$lib/server/admin/brightdata-cache';
+	import type { BrightdataCacheRecord, BrightdataCacheStats } from '$lib/server/admin/brightdata-cache';
 
 	let { data }: { data: PageData } = $props();
 
 	let lookupUrl = $state(data.lookupUrl ?? '');
 	let entries = $state<BrightdataCacheRecord[]>(data.entries ?? []);
 	let nextCursor = $state<string | null>(data.nextCursor ?? null);
+	let stats = $state<BrightdataCacheStats | null>(data.stats ?? null);
 	let isLoadingMore = $state(false);
 	let errorMessage = $state('');
+
+	const formatCount = (value: number | null | undefined): string => {
+		if (typeof value !== 'number') return '—';
+		return Intl.NumberFormat().format(value);
+	};
 
 	const formatDate = (value: number | null | undefined): string => {
 		if (!value) return '—';
@@ -58,6 +64,41 @@
 			<p>Inspect cached profile payloads and expiry.</p>
 		</div>
 	</header>
+
+	<section class="section-card">
+		<h3>Stats</h3>
+		{#if !stats}
+			<p class="muted">Unable to load cache stats.</p>
+		{:else}
+			<div class="stats-grid">
+				<div class="stat">
+					<span>Total cached</span>
+					<strong>{formatCount(stats.total)}</strong>
+				</div>
+				<div class="stat">
+					<span>Active (not expired)</span>
+					<strong>{formatCount(stats.active)}</strong>
+				</div>
+				<div class="stat">
+					<span>Expired</span>
+					<strong>{formatCount(stats.expired)}</strong>
+				</div>
+				<div class="stat">
+					<span>Cached (last 24h)</span>
+					<strong>{formatCount(stats.last_24h)}</strong>
+				</div>
+				<div class="stat">
+					<span>Cached (last 7d)</span>
+					<strong>{formatCount(stats.last_7d)}</strong>
+				</div>
+				<div class="stat">
+					<span>Cached (last 30d)</span>
+					<strong>{formatCount(stats.last_30d)}</strong>
+				</div>
+			</div>
+			<p class="muted">As of {formatDate(stats.as_of)}. Rolling windows are based on <span class="mono">cached_at</span>.</p>
+		{/if}
+	</section>
 
 	<section class="section-card">
 		<h3>Lookup</h3>
@@ -280,6 +321,34 @@
 		word-break: break-all;
 	}
 
+	.stats-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 12px;
+		margin-bottom: 10px;
+	}
+
+	.stat {
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 14px;
+		padding: 12px 14px;
+		background: rgba(15, 23, 42, 0.02);
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.stat span {
+		font-size: 12px;
+		color: rgba(15, 23, 42, 0.6);
+	}
+
+	.stat strong {
+		font-size: 18px;
+		color: #0f172a;
+		font-weight: 700;
+	}
+
 	@media (max-width: 720px) {
 		.lookup-form {
 			flex-direction: column;
@@ -287,4 +356,3 @@
 		}
 	}
 </style>
-

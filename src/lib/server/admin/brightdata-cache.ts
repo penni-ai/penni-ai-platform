@@ -12,6 +12,16 @@ export type BrightdataCacheRecord = {
 	raw_data?: unknown;
 };
 
+export type BrightdataCacheStats = {
+	as_of: number;
+	total: number;
+	active: number;
+	expired: number;
+	last_24h: number;
+	last_7d: number;
+	last_30d: number;
+};
+
 const CACHE_COLLECTION = 'brightdata_cache';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -80,4 +90,33 @@ export async function getBrightdataCacheEntryByUrl(profileUrl: string): Promise<
 	if (!profileUrl.trim()) return null;
 	const docId = urlToDocId(profileUrl);
 	return getBrightdataCacheEntry(docId);
+}
+
+export async function getBrightdataCacheStats(): Promise<BrightdataCacheStats> {
+	const now = Date.now();
+	const last24h = now - 24 * 60 * 60 * 1000;
+	const last7d = now - 7 * 24 * 60 * 60 * 1000;
+	const last30d = now - 30 * 24 * 60 * 60 * 1000;
+
+	const col = firestore.collection(CACHE_COLLECTION);
+
+	const [totalSnap, activeSnap, last24hSnap, last7dSnap, last30dSnap] = await Promise.all([
+		col.count().get(),
+		col.where('expires_at', '>', now).count().get(),
+		col.where('cached_at', '>=', last24h).count().get(),
+		col.where('cached_at', '>=', last7d).count().get(),
+		col.where('cached_at', '>=', last30d).count().get()
+	]);
+
+	const total = totalSnap.data().count;
+	const active = activeSnap.data().count;
+	return {
+		as_of: now,
+		total,
+		active,
+		expired: Math.max(0, total - active),
+		last_24h: last24hSnap.data().count,
+		last_7d: last7dSnap.data().count,
+		last_30d: last30dSnap.data().count
+	};
 }

@@ -264,6 +264,8 @@
 		const itemSet = new DataSet(items);
 
 		timeline = new Timeline(container, itemSet, groupSet, {
+			height: '100%',
+			maxHeight: '100%',
 			stack: false,
 			verticalScroll: true,
 			horizontalScroll: true,
@@ -295,7 +297,11 @@
 		<span class="legend-item"><span class="legend-swatch skipped"></span>Skipped</span>
 	</div>
 
-	<div class="waterfall-canvas" bind:this={container}></div>
+	<p class="waterfall-note">Showing {batches.length} batches. Scroll inside the timeline to see all rows.</p>
+
+	<div class="waterfall-canvas">
+		<div class="waterfall-timeline" bind:this={container}></div>
+	</div>
 
 	{#if !browser}
 		<p class="waterfall-note">Timeline renders client-side.</p>
@@ -366,6 +372,11 @@
 		border: 1px solid rgba(15, 23, 42, 0.08);
 		background: #fff;
 		overflow: hidden;
+	}
+
+	.waterfall-timeline {
+		width: 100%;
+		height: 100%;
 	}
 
 	.waterfall-note {

@@ -44,6 +44,7 @@
 		       !path.startsWith('/my-account') &&
 		       !path.startsWith('/inbox') &&
 		       !path.startsWith('/chatbot') &&
+		       !path.startsWith('/admin') &&
 		       !path.startsWith('/sign-in') &&
 		       !path.startsWith('/sign-up') &&
 		       !path.startsWith('/logout') &&

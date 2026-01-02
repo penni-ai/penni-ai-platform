@@ -1,9 +1,10 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import type { PipelineRunRecord } from '$lib/server/admin/pipeline-runs';
+	import type { PipelineBatchRecord, PipelineRunRecord } from '$lib/server/admin/pipeline-runs';
 
 	let { data }: { data: PageData } = $props();
 	const run = data.run as PipelineRunRecord;
+	const batches = (data.batches ?? []) as PipelineBatchRecord[];
 	const stageOrder = ['query_expansion', 'weaviate_search', 'brightdata_collection', 'llm_analysis'];
 
 	const stageLabels: Record<string, string> = {
@@ -38,6 +39,29 @@
 		const value = stats?.[key];
 		return typeof value === 'number' ? value : undefined;
 	};
+
+	const getStageNumber = (stageKey: string, field: string): number | undefined => {
+		const stage = (run.stages as any)?.[stageKey];
+		const value = stage?.[field];
+		return typeof value === 'number' ? value : undefined;
+	};
+
+	const cacheHits = getStageNumber('brightdata_collection', 'cache_hits');
+	const apiCalls = getStageNumber('brightdata_collection', 'api_calls');
+	const candidatesCount = getStageNumber('weaviate_search', 'candidates_count');
+
+	const cacheHitRate = (() => {
+		if (typeof cacheHits !== 'number' || typeof apiCalls !== 'number') return null;
+		const denom = cacheHits + apiCalls;
+		if (denom <= 0) return null;
+		return cacheHits / denom;
+	})();
+
+	const batchesByType = (type: string): PipelineBatchRecord[] =>
+		batches.filter((batch) => (batch.type ?? '').toLowerCase() === type.toLowerCase());
+
+	const batchesByStatus = (status: string): PipelineBatchRecord[] =>
+		batches.filter((batch) => (batch.status ?? '').toLowerCase() === status.toLowerCase());
 </script>
 
 <svelte:head>
@@ -83,6 +107,29 @@
 			<div class="summary-item"><span>Start Time</span><strong>{formatDate(run.start_time)}</strong></div>
 			<div class="summary-item"><span>End Time</span><strong>{formatDate(run.end_time)}</strong></div>
 			<div class="summary-item"><span>Duration</span><strong>{formatDuration((run.timing as any)?.pipeline_duration)}</strong></div>
+		</div>
+
+		<div class="summary-card">
+			<h3>Cache & Batches</h3>
+			<div class="summary-item"><span>Candidates</span><strong>{candidatesCount ?? '—'}</strong></div>
+			<div class="summary-item"><span>Cache Hits</span><strong>{cacheHits ?? '—'}</strong></div>
+			<div class="summary-item"><span>API Calls</span><strong>{apiCalls ?? '—'}</strong></div>
+			<div class="summary-item">
+				<span>Hit Rate</span>
+				<strong>{typeof cacheHitRate === 'number' ? `${Math.round(cacheHitRate * 100)}%` : '—'}</strong>
+			</div>
+			<div class="summary-item">
+				<span>Cache Batches</span>
+				<strong>
+					{run.cache_batches_completed ?? 0}/{run.cache_batches_total ?? 0}
+					{#if (run.cache_batches_failed ?? 0) > 0}
+						<span class="danger-pill">+{run.cache_batches_failed} failed</span>
+					{/if}
+				</strong>
+			</div>
+			<div class="summary-item"><span>In Flight</span><strong>{run.brightdata_in_flight ?? '—'}</strong></div>
+			<div class="summary-item"><span>Good Fits</span><strong>{run.good_fit_count ?? '—'}</strong></div>
+			<div class="summary-item"><span>Stop Requested</span><strong>{run.stop_requested ? 'yes' : 'no'}</strong></div>
 		</div>
 	</section>
 
@@ -135,6 +182,79 @@
 				<strong class="mono">{run.storage?.candidates_storage_path ?? '—'}</strong>
 			</div>
 		</div>
+	</section>
+
+	<section class="section-card">
+		<h3>Batches</h3>
+		{#if batches.length === 0}
+			<p class="stage-empty">No batch records</p>
+		{:else}
+			<div class="batch-summary">
+				<div class="batch-pill-row">
+					<span class="pill">total {batches.length}</span>
+					<span class="pill">cache {batchesByType('cache').length}</span>
+					<span class="pill">brightdata {batchesByType('brightdata').length}</span>
+				</div>
+				<div class="batch-pill-row">
+					{#if batchesByStatus('pending').length > 0}
+						<span class="pill">pending {batchesByStatus('pending').length}</span>
+					{/if}
+					{#if batchesByStatus('running').length > 0}
+						<span class="pill">running {batchesByStatus('running').length}</span>
+					{/if}
+					{#if batchesByStatus('triggered').length > 0}
+						<span class="pill">triggered {batchesByStatus('triggered').length}</span>
+					{/if}
+					{#if batchesByStatus('completed').length > 0}
+						<span class="pill">completed {batchesByStatus('completed').length}</span>
+					{/if}
+					{#if batchesByStatus('failed').length > 0}
+						<span class="pill danger-pill">failed {batchesByStatus('failed').length}</span>
+					{/if}
+					{#if batchesByStatus('skipped').length > 0}
+						<span class="pill">skipped {batchesByStatus('skipped').length}</span>
+					{/if}
+				</div>
+			</div>
+
+			<div class="batch-list">
+				{#each batches as batch, index (batch.id)}
+					<details class="batch-item">
+						<summary class="batch-summary-row">
+							<span class="mono">#{typeof batch.batch_id === 'number' ? batch.batch_id + 1 : index + 1}</span>
+							<span class="pill">{batch.type ?? '—'}</span>
+							<span class="pill">{batch.platform ?? '—'}</span>
+							<span class={`status-pill status-${batch.status ?? 'unknown'}`}>{batch.status ?? 'unknown'}</span>
+							<span class="muted">{batch.urls?.length ?? 0} urls</span>
+							<span class="muted">{formatDate(batch.updated_at)}</span>
+						</summary>
+
+						<div class="batch-body">
+							<div class="batch-meta">
+								<div><span>Snapshot</span><strong class="mono">{batch.snapshot_id ?? '—'}</strong></div>
+								<div><span>Poll Attempts</span><strong>{batch.poll_attempts ?? '—'}</strong></div>
+								<div><span>Created</span><strong>{formatDate(batch.created_at)}</strong></div>
+								<div><span>Updated</span><strong>{formatDate(batch.updated_at)}</strong></div>
+							</div>
+
+							{#if batch.last_error}
+								<div class="batch-error">
+									<h4>Last Error</h4>
+									<pre class="code-block">{batch.last_error}</pre>
+								</div>
+							{/if}
+
+							{#if batch.urls && batch.urls.length > 0}
+								<div class="batch-urls">
+									<h4>URLs</h4>
+									<pre class="code-block">{batch.urls.join('\n')}</pre>
+								</div>
+							{/if}
+						</div>
+					</details>
+				{/each}
+			</div>
+		{/if}
 	</section>
 
 	{#if run.pipeline_summary || run.pipeline_waterfall}
@@ -306,6 +426,101 @@
 		word-break: break-all;
 	}
 
+	.muted {
+		color: rgba(15, 23, 42, 0.6);
+	}
+
+	.pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 4px 8px;
+		border-radius: 999px;
+		font-size: 11px;
+		background: rgba(15, 23, 42, 0.06);
+		color: rgba(15, 23, 42, 0.7);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.danger-pill {
+		background: rgba(239, 68, 68, 0.12);
+		color: #dc2626;
+		margin-left: 8px;
+		padding: 2px 6px;
+		border-radius: 999px;
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.batch-summary {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.batch-pill-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.batch-list {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		margin-top: 12px;
+	}
+
+	.batch-item {
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 14px;
+		background: rgba(15, 23, 42, 0.015);
+		overflow: hidden;
+	}
+
+	.batch-summary-row {
+		display: grid;
+		grid-template-columns: 64px 90px 90px 110px 90px 1fr;
+		gap: 10px;
+		align-items: center;
+		padding: 12px 14px;
+		cursor: pointer;
+		font-size: 12px;
+	}
+
+	.batch-body {
+		padding: 12px 14px 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		border-top: 1px solid rgba(15, 23, 42, 0.06);
+		background: #fff;
+	}
+
+	.batch-meta {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 10px;
+		font-size: 12px;
+		color: rgba(15, 23, 42, 0.6);
+	}
+
+	.batch-meta strong {
+		display: block;
+		margin-top: 4px;
+		color: #0f172a;
+		font-weight: 600;
+	}
+
+	.batch-error h4,
+	.batch-urls h4 {
+		margin: 0 0 8px 0;
+		font-size: 13px;
+		color: rgba(15, 23, 42, 0.7);
+	}
+
 	.status-pill {
 		display: inline-flex;
 		align-items: center;
@@ -341,6 +556,12 @@
 	@media (max-width: 720px) {
 		.detail-header {
 			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.batch-summary-row {
+			grid-template-columns: 1fr;
+			gap: 6px;
 			align-items: flex-start;
 		}
 	}

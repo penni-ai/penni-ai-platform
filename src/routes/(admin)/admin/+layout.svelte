@@ -29,6 +29,7 @@
 	<nav class="admin-nav">
 		<a class:active={isActive('/admin')} href="/admin">Overview</a>
 		<a class:active={isActive('/admin/pipeline-runs')} href="/admin/pipeline-runs">Pipeline Runs</a>
+		<a class:active={isActive('/admin/cache')} href="/admin/cache">Cache</a>
 	</nav>
 
 	<main class="admin-content">

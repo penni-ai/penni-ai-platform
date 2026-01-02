@@ -9,6 +9,12 @@
 		<a class="overview-link" href="/admin/pipeline-runs">Open pipeline runs</a>
 	</div>
 
+	<div class="overview-card">
+		<h2>BrightData Cache</h2>
+		<p>Browse cached raw profiles and verify cache hit rates.</p>
+		<a class="overview-link" href="/admin/cache">Open cache</a>
+	</div>
+
 	<div class="overview-card muted">
 		<h2>User & Billing</h2>
 		<p>User and subscription management will live here once the admin APIs are wired up.</p>

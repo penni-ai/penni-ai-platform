@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { isAdminUser } from '$lib/server/core';
-import { getPipelineRun } from '$lib/server/admin/pipeline-runs';
+import { getPipelineRun, listPipelineBatches } from '$lib/server/admin/pipeline-runs';
 
 export const load: PageServerLoad = async (event) => {
 	const user = event.locals.user;
@@ -31,5 +31,15 @@ export const load: PageServerLoad = async (event) => {
 		throw error(404, 'Pipeline run not found.');
 	}
 
-	return { run };
+	let batches: Awaited<ReturnType<typeof listPipelineBatches>> = [];
+	try {
+		batches = await listPipelineBatches(pipelineId);
+	} catch (err) {
+		event.locals.logger?.error('Failed to load admin pipeline batches', {
+			error: err instanceof Error ? { message: err.message, stack: err.stack } : String(err),
+			pipelineId
+		});
+	}
+
+	return { run, batches };
 };

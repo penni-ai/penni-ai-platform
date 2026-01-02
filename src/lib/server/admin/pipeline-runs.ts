@@ -2,6 +2,8 @@ import { Timestamp, type Query } from 'firebase-admin/firestore';
 import { firestore } from '$lib/server/core';
 
 export type PipelineRunStatus = 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
+export type PipelineBatchType = 'cache' | 'brightdata';
+export type PipelineBatchStatus = 'pending' | 'running' | 'triggered' | 'completed' | 'failed' | 'skipped';
 
 export type PipelineRunFilters = {
 	status?: PipelineRunStatus;
@@ -28,6 +30,12 @@ export type PipelineRunRecord = {
 	profiles_count?: number;
 	remaining_profiles_count?: number;
 	progressive_profiles_count?: number;
+	cache_batches_total?: number;
+	cache_batches_completed?: number;
+	cache_batches_failed?: number;
+	brightdata_in_flight?: number;
+	good_fit_count?: number;
+	stop_requested?: boolean;
 	pipeline_stats?: Record<string, unknown> | null;
 	pipeline_summary?: string | null;
 	pipeline_waterfall?: string | null;
@@ -41,9 +49,24 @@ export type PipelineRunRecord = {
 	};
 };
 
+export type PipelineBatchRecord = {
+	id: string;
+	batch_id?: number;
+	type?: PipelineBatchType | string;
+	platform?: string | null;
+	status?: PipelineBatchStatus | string;
+	urls?: string[];
+	snapshot_id?: string | null;
+	poll_attempts?: number;
+	created_at?: number | null;
+	updated_at?: number | null;
+	last_error?: string | null;
+};
+
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 200;
 const PIPELINE_COLLECTION = 'pipeline_jobs';
+const BATCH_COLLECTION = 'batches';
 
 const toMillis = (value: unknown): number | null => {
 	if (!value) return null;
@@ -164,6 +187,18 @@ export async function getPipelineRun(pipelineId: string): Promise<PipelineRunRec
 	return serializePipelineRun(snap.id, data);
 }
 
+export async function listPipelineBatches(pipelineId: string): Promise<PipelineBatchRecord[]> {
+	const snap = await firestore
+		.collection(PIPELINE_COLLECTION)
+		.doc(pipelineId)
+		.collection(BATCH_COLLECTION)
+		.orderBy('batch_id', 'asc')
+		.get();
+
+	if (snap.empty) return [];
+	return snap.docs.map((doc) => serializePipelineBatch(doc.id, doc.data()));
+}
+
 const serializePipelineRun = (id: string, data: FirebaseFirestore.DocumentData): PipelineRunRecord => {
 	return {
 		id,
@@ -182,6 +217,13 @@ const serializePipelineRun = (id: string, data: FirebaseFirestore.DocumentData):
 			typeof data.remaining_profiles_count === 'number' ? data.remaining_profiles_count : undefined,
 		progressive_profiles_count:
 			typeof data.progressive_profiles_count === 'number' ? data.progressive_profiles_count : undefined,
+		cache_batches_total: typeof data.cache_batches_total === 'number' ? data.cache_batches_total : undefined,
+		cache_batches_completed:
+			typeof data.cache_batches_completed === 'number' ? data.cache_batches_completed : undefined,
+		cache_batches_failed: typeof data.cache_batches_failed === 'number' ? data.cache_batches_failed : undefined,
+		brightdata_in_flight: typeof data.brightdata_in_flight === 'number' ? data.brightdata_in_flight : undefined,
+		good_fit_count: typeof data.good_fit_count === 'number' ? data.good_fit_count : undefined,
+		stop_requested: typeof data.stop_requested === 'boolean' ? data.stop_requested : undefined,
 		pipeline_stats: data.pipeline_stats ? (data.pipeline_stats as Record<string, unknown>) : null,
 		pipeline_summary: typeof data.pipeline_summary === 'string' ? data.pipeline_summary : null,
 		pipeline_waterfall: typeof data.pipeline_waterfall === 'string' ? data.pipeline_waterfall : null,
@@ -206,6 +248,22 @@ const serializePipelineRun = (id: string, data: FirebaseFirestore.DocumentData):
 			candidates_storage_path:
 				typeof data.candidates_storage_path === 'string' ? data.candidates_storage_path : null
 		}
+	};
+};
+
+const serializePipelineBatch = (id: string, data: FirebaseFirestore.DocumentData): PipelineBatchRecord => {
+	return {
+		id,
+		batch_id: typeof data.batch_id === 'number' ? data.batch_id : undefined,
+		type: typeof data.type === 'string' ? data.type : undefined,
+		platform: typeof data.platform === 'string' ? data.platform : null,
+		status: typeof data.status === 'string' ? data.status : undefined,
+		urls: Array.isArray(data.urls) ? data.urls.filter((value: unknown) => typeof value === 'string') : [],
+		snapshot_id: typeof data.snapshot_id === 'string' ? data.snapshot_id : null,
+		poll_attempts: typeof data.poll_attempts === 'number' ? data.poll_attempts : undefined,
+		created_at: toMillis(data.created_at),
+		updated_at: toMillis(data.updated_at),
+		last_error: typeof data.last_error === 'string' ? data.last_error : null
 	};
 };
 

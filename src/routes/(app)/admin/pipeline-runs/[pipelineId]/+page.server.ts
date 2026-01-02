@@ -1,17 +1,32 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { requireAdmin } from '$lib/server/core';
+import { isAdminUser } from '$lib/server/core';
 import { getPipelineRun } from '$lib/server/admin/pipeline-runs';
 
 export const load: PageServerLoad = async (event) => {
-	requireAdmin(event);
+	const user = event.locals.user;
+	if (!user) {
+		throw redirect(303, '/sign-in');
+	}
+	if (!isAdminUser(user)) {
+		throw error(403, 'Admin access required.');
+	}
 	const pipelineId = event.params.pipelineId;
 
 	if (!pipelineId) {
 		throw error(400, 'Pipeline ID is required.');
 	}
 
-	const run = await getPipelineRun(pipelineId);
+	let run: Awaited<ReturnType<typeof getPipelineRun>> | null = null;
+	try {
+		run = await getPipelineRun(pipelineId);
+	} catch (err) {
+		event.locals.logger?.error('Failed to load admin pipeline run', {
+			error: err instanceof Error ? { message: err.message, stack: err.stack } : String(err),
+			pipelineId
+		});
+		throw error(500, 'Failed to load pipeline run.');
+	}
 	if (!run) {
 		throw error(404, 'Pipeline run not found.');
 	}

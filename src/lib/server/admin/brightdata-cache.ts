@@ -17,9 +17,9 @@ export type BrightdataCacheStats = {
 	total: number;
 	active: number;
 	expired: number;
-	last_24h: number;
-	last_7d: number;
-	last_30d: number;
+	today_utc: number;
+	this_week_utc: number;
+	this_month_utc: number;
 };
 
 const CACHE_COLLECTION = 'brightdata_cache';
@@ -94,18 +94,21 @@ export async function getBrightdataCacheEntryByUrl(profileUrl: string): Promise<
 
 export async function getBrightdataCacheStats(): Promise<BrightdataCacheStats> {
 	const now = Date.now();
-	const last24h = now - 24 * 60 * 60 * 1000;
-	const last7d = now - 7 * 24 * 60 * 60 * 1000;
-	const last30d = now - 30 * 24 * 60 * 60 * 1000;
+	const date = new Date(now);
+	const startOfTodayUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+	const weekdayUtc = date.getUTCDay();
+	const daysSinceMondayUtc = (weekdayUtc + 6) % 7;
+	const startOfWeekUtc = startOfTodayUtc - daysSinceMondayUtc * 24 * 60 * 60 * 1000;
+	const startOfMonthUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
 
 	const col = firestore.collection(CACHE_COLLECTION);
 
-	const [totalSnap, activeSnap, last24hSnap, last7dSnap, last30dSnap] = await Promise.all([
+	const [totalSnap, activeSnap, todaySnap, weekSnap, monthSnap] = await Promise.all([
 		col.count().get(),
 		col.where('expires_at', '>', now).count().get(),
-		col.where('cached_at', '>=', last24h).count().get(),
-		col.where('cached_at', '>=', last7d).count().get(),
-		col.where('cached_at', '>=', last30d).count().get()
+		col.where('cached_at', '>=', startOfTodayUtc).count().get(),
+		col.where('cached_at', '>=', startOfWeekUtc).count().get(),
+		col.where('cached_at', '>=', startOfMonthUtc).count().get()
 	]);
 
 	const total = totalSnap.data().count;
@@ -115,8 +118,8 @@ export async function getBrightdataCacheStats(): Promise<BrightdataCacheStats> {
 		total,
 		active,
 		expired: Math.max(0, total - active),
-		last_24h: last24hSnap.data().count,
-		last_7d: last7dSnap.data().count,
-		last_30d: last30dSnap.data().count
+		today_utc: todaySnap.data().count,
+		this_week_utc: weekSnap.data().count,
+		this_month_utc: monthSnap.data().count
 	};
 }

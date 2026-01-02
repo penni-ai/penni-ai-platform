@@ -84,19 +84,19 @@
 					<strong>{formatCount(stats.expired)}</strong>
 				</div>
 				<div class="stat">
-					<span>Cached (last 24h)</span>
-					<strong>{formatCount(stats.last_24h)}</strong>
+					<span>Cached today (UTC)</span>
+					<strong>{formatCount(stats.today_utc)}</strong>
 				</div>
 				<div class="stat">
-					<span>Cached (last 7d)</span>
-					<strong>{formatCount(stats.last_7d)}</strong>
+					<span>Cached this week (UTC)</span>
+					<strong>{formatCount(stats.this_week_utc)}</strong>
 				</div>
 				<div class="stat">
-					<span>Cached (last 30d)</span>
-					<strong>{formatCount(stats.last_30d)}</strong>
+					<span>Cached this month (UTC)</span>
+					<strong>{formatCount(stats.this_month_utc)}</strong>
 				</div>
 			</div>
-			<p class="muted">As of {formatDate(stats.as_of)}. Rolling windows are based on <span class="mono">cached_at</span>.</p>
+			<p class="muted">As of {formatDate(stats.as_of)}. Counts are based on <span class="mono">cached_at</span>.</p>
 		{/if}
 	</section>
 

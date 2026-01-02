@@ -29,8 +29,7 @@ This will:
 This will:
 1. Verify health checks pass
 2. Start a pipeline job via HTTP orchestrator
-3. Simulate Pub/Sub message to trigger worker
-4. Show instructions for monitoring progress
+3. Show instructions for monitoring progress
 
 ## Manual Testing
 
@@ -83,37 +82,13 @@ Expected response (202 Accepted):
 }
 ```
 
-### Test Worker Endpoint (Simulate Pub/Sub)
+### Optional: Bypass Cloud Tasks locally
+
+If you are not running a Cloud Tasks emulator, you can bypass the queue and call task endpoints directly:
 
 ```bash
-# Create message data
-MESSAGE_DATA='{
-  "job_id": "job_1234567890_abc123",
-  "uid": "test-user-1234567890",
-  "business_description": "A sustainable coffee shop in San Francisco",
-  "top_n": 30,
-  "platform": "instagram",
-  "min_followers": 10000,
-  "max_followers": 1000000
-}'
-
-# Encode as base64
-ENCODED=$(echo -n "$MESSAGE_DATA" | base64)
-
-# Send Pub/Sub message
-curl -X POST http://localhost:8080/pubsub/pipeline-start \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"message\": {
-      \"data\": \"$ENCODED\",
-      \"attributes\": {
-        \"job_id\": \"job_1234567890_abc123\"
-      }
-    }
-  }"
+export PIPELINE_TASKS_DIRECT=true
 ```
-
-Expected response: `204 No Content` (empty body)
 
 ## Monitoring Pipeline Progress
 
@@ -136,7 +111,7 @@ Or use the Firestore console:
 
 ### Job Status Values
 
-- **pending**: Job created, waiting for Pub/Sub
+- **pending**: Job created, waiting for tasks
 - **running**: Pipeline execution in progress
 - **completed**: All stages finished, results available
 - **error**: Pipeline failed at some stage
@@ -211,6 +186,5 @@ See `ARCHITECTURE_DIAGRAM.md` for a complete visual representation of the pipeli
 
 After testing locally:
 1. Deploy to Cloud Run: `./deploy.sh`
-2. Set up Pub/Sub infrastructure: `./setup-pubsub.sh`
+2. Ensure Cloud Tasks queues exist (pipeline-stage, pipeline-batch, pipeline-poll)
 3. Test deployed service with production endpoints
-

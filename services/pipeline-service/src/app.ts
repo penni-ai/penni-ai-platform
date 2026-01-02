@@ -1,8 +1,9 @@
 import express from 'express';
 
 import { handlePipelineStart } from './handlers/orchestrator.js';
-import { handlePipelineExecution } from './handlers/worker.js';
 import { processEmailQueueBatch } from './handlers/email-queue-cron.js';
+import { handlePipelineBatchTask, handlePipelinePollTask, handlePipelineStageTask } from './handlers/tasks.js';
+import { buildRequestContext, createLogger } from './utils/logger.js';
 
 export type StartupHealthCheck = { summary: any; timestamp: Date } | null;
 
@@ -13,19 +14,35 @@ export function createApp(options?: {
 	const app = express();
 	const getStartupHealthCheck = options?.getStartupHealthCheck ?? (() => null);
 	const registerRoutes = options?.registerRoutes;
+	const appLogger = createLogger({ component: 'app' });
 
 	// JSON body parser middleware
 	app.use(express.json());
 	app.use(express.urlencoded({ extended: true }));
 
 	// Basic request logging middleware
-	app.use((req, _res, next) => {
-		console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`, {
-			headers: {
-				'content-type': req.headers['content-type'],
-				'user-agent': req.headers['user-agent']
-			}
+	app.use((req, res, next) => {
+		const context = buildRequestContext(req);
+		const logger = appLogger.child({ component: 'http', ...context });
+		req.logger = logger;
+		req.requestId = typeof context.request_id === 'string' ? context.request_id : undefined;
+		const start = process.hrtime.bigint();
+
+		res.on('finish', () => {
+			const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+			logger.info('request_complete', {
+				status: res.statusCode,
+				duration_ms: Math.round(durationMs),
+				httpRequest: {
+					requestMethod: req.method,
+					requestUrl: req.originalUrl,
+					status: res.statusCode,
+					userAgent: req.headers['user-agent'],
+					latency: `${durationMs.toFixed(1)}ms`
+				}
+			});
 		});
+
 		next();
 	});
 
@@ -93,10 +110,11 @@ export function createApp(options?: {
 
 	// HTTP orchestrator endpoint: POST /pipeline/start
 	app.post('/pipeline/start', async (req, res) => {
+		const logger = req.logger?.child({ component: 'orchestrator', action: 'pipeline_start' }) ?? appLogger;
 		try {
 			await handlePipelineStart(req, res);
 		} catch (error) {
-			console.error('[App] Error in /pipeline/start handler:', error);
+			logger.error('pipeline_start_handler_failed', { error });
 			if (!res.headersSent) {
 				res.status(500).json({
 					error: 'INTERNAL_ERROR',
@@ -107,66 +125,63 @@ export function createApp(options?: {
 		}
 	});
 
-	// Pub/Sub worker endpoint: POST /pubsub/pipeline-start
-	app.post('/pubsub/pipeline-start', async (req, res) => {
+	// Cloud Tasks handlers (run-to-completion pipeline tasks)
+	app.post('/tasks/pipeline-stage', async (req, res) => {
+		const logger = req.logger?.child({ component: 'tasks', action: 'pipeline_stage' }) ?? appLogger;
 		try {
-			// Parse Pub/Sub message format
-			// Pub/Sub sends messages in format: { message: { data: base64_encoded_json, attributes: {...} } }
-			const pubsubMessage = req.body?.message;
-
-			if (!pubsubMessage || !pubsubMessage.data) {
-				console.error('[App] Invalid Pub/Sub message format:', req.body);
-				res.status(400).json({
-					error: 'INVALID_MESSAGE_FORMAT',
-					message: 'Invalid Pub/Sub message format'
-				});
-				return;
-			}
-
-			// Decode base64 message data
-			let messageData: any;
-			try {
-				const decodedData = Buffer.from(pubsubMessage.data, 'base64').toString('utf-8');
-				messageData = JSON.parse(decodedData);
-			} catch (error) {
-				console.error('[App] Failed to decode Pub/Sub message:', error);
-				res.status(400).json({
-					error: 'INVALID_MESSAGE_DATA',
-					message: 'Failed to decode Pub/Sub message data'
-				});
-				return;
-			}
-
-			console.log(`[App] Pub/Sub message: ${messageData.job_id}`);
-
-			// Execute pipeline asynchronously (don't await - Pub/Sub expects quick ack)
-			handlePipelineExecution(messageData).catch((error) => {
-				console.error('[App] Pipeline execution failed:', {
-					job_id: messageData.job_id,
-					error: error instanceof Error ? error.message : String(error)
-				});
-			});
-
-			// Return 204 No Content immediately (Pub/Sub expects quick acknowledgment)
-			res.status(204).send();
+			await handlePipelineStageTask(req, res);
 		} catch (error) {
-			console.error('[App] Error in /pubsub/pipeline-start handler:', error);
-			// Return 204 even on error to avoid Pub/Sub retries for permanent failures
-			// Errors are logged and job status is updated in Firestore
-			res.status(204).send();
+			logger.error('pipeline_stage_handler_failed', { error });
+			if (!res.headersSent) {
+				res.status(500).json({
+					error: 'INTERNAL_ERROR',
+					message: 'Failed to process pipeline stage task',
+				});
+			}
+		}
+	});
+
+	app.post('/tasks/pipeline-batch', async (req, res) => {
+		const logger = req.logger?.child({ component: 'tasks', action: 'pipeline_batch' }) ?? appLogger;
+		try {
+			await handlePipelineBatchTask(req, res);
+		} catch (error) {
+			logger.error('pipeline_batch_handler_failed', { error });
+			if (!res.headersSent) {
+				res.status(500).json({
+					error: 'INTERNAL_ERROR',
+					message: 'Failed to process pipeline batch task',
+				});
+			}
+		}
+	});
+
+	app.post('/tasks/pipeline-poll', async (req, res) => {
+		const logger = req.logger?.child({ component: 'tasks', action: 'pipeline_poll' }) ?? appLogger;
+		try {
+			await handlePipelinePollTask(req, res);
+		} catch (error) {
+			logger.error('pipeline_poll_handler_failed', { error });
+			if (!res.headersSent) {
+				res.status(500).json({
+					error: 'INTERNAL_ERROR',
+					message: 'Failed to process pipeline poll task',
+				});
+			}
 		}
 	});
 
 	// Cron endpoint for processing email queue: POST /cron/process-email-queue
 	// Called by Cloud Scheduler every 15 minutes
 	app.post('/cron/process-email-queue', async (_req, res) => {
+		const logger = appLogger.child({ component: 'email_queue', action: 'process_email_queue' });
 		try {
-			console.log('[App] Email queue cron job triggered');
+			logger.info('email_queue_cron_triggered');
 
 			// Process the email queue batch
 			const result = await processEmailQueueBatch();
 
-			console.log('[App] Email queue cron job completed:', {
+			logger.info('email_queue_cron_completed', {
 				totalProcessed: result.totalProcessed,
 				totalSucceeded: result.totalSucceeded,
 				totalFailed: result.totalFailed,
@@ -179,7 +194,7 @@ export function createApp(options?: {
 				result
 			});
 		} catch (error) {
-			console.error('[App] Error in /cron/process-email-queue handler:', error);
+			logger.error('email_queue_cron_failed', { error });
 			res.status(500).json({
 				status: 'error',
 				timestamp: new Date().toISOString(),
@@ -195,7 +210,8 @@ export function createApp(options?: {
 
 	// Error handling middleware
 	app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-		console.error('[App] Unhandled error:', err);
+		const logger = req.logger?.child({ component: 'app', action: 'error_middleware' }) ?? appLogger;
+		logger.error('unhandled_error', { error: err });
 		if (!res.headersSent) {
 			res.status(500).json({
 				error: 'INTERNAL_ERROR',

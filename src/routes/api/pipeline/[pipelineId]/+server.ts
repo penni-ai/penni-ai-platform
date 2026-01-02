@@ -643,16 +643,23 @@ if (campaignId) {
 	}
 }
 	
-	// When we have progressive results, don't show preliminary candidates
-	// (they will be replaced by actual evaluated profiles)
-	const showPreliminaryCandidates = !isProgressiveResults && preliminaryCandidates.length > 0;
+		// While the pipeline is still running, only surface top-tier matches from the progressive preview.
+		// Final results (status=completed) should always return the full best top-N.
+		const progressiveFilteredProfiles =
+			isProgressiveResults && data.status === 'running'
+				? profiles.filter((profile: any) => typeof profile?.fit_score === 'number' && profile.fit_score >= 90)
+				: profiles;
 
-	return apiOk({
-		pipeline_id: data.job_id,
-		status: data.status,
-		current_stage: data.current_stage,
-		completed_stages: data.completed_stages ?? [],
-		overall_progress: data.overall_progress ?? 0,
+		// During progressive execution, keep showing preliminary candidates until we have at least one 9/10+ match.
+		const showPreliminaryCandidates =
+			preliminaryCandidates.length > 0 && (!isProgressiveResults || progressiveFilteredProfiles.length === 0);
+
+		return apiOk({
+			pipeline_id: data.job_id,
+			status: data.status,
+			current_stage: data.current_stage,
+			completed_stages: data.completed_stages ?? [],
+			overall_progress: data.overall_progress ?? 0,
 		start_time: timestampToMillis(data.start_time),
 		end_time: timestampToMillis(data.end_time),
 		error_message: data.error_message ?? null,
@@ -661,7 +668,7 @@ if (campaignId) {
 		remaining_profiles_count: data.remaining_profiles_count ?? remainingProfiles.length,
 		remaining_profiles_storage_url: data.remaining_profiles_storage_url,
 		candidates_storage_url: data.candidates_storage_url,
-		profiles: profiles,
+		profiles: progressiveFilteredProfiles,
 		// Flag to indicate these are progressive (partial) results
 		is_progressive: isProgressiveResults,
 		// Don't show preliminary candidates when we have progressive results
@@ -700,7 +707,7 @@ if (campaignId) {
 				completed_at: timestampToMillis(data.llm_analysis.completed_at),
 				error: data.llm_analysis.error ?? null
 			} : null
-		},
-		pipeline_stats: data.pipeline_stats
-	});
-}, { component: 'pipeline' });
+			},
+			pipeline_stats: data.pipeline_stats
+		}, { headers: { 'cache-control': 'no-store' } });
+	}, { component: 'pipeline' });

@@ -18,9 +18,9 @@ In Cloud Run, credentials are automatically provided via the service account att
 The service account (`pipeline-service@<PROJECT_ID>.iam.gserviceaccount.com`) must have:
 - `roles/datastore.user` - For Firestore access
 - `roles/storage.objectAdmin` - For Cloud Storage access
-- `roles/pubsub.publisher` - For Pub/Sub publishing
-- `roles/pubsub.subscriber` - For Pub/Sub subscription
+- `roles/cloudtasks.enqueuer` - For Cloud Tasks creation
 - `roles/secretmanager.secretAccessor` - For Secret Manager access
+- `roles/run.invoker` on the Cloud Run service (for Cloud Tasks OIDC calls)
 
 ## Local Development (Docker)
 
@@ -171,4 +171,3 @@ docker exec pipeline-service gcloud auth application-default print-access-token
 - [Firebase Admin SDK Documentation](https://firebase.google.com/docs/admin/setup)
 - [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
 - [Service Account Keys](https://cloud.google.com/iam/docs/creating-managing-service-account-keys)
-

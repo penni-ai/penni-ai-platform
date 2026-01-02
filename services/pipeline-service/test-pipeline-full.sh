@@ -70,62 +70,8 @@ else
 fi
 echo ""
 
-# Test 3: Simulate Pub/Sub Message (Direct Worker Call)
-echo "📋 Test 3: Execute Pipeline (Simulating Pub/Sub Message)"
-echo "--------------------------------------------------------"
-echo "Since Pub/Sub may not be configured locally, we'll directly call the worker endpoint..."
-echo ""
-
-# Create Pub/Sub message format
-MESSAGE_DATA=$(cat <<EOF
-{
-  "job_id": "$JOB_ID",
-  "uid": "$(echo "$TEST_REQUEST" | jq -r '.uid')",
-  "business_description": "$(echo "$TEST_REQUEST" | jq -r '.business_description')",
-  "top_n": $(echo "$TEST_REQUEST" | jq -r '.top_n'),
-  "platform": "$(echo "$TEST_REQUEST" | jq -r '.platform')",
-  "min_followers": $(echo "$TEST_REQUEST" | jq -r '.min_followers'),
-  "max_followers": $(echo "$TEST_REQUEST" | jq -r '.max_followers')
-}
-EOF
-)
-
-# Encode as base64 (Pub/Sub format)
-ENCODED_DATA=$(echo -n "$MESSAGE_DATA" | base64)
-
-# Create Pub/Sub message format
-PUBSUB_MESSAGE=$(cat <<EOF
-{
-  "message": {
-    "data": "$ENCODED_DATA",
-    "attributes": {
-      "job_id": "$JOB_ID"
-    }
-  }
-}
-EOF
-)
-
-echo "Calling worker endpoint..."
-WORKER_RESPONSE=$(curl -s -X POST http://localhost:8080/pubsub/pipeline-start \
-  -H "Content-Type: application/json" \
-  -d "$PUBSUB_MESSAGE" \
-  -w "\nHTTP_CODE:%{http_code}")
-
-HTTP_CODE=$(echo "$WORKER_RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2)
-WORKER_BODY=$(echo "$WORKER_RESPONSE" | sed '/HTTP_CODE:/d')
-
-if [[ "$HTTP_CODE" == "204" ]]; then
-  echo "✅ Worker endpoint accepted message (204 No Content)"
-  echo "Pipeline execution started in background..."
-else
-  echo "⚠️  Unexpected HTTP code: $HTTP_CODE"
-  echo "Response: $WORKER_BODY"
-fi
-echo ""
-
-# Test 4: Monitor Job Progress
-echo "📋 Test 4: Monitor Job Progress"
+# Test 3: Monitor Job Progress
+echo "📋 Test 3: Monitor Job Progress"
 echo "-------------------------------"
 echo "Polling Firestore for job status (this may take 5-30 minutes)..."
 echo "Job ID: $JOB_ID"
@@ -147,4 +93,3 @@ echo ""
 echo "✅ Test completed! Pipeline is running in the background."
 echo ""
 echo "To view logs: docker logs -f $CONTAINER_NAME"
-

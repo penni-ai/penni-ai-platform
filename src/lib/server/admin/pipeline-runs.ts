@@ -29,6 +29,8 @@ export type PipelineRunRecord = {
 	remaining_profiles_count?: number;
 	progressive_profiles_count?: number;
 	pipeline_stats?: Record<string, unknown> | null;
+	pipeline_summary?: string | null;
+	pipeline_waterfall?: string | null;
 	stages?: Record<string, unknown> | null;
 	timing?: Record<string, unknown> | null;
 	storage?: {
@@ -181,6 +183,8 @@ const serializePipelineRun = (id: string, data: FirebaseFirestore.DocumentData):
 		progressive_profiles_count:
 			typeof data.progressive_profiles_count === 'number' ? data.progressive_profiles_count : undefined,
 		pipeline_stats: data.pipeline_stats ? (data.pipeline_stats as Record<string, unknown>) : null,
+		pipeline_summary: typeof data.pipeline_summary === 'string' ? data.pipeline_summary : null,
+		pipeline_waterfall: typeof data.pipeline_waterfall === 'string' ? data.pipeline_waterfall : null,
 		stages: {
 			query_expansion: data.query_expansion ?? null,
 			weaviate_search: data.weaviate_search ?? null,

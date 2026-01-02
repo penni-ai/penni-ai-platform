@@ -61,12 +61,12 @@ echo "Test 2: Service account permissions"
 echo "-----------------------------------"
 SERVICE_ACCOUNT="${SERVICE_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
-# Test Pub/Sub permissions
-echo "Testing Pub/Sub permissions..."
-if gcloud pubsub topics list --project="$PROJECT_ID" &>/dev/null; then
-  echo "✓ Pub/Sub access verified"
+# Test Cloud Tasks permissions
+echo "Testing Cloud Tasks permissions..."
+if gcloud tasks queues list --location="$REGION" --project="$PROJECT_ID" &>/dev/null; then
+  echo "✓ Cloud Tasks access verified"
 else
-  echo "⚠️  Could not verify Pub/Sub access (this may be expected if no topics exist)"
+  echo "⚠️  Could not verify Cloud Tasks access"
 fi
 
 # Test Firestore permissions
@@ -88,4 +88,3 @@ fi
 
 echo ""
 echo "✅ All tests passed!"
-

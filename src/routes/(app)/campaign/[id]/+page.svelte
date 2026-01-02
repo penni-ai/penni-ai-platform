@@ -22,7 +22,7 @@ const campaign = $derived(data.campaign);
 const routeCampaignId = $derived($page.params.id);
 
 // Local campaign state for optimistic updates
-let localCampaign = $state<SerializedCampaign | null>(null);
+	let localCampaign = $state<SerializedCampaign | null>(null);
 
 // Search form state
 let influencerSummary = $state('');
@@ -127,9 +127,9 @@ function closeSearchLimitPanel() {
 }
 
 // Pipeline listener - uses Svelte's effect cleanup for proper lifecycle management
-$effect(() => {
-  const pipelineId = effectivePipelineId;
-  const authReady = $firebaseAuthReady;
+	$effect(() => {
+	  const pipelineId = effectivePipelineId;
+	  const authReady = $firebaseAuthReady;
 
   // Reset state when pipeline changes
   pipelineStatus = null;
@@ -138,42 +138,55 @@ $effect(() => {
   // Wait for auth and pipeline ID
   if (!authReady || !pipelineId) return;
 
-  let loadedProfilesForPipeline: string | null = null;
-  let lastLoadedProgressiveCount = 0;
-  let lastLoadedProfilesCount = 0;
-
-  // Fetch profiles via API (avoids CORS issues with direct storage access)
-  const loadProfiles = async (progressiveCount: number = 0, profilesCount: number = 0) => {
-    // Skip if already loaded and counts haven't changed
-    if (loadedProfilesForPipeline === pipelineId &&
-        progressiveCount <= lastLoadedProgressiveCount &&
-        profilesCount <= lastLoadedProfilesCount) {
-      return;
-    }
-    try {
-      const response = await fetch(`/api/pipeline/${pipelineId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const profiles = Array.isArray(data.profiles)
-          ? data.profiles.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
-          : [];
-        const preliminaryCandidates = Array.isArray(data.preliminary_candidates)
-          ? data.preliminary_candidates.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
-          : [];
-        pipelineStatus = {
-          ...pipelineStatus,
-          profiles,
-          preliminary_candidates: preliminaryCandidates,
-          is_progressive: data.is_progressive ?? false,
-        } as PipelineStatus;
-        loadedProfilesForPipeline = pipelineId;
-        lastLoadedProgressiveCount = progressiveCount;
-        lastLoadedProfilesCount = profilesCount;
-      }
-    } catch {
-      // Will retry on next snapshot
-    }
-  };
+	  let loadedProfilesForPipeline: string | null = null;
+	  let lastLoadedProgressiveCount = 0;
+	  let lastLoadedProfilesCount = 0;
+	  let lastLoadedProgressiveRevision = 0;
+	  let loadToken = 0;
+	
+	  // Fetch profiles via API (avoids CORS issues with direct storage access)
+	  const loadProfiles = async (
+	    progressiveCount: number = 0,
+	    profilesCount: number = 0,
+	    progressiveRevision: number = 0
+	  ) => {
+	    // Skip if already loaded and counts haven't changed
+	    if (loadedProfilesForPipeline === pipelineId &&
+	        progressiveRevision <= lastLoadedProgressiveRevision &&
+	        progressiveCount <= lastLoadedProgressiveCount &&
+	        profilesCount <= lastLoadedProfilesCount) {
+	      return;
+	    }
+	    try {
+	      const currentToken = ++loadToken;
+	      const response = await fetch(
+	        `/api/pipeline/${pipelineId}?rev=${progressiveRevision}&p=${profilesCount}&pc=${progressiveCount}`,
+	        { cache: 'no-store' }
+	      );
+	      if (response.ok) {
+	        const data = await response.json();
+	        if (currentToken !== loadToken) return;
+	        const profiles = Array.isArray(data.profiles)
+	          ? data.profiles.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
+	          : [];
+	        const preliminaryCandidates = Array.isArray(data.preliminary_candidates)
+	          ? data.preliminary_candidates.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
+	          : (pipelineStatus?.preliminary_candidates ?? []);
+	        pipelineStatus = {
+	          ...(pipelineStatus ?? {}),
+	          profiles,
+	          preliminary_candidates: preliminaryCandidates,
+	          is_progressive: data.is_progressive ?? false,
+	        } as PipelineStatus;
+	        loadedProfilesForPipeline = pipelineId;
+	        lastLoadedProgressiveCount = progressiveCount;
+	        lastLoadedProfilesCount = profilesCount;
+	        lastLoadedProgressiveRevision = progressiveRevision;
+	      }
+	    } catch {
+	      // Will retry on next snapshot
+	    }
+	  };
 
   // Set up Firestore listener
   const pipelineDocRef = doc(firebaseFirestore, 'pipeline_jobs', pipelineId);
@@ -204,13 +217,14 @@ $effect(() => {
       pipelineError = null;
       const data = snapshot.data();
 
-      // Load profiles when available (including Weaviate candidates and progressive updates)
-      const progressiveCount = data.progressive_profiles_count ?? 0;
-      const profilesCount = data.profiles_count ?? 0;
-      const candidatesCount = data.weaviate_search?.candidates_count ?? 0;
-      if (profilesCount > 0 || progressiveCount > 0 || candidatesCount > 0) {
-        void loadProfiles(progressiveCount, profilesCount);
-      }
+	      // Load profiles when available (including Weaviate candidates and progressive updates)
+	      const progressiveCount = data.progressive_profiles_count ?? 0;
+	      const progressiveRevision = data.progressive_profiles_revision ?? 0;
+	      const profilesCount = data.profiles_count ?? 0;
+	      const candidatesCount = data.weaviate_search?.candidates_count ?? 0;
+	      if (profilesCount > 0 || progressiveCount > 0 || candidatesCount > 0) {
+	        void loadProfiles(progressiveCount, profilesCount, progressiveRevision);
+	      }
 
       // Update status, preserving loaded profiles and preliminary candidates
       pipelineStatus = {

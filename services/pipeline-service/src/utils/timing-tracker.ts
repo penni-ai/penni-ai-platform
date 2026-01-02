@@ -5,9 +5,11 @@
 
 import { getFirestoreInstance } from './firebase-admin.js';
 import { Timestamp } from 'firebase-admin/firestore';
+import { createLogger } from './logger.js';
 
 const db = getFirestoreInstance();
 const PIPELINE_COLLECTION = 'pipeline_jobs';
+const logger = createLogger({ component: 'timing-tracker' });
 
 export type PipelineStage = 
   | 'query_expansion'
@@ -98,7 +100,7 @@ export class PipelineTimingTracker {
     const startTime = this.activeStages.get(stage);
     
     if (startTime === undefined) {
-      console.warn(`[TimingTracker] Attempted to end stage ${stage} that was not started`);
+      logger.warn('timing_stage_end_without_start', { stage });
       return;
     }
 
@@ -150,12 +152,12 @@ export class PipelineTimingTracker {
     const startTime = this.activeSubStages.get(key);
 
     if (startTime === undefined) {
-      console.warn(`[TimingTracker] Attempted to end sub-stage ${stage}.${subStage} that was not started`);
+      logger.warn('timing_substage_end_without_start', { stage, sub_stage: subStage });
       return;
     }
 
     if (!this.timing.stages[stage]?.sub_stages?.[subStage]) {
-      console.warn(`[TimingTracker] Sub-stage ${stage}.${subStage} timing not found`);
+      logger.warn('timing_substage_missing', { stage, sub_stage: subStage });
       return;
     }
 
@@ -233,7 +235,7 @@ export class PipelineTimingTracker {
         updated_at: Timestamp.now(),
       });
     } catch (error) {
-      console.error(`[TimingTracker] Failed to save timing to Firestore for job ${this.jobId}:`, error);
+      logger.error('timing_save_failed', { job_id: this.jobId, error });
       throw error;
     }
   }

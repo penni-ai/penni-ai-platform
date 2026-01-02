@@ -1,6 +1,6 @@
 # Pipeline Service
 
-Cloud Run service for the Penny Platform influencer search pipeline. This service handles both HTTP orchestration (fast job creation and Pub/Sub publishing) and Pub/Sub-triggered background processing (full pipeline execution).
+Cloud Run service for the Penny Platform influencer search pipeline. This service handles HTTP orchestration (fast job creation) and Cloud Tasks-driven background processing (full pipeline execution).
 
 ## Overview
 
@@ -15,19 +15,19 @@ The pipeline service provides a complete influencer search and analysis pipeline
 ## Architecture
 
 ```
-SvelteKit App → Cloud Run (HTTP) → Pub/Sub → Cloud Run (Worker) → Firestore/Storage
+SvelteKit App → Cloud Run (HTTP) → Cloud Tasks → Cloud Run (Tasks) → Firestore/Storage
 ```
 
 ### Request Flow
 
 1. **App calls POST /pipeline/start** with business description and parameters
-2. **Service creates Firestore job**, publishes to Pub/Sub, returns 202 Accepted immediately
-3. **Pub/Sub triggers worker** via POST /pubsub/pipeline-start
-4. **Worker executes pipeline stages**:
+2. **Service creates Firestore job**, enqueues a stage task, returns 202 Accepted immediately
+3. **Cloud Tasks invokes stage worker** via POST /tasks/pipeline-stage
+4. **Stage worker executes pipeline stages**:
    - Query expansion (OpenAI)
    - Parallel hybrid search (Weaviate)
    - Candidate pool + preliminary preview (Storage)
-   - Cache-first BrightData + LLM fit (early-stop when enough 9/10+ matches found)
+   - Cache-first BrightData + LLM fit (early-stop when enough 10/10 matches found)
 5. **Results stored** in Firestore (metadata) and Cloud Storage (profiles)
 6. **App listens** to Firestore for status/progress updates and loads candidates/progressive/final results from Storage (typically via an app API to avoid direct bucket access)
 
@@ -52,7 +52,7 @@ SvelteKit App → Cloud Run (HTTP) → Pub/Sub → Cloud Run (Worker) → Firest
 ### 4. Cache-first BrightData + LLM Fit (Adaptive Stop)
 - **Cache hits first**: Bulk lookup in Firestore `brightdata_cache`, then immediate LLM fit analysis
 - **BrightData only for cache misses**: 20 urls per batch, keep 5 batches in-flight when possible (≈100 urls)
-- **Stop condition**: End early once `top_n` profiles with `fit_score >= 90` (9/10+) are found, or stop after exhausting the Weaviate pool
+- **Stop condition**: End early once `top_n` profiles with `fit_score >= 100` (10/10) are found, or stop after exhausting the Weaviate pool
 - **LLM concurrency**: `MAX_CONCURRENT_LLM_REQUESTS` (worker clamps to ≤100)
 
 ### 5. Result Storage (Progressive + Final)
@@ -63,7 +63,7 @@ SvelteKit App → Cloud Run (HTTP) → Pub/Sub → Cloud Run (Worker) → Firest
 
 ## Prerequisites
 
-- GCP project with Cloud Run, Pub/Sub, Firestore, Storage enabled
+- GCP project with Cloud Run, Cloud Tasks, Firestore, Storage enabled
 - Service account with required IAM roles (see deploy.sh)
 - Secrets created in Secret Manager:
   - `openai-api-key` - OpenAI API key
@@ -71,79 +71,23 @@ SvelteKit App → Cloud Run (HTTP) → Pub/Sub → Cloud Run (Worker) → Firest
   - `weaviate-url` - Weaviate cluster URL
   - `deepinfra-api-key` - DeepInfra API key for embeddings
   - `brightdata-api-key` - BrightData API key
-- Pub/Sub infrastructure (topic, subscription, dead letter queue) - run `./setup-pubsub.sh` to set up
+- Cloud Tasks queues (`pipeline-stage`, `pipeline-batch`, `pipeline-poll`)
 - Node.js 20+ for local development
 - Docker for container builds
 - gcloud CLI installed and authenticated
 
-## Pub/Sub Infrastructure Setup
+## Cloud Tasks Setup
 
-The pipeline service uses Pub/Sub for asynchronous job processing. The orchestrator publishes messages to a topic, and a push subscription triggers the worker endpoint on Cloud Run.
+The pipeline service uses Cloud Tasks for asynchronous job processing. The orchestrator enqueues a stage task, which creates batch and poll tasks for BrightData and LLM processing.
 
-### Architecture Diagram
+### Queue Setup
 
-```
-Orchestrator → Pub/Sub Topic (pipeline.start) → Push Subscription → Cloud Run Worker
+Create the required queues (one-time setup):
 
-                                                    ↓ (on failure after 3 retries)
-
-                                                Dead Letter Topic (pipeline.failed)
-```
-
-### Setup Instructions
-
-Run `./setup-pubsub.sh` to create all Pub/Sub resources. This is a one-time setup operation.
-
-The script creates:
-- **Main topic**: `pipeline.start` with 7-day message retention
-- **Push subscription**: `pipeline-worker-sub` with retry policy and dead letter configuration
-- **Dead letter topic**: `pipeline.failed` for messages that fail after max retry attempts
-- **IAM bindings**: All necessary permissions for Pub/Sub to invoke Cloud Run and handle messages
-
-### Subscription Configuration
-
-- **Push endpoint**: `https://<service-url>/pubsub/pipeline-start`
-- **Ack deadline**: 600 seconds (10 minutes)
-- **Retry policy**: Exponential backoff from 10s to 600s
-- **Max delivery attempts**: 3
-- **Dead letter topic**: `pipeline.failed`
-
-### Message Format
-
-Messages published to the topic follow this schema:
-```json
-{
-  "job_id": "string",
-  "uid": "string",
-  "campaign_id": "string (optional)",
-  "business_description": "string",
-  "top_n": "number",
-  "min_followers": "number (optional)",
-  "max_followers": "number (optional)",
-  "platform": "instagram | tiktok (optional)",
-  "request_id": "string (optional)"
-}
-```
-
-### IAM Permissions
-
-The setup script configures the following IAM bindings:
-- Pub/Sub service account has `roles/run.invoker` on Cloud Run service (allows Pub/Sub to invoke the worker endpoint)
-- Pub/Sub service account has `roles/pubsub.publisher` on dead letter topic (allows failed messages to be published to dead letter queue)
-- Pub/Sub service account has `roles/pubsub.subscriber` on subscription (allows message acknowledgment)
-
-### Testing
-
-Run `./test-pubsub.sh` to verify all resources and permissions are configured correctly.
-
-To manually test:
 ```bash
-# Publish a test message
-gcloud pubsub topics publish pipeline.start \
-  --message='{"job_id":"test","uid":"test-user","business_description":"test","top_n":30}'
-
-# Check Cloud Run logs to verify message was received
-gcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=pipeline-service' --limit=10
+gcloud tasks queues create pipeline-stage --location us-central1
+gcloud tasks queues create pipeline-batch --location us-central1
+gcloud tasks queues create pipeline-poll --location us-central1
 ```
 
 ## Environment Variables
@@ -163,10 +107,17 @@ See `.env.example` for all required variables. Key variables:
 - `BRIGHTDATA_API_KEY` - BrightData API key for profile collection
 
 ### Service Configuration
-- `PUBSUB_TOPIC_NAME` - Pub/Sub topic name (default: `pipeline.start`)
+- `PIPELINE_TASKS_BASE_URL` - Base URL for Cloud Tasks to call (Cloud Run service URL)
+- `CLOUD_TASKS_LOCATION` - Cloud Tasks queue location (default: `us-central1`)
+- `CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL` - Service account used to sign task OIDC tokens
+- `CLOUD_TASKS_OIDC_AUDIENCE` - Audience for task OIDC tokens (Cloud Run service URL)
 - `WEAVIATE_COLLECTION_NAME` - Weaviate collection name (default: `influencer_profiles`)
 - `DEEPINFRA_EMBEDDING_MODEL` - Embedding model (default: `Qwen/Qwen3-Embedding-8B`)
 - `OPENAI_MODEL` - OpenAI model (default: `gpt-4o-mini`)
+- `PIPELINE_TASKS_QUEUE_STAGE` - Queue name for stage tasks (default: `pipeline-stage`)
+- `PIPELINE_TASKS_QUEUE_BATCH` - Queue name for batch tasks (default: `pipeline-batch`)
+- `PIPELINE_TASKS_QUEUE_POLL` - Queue name for poll tasks (default: `pipeline-poll`)
+- `PIPELINE_TASKS_DIRECT` - If true, bypass Cloud Tasks and call the task endpoints directly (local dev)
 
 ### Performance Tuning
 - `MAX_CONCURRENT_WEAVIATE_SEARCHES` - Max concurrent Weaviate searches (default: 12)
@@ -210,14 +161,9 @@ See `.env.example` for all required variables. Key variables:
      }'
    ```
 
-6. **Test Pub/Sub endpoint** (simulate Pub/Sub message):
+6. **Optional: bypass Cloud Tasks locally**:
    ```bash
-   # Encode message data as base64
-   MESSAGE_DATA=$(echo '{"job_id":"test-job","business_description":"test","top_n":30,"uid":"test-user"}' | base64)
-   
-   curl -X POST http://localhost:8080/pubsub/pipeline-start \
-     -H "Content-Type: application/json" \
-     -d "{\"message\":{\"data\":\"$MESSAGE_DATA\"}}"
+   export PIPELINE_TASKS_DIRECT=true
    ```
 
 ## Deployment
@@ -231,14 +177,11 @@ See `.env.example` for all required variables. Key variables:
 
    The script will:
    - Create service account if needed
-   - Grant IAM roles (Pub/Sub, Firestore, Storage, Secret Manager)
-   - Prompt to set up Pub/Sub infrastructure (answer 'y' to run setup automatically)
+   - Grant IAM roles (Cloud Tasks, Firestore, Storage, Secret Manager)
    - Check for required secrets
    - Trigger Cloud Build
    - Deploy to Cloud Run
    - Test health endpoint
-
-   **Note**: If this is your first deployment, you'll be prompted to set up Pub/Sub infrastructure. Answer 'y' to run the setup automatically, or run `./setup-pubsub.sh` separately later.
 
 3. **Verify deployment**:
    ```bash
@@ -277,22 +220,6 @@ Response (202 Accepted):
 }
 ```
 
-### Test Pub/Sub Worker (direct)
-```bash
-# Create test message
-MESSAGE_DATA=$(echo '{
-  "job_id": "test-job-123",
-  "business_description": "test description",
-  "top_n": 30,
-  "uid": "test-user-id"
-}' | base64)
-
-curl -X POST "$SERVICE_URL/pubsub/pipeline-start" \
-  -H "Authorization: Bearer $ID_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"message\":{\"data\":\"$MESSAGE_DATA\"}}"
-```
-
 ### Monitor Pipeline Progress
 ```bash
 # Query Firestore for job status
@@ -305,6 +232,10 @@ gcloud firestore documents get pipeline_jobs/test-job-123
 - Request count, latency, errors
 - Memory and CPU utilization
 - Instance count and concurrency
+
+### Cloud Tasks Metrics
+- Queue depth and dispatch rate
+- Oldest task age (backlog)
 
 ### Cloud Logging
 Structured logs include:
@@ -320,12 +251,6 @@ Structured logs include:
 ### Cloud Storage
 - `pipeline_jobs/{job_id}/profiles.json` - Final results (large datasets)
 
-### Pub/Sub Metrics
-- **Topic publish rate and message count**: `gcloud pubsub topics describe pipeline.start`
-- **Subscription delivery rate and ack rate**: `gcloud pubsub subscriptions describe pipeline-worker-sub`
-- **Dead letter topic message count**: Should be 0 in healthy system. Check with `gcloud pubsub topics describe pipeline.failed`
-- **Oldest unacked message age**: Should be low. View in subscription details: `gcloud pubsub subscriptions describe pipeline-worker-sub`
-
 ## Troubleshooting
 
 ### Common Errors
@@ -334,10 +259,6 @@ Structured logs include:
 - Ensure secrets exist in Secret Manager
 - Check service account has `roles/secretmanager.secretAccessor`
 - Verify secret names match cloudbuild.yaml
-
-**"Pub/Sub topic not found"**
-- Topic will be created automatically on first use
-- Or create manually: `gcloud pubsub topics create pipeline.start`
 
 **"Pipeline job cancelled"**
 - Job was cancelled via Firestore (`cancel_requested: true`)
@@ -353,26 +274,14 @@ Structured logs include:
 - Check BrightData API status
 - Verify `BRIGHTDATA_API_KEY` is valid
 
-**"Pub/Sub subscription not found"**
-- Run `./setup-pubsub.sh` to create the subscription
-- Verify subscription exists: `gcloud pubsub subscriptions describe pipeline-worker-sub`
+**"Cloud Tasks queue not found"**
+- Create queues: `gcloud tasks queues create pipeline-stage --location us-central1`
+- Verify queue exists: `gcloud tasks queues describe pipeline-stage --location us-central1`
 
-**"Messages not being delivered to Cloud Run"**
-- Check if Pub/Sub service account has invoker role: `gcloud run services get-iam-policy pipeline-service`
-- Verify push endpoint URL matches Cloud Run service URL
-- Check subscription status: `gcloud pubsub subscriptions describe pipeline-worker-sub`
+**"Tasks not being delivered to Cloud Run"**
+- Check if task OIDC audience matches service URL
+- Verify service account has `roles/run.invoker` on the service
 - Look for errors in Cloud Logging: `gcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=pipeline-service' --limit=50`
-
-**"Messages going to dead letter queue"**
-- Check dead letter topic for failed messages: `gcloud pubsub topics list-subscriptions pipeline.failed`
-- Pull messages from dead letter topic to inspect: `gcloud pubsub subscriptions pull <dead-letter-subscription> --limit=10`
-- Common causes: Worker endpoint returning errors, timeout exceeded (>600s), invalid message format
-- Review Cloud Run logs for error details
-
-**"How to replay dead letter messages"**
-- Create a subscription to the dead letter topic: `gcloud pubsub subscriptions create pipeline-failed-replay --topic=pipeline.failed`
-- Pull messages: `gcloud pubsub subscriptions pull pipeline-failed-replay --limit=10`
-- Manually republish to main topic: `gcloud pubsub topics publish pipeline.start --message='<message-data>'`
 
 ### How to Check Logs
 ```bash
@@ -392,7 +301,7 @@ gcloud firestore documents update pipeline_jobs/job_123 --data='{"cancel_request
 ### How to Retry Failed Jobs
 Failed jobs are not automatically retried. To retry:
 1. Create a new job with the same parameters
-2. Or manually trigger Pub/Sub message with job details
+2. Or re-enqueue the stage task with the same payload
 
 ## Performance Tuning
 
@@ -436,8 +345,8 @@ Failed jobs are not automatically retried. To retry:
 
 The service account (`pipeline-service@<PROJECT_ID>.iam.gserviceaccount.com`) has the following IAM roles:
 
-- **Pub/Sub Publisher** (`roles/pubsub.publisher`) - Publish messages to Pub/Sub topics
-- **Pub/Sub Subscriber** (`roles/pubsub.subscriber`) - Receive Pub/Sub messages
+- **Cloud Tasks Enqueuer** (`roles/cloudtasks.enqueuer`) - Create tasks in queues
+- **Cloud Run Invoker** (`roles/run.invoker`) - Allow Cloud Tasks OIDC calls
 - **Datastore User** (`roles/datastore.user`) - Read/write Firestore documents
 - **Storage Object Admin** (`roles/storage.objectAdmin`) - Store pipeline results in Cloud Storage
 - **Secret Manager Secret Accessor** (`roles/secretmanager.secretAccessor`) - Access API keys from Secret Manager
@@ -445,7 +354,7 @@ The service account (`pipeline-service@<PROJECT_ID>.iam.gserviceaccount.com`) ha
 ## Architecture Notes
 
 - **Single codebase** - All logic in one service for easier maintenance
-- **Shared utilities** - HTTP and Pub/Sub handlers share the same utility functions
+- **Shared utilities** - HTTP and task handlers share the same utility functions
 - **Scale to zero** - No min instances, only pay for actual usage
 - **Simple deployment** - One service, one Docker image, one Cloud Run deployment
 - **Streaming processing** - BrightData batches processed incrementally for better UX

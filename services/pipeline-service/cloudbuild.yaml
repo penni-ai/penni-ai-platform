@@ -18,28 +18,30 @@ steps:
 
   # Step 3: Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - 'run'
-      - 'deploy'
-      - 'pipeline-service'
-      - '--region=us-central1'
-      - '--image=gcr.io/$PROJECT_ID/pipeline-service:$BUILD_ID'
-      - '--platform=managed'
-      - '--no-allow-unauthenticated'
-      - '--service-account=pipeline-service@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--memory=2Gi'
-      - '--cpu=2'
-      - '--timeout=3600s'
-      - '--max-instances=10'
-      - '--min-instances=0'
-      - '--concurrency=1'
-      - '--set-secrets=OPENAI_API_KEY=openai-api-key:latest,WEAVIATE_API_KEY=weaviate-api-key:latest,WEAVIATE_URL=weaviate-url:latest,DEEPINFRA_API_KEY=deepinfra-api-key:latest,BRIGHTDATA_API_KEY=brightdata-api-key:latest'
-      - '--set-env-vars=PUBSUB_TOPIC_NAME=pipeline.start,WEAVIATE_COLLECTION_NAME=influencer_profiles,MAX_CONCURRENT_WEAVIATE_SEARCHES=12,MAX_CONCURRENT_LLM_REQUESTS=5'
+      - -c
+      - |
+        set -euo pipefail
+        PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+        SERVICE_URL="https://pipeline-service-${PROJECT_NUMBER}.us-central1.run.app"
+        gcloud run deploy pipeline-service \
+          --region=us-central1 \
+          --image=gcr.io/$PROJECT_ID/pipeline-service:$BUILD_ID \
+          --platform=managed \
+          --no-allow-unauthenticated \
+          --service-account=pipeline-service@$PROJECT_ID.iam.gserviceaccount.com \
+          --memory=2Gi \
+          --cpu=2 \
+          --timeout=3600s \
+          --max-instances=10 \
+          --min-instances=0 \
+          --concurrency=1 \
+          --set-secrets=OPENAI_API_KEY=openai-api-key:latest,WEAVIATE_API_KEY=weaviate-api-key:latest,WEAVIATE_URL=weaviate-url:latest,DEEPINFRA_API_KEY=deepinfra-api-key:latest,BRIGHTDATA_API_KEY=brightdata-api-key:latest \
+          --set-env-vars=PIPELINE_TASKS_BASE_URL=$$SERVICE_URL,CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL=pipeline-service@$PROJECT_ID.iam.gserviceaccount.com,CLOUD_TASKS_OIDC_AUDIENCE=$$SERVICE_URL,WEAVIATE_COLLECTION_NAME=influencer_profiles,MAX_CONCURRENT_WEAVIATE_SEARCHES=12,MAX_CONCURRENT_LLM_REQUESTS=5
 
 images:
   - 'gcr.io/$PROJECT_ID/pipeline-service:$BUILD_ID'
 
 options:
   logging: CLOUD_LOGGING_ONLY
-

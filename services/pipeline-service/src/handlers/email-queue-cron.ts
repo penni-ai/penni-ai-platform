@@ -10,6 +10,9 @@ import { getFirestoreInstance } from '../utils/firebase-admin.js';
 import { google } from 'googleapis';
 import * as crypto from 'crypto';
 import { FieldValue } from 'firebase-admin/firestore';
+import { createLogger } from '../utils/logger.js';
+
+const logger = createLogger({ component: 'email-queue-cron' });
 
 // Constants
 const DAILY_INBOX_LIMIT = 50;
@@ -694,7 +697,7 @@ export async function processEmailQueueBatch(): Promise<BatchProcessingResult> {
 	try {
 		// Find users with queued emails
 		const userIds = await findUsersWithQueuedEmails(db);
-		console.log(`[EmailQueue] Found ${userIds.length} users with queued emails`);
+		logger.info('email_queue_users_found', { users: userIds.length });
 
 		// Process each user
 		for (const uid of userIds) {
@@ -708,19 +711,21 @@ export async function processEmailQueueBatch(): Promise<BatchProcessingResult> {
 					totalFailed += result.failed;
 				}
 			} catch (error) {
-				console.error(`[EmailQueue] Error processing user ${uid}:`, error);
+				logger.error('email_queue_user_failed', { uid, error });
 			}
 		}
 	} catch (error) {
-		console.error('[EmailQueue] Batch processing error:', error);
+		logger.error('email_queue_batch_failed', { error });
 	}
 
 	const duration = Date.now() - startTime;
 
-	console.log(
-		`[EmailQueue] Batch complete: ${totalProcessed} processed, ` +
-			`${totalSucceeded} succeeded, ${totalFailed} failed in ${duration}ms`
-	);
+	logger.info('email_queue_batch_complete', {
+		processed: totalProcessed,
+		succeeded: totalSucceeded,
+		failed: totalFailed,
+		duration_ms: duration,
+	});
 
 	return {
 		totalProcessed,

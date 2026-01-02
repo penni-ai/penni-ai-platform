@@ -2,6 +2,9 @@ import { initializeApp, getApps, getApp, type App, type AppOptions, applicationD
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { getStorage } from 'firebase-admin/storage';
+import { createLogger } from './logger.js';
+
+const logger = createLogger({ component: 'firebase-admin' });
 
 const isFunctionsEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
 const isProduction = process.env.NODE_ENV === 'production';
@@ -16,7 +19,7 @@ if (!isFunctionsEmulator && isProduction) {
 
   for (const key of storageEmulatorKeys) {
     if (process.env[key]) {
-      console.warn('[FirebaseAdmin] Ignoring storage emulator host in production', {
+      logger.warn('firebase_admin_storage_emulator_ignored', {
         key,
         value: process.env[key],
       });
@@ -55,7 +58,7 @@ function parseFirebaseEnvConfig(): FirebaseEnvConfig {
       storageBucket: parsed.storageBucket || parsed.storage_bucket,
     };
   } catch (error) {
-    console.warn('[FirebaseAdmin] Failed to parse FIREBASE_CONFIG', error);
+    logger.warn('firebase_admin_config_parse_failed', { error });
     return {};
   }
 }
@@ -126,12 +129,12 @@ function logApiKeyStatus(): void {
     }
   }
 
-  console.info('[FirebaseAdmin] API Key Configuration Status', status);
+  logger.info('firebase_admin_api_key_status', status);
 
   if (missing.length > 0) {
-    console.warn(`[FirebaseAdmin] ⚠️  Missing required API keys: ${missing.join(', ')}`);
+    logger.warn('firebase_admin_api_keys_missing', { missing });
   } else {
-    console.info('[FirebaseAdmin] ✅ All API keys are configured');
+    logger.info('firebase_admin_api_keys_ok');
   }
 }
 
@@ -167,7 +170,7 @@ function getCredential() {
       const serviceAccount = JSON.parse(serviceAccountJson);
       return cert(serviceAccount);
     } catch (error) {
-      console.warn('[FirebaseAdmin] Failed to parse FIREBASE_SERVICE_ACCOUNT, falling back to Application Default Credentials', {
+      logger.warn('firebase_admin_service_account_parse_failed', {
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -177,7 +180,7 @@ function getCredential() {
   try {
     return applicationDefault();
   } catch (error) {
-    console.warn('[FirebaseAdmin] Failed to get Application Default Credentials, initializing without explicit credentials', {
+    logger.warn('firebase_admin_adc_failed', {
       error: error instanceof Error ? error.message : String(error),
     });
     // Fall back to no explicit credentials (Firebase Admin SDK will try to auto-discover)
@@ -212,7 +215,7 @@ export function getOrInitAdminApp(): App {
       process.env.FIREBASE_STORAGE_EMULATOR_HOST ||
       process.env.FIREBASE_AUTH_EMULATOR_HOST
     );
-    console.info('[FirebaseAdmin] Initialized functions admin app', {
+    logger.info('firebase_admin_initialized', {
       projectId: app.options.projectId,
       storageBucket: app.options.storageBucket,
       envProject: process.env.GOOGLE_CLOUD_PROJECT,
@@ -250,7 +253,7 @@ export function getStorageInstance() {
     // Ensure the underlying client uses HTTP for emulator
     // The Google Cloud Storage client should detect STORAGE_EMULATOR_HOST automatically
     // This is just for logging/debugging
-    console.log('[FirebaseAdmin] Storage emulator configured:', { storageEmulatorHost });
+    logger.info('firebase_admin_storage_emulator_configured', { storageEmulatorHost });
   }
   
   return storage;

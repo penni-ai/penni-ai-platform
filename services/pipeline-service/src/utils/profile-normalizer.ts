@@ -11,6 +11,9 @@ import type {
   BrightDataUnifiedProfile,
   BrightDataUnifiedPost,
 } from '../types/brightdata.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger({ component: 'profile-normalizer' });
 
 /**
  * Extract email address from text (biography)
@@ -458,7 +461,7 @@ export function normalizeProfiles(
 ): BrightDataUnifiedProfile[] {
   // Validate input is an array
   if (!Array.isArray(profiles)) {
-    console.error('[ProfileNormalizer] normalizeProfiles received non-array input:', typeof profiles, profiles);
+    logger.error('normalize_profiles_non_array', { profiles_type: typeof profiles });
     throw new Error(`normalizeProfiles expects an array, got ${typeof profiles}`);
   }
   return profiles.map(normalizeProfile);

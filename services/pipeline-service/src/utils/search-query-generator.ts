@@ -1,7 +1,9 @@
 import OpenAI from 'openai';
 import { isFixtureMode } from './test-mode.js';
+import { createLogger } from './logger.js';
 
 let cachedClient: OpenAI | null = null;
+const logger = createLogger({ component: 'query-generation' });
 
 function getOpenAIApiKey(): string {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -9,9 +11,7 @@ function getOpenAIApiKey(): string {
     throw new Error('OPENAI_API_KEY environment variable is required');
   }
   const trimmedKey = apiKey.trim();
-  console.log(
-    `[OpenAI] API key loaded for query generation: ${trimmedKey.substring(0, 7)}...${trimmedKey.substring(trimmedKey.length - 4)} (length: ${trimmedKey.length})`
-  );
+  logger.debug('openai_api_key_loaded', { key_length: trimmedKey.length });
   if (!trimmedKey.startsWith('sk-')) {
     throw new Error('Invalid OpenAI API key format. API keys should start with "sk-"');
   }
@@ -195,7 +195,7 @@ export async function generateSearchQueriesFromDescription(description: string):
 
   const client = getOpenAIClient();
   const model = getOpenAIModel();
-  console.log(`[QueryGeneration] Generating queries using model: ${model}`);
+  logger.info('query_generation_start', { model });
 
   const prompt = buildPrompt(trimmedDescription);
   const completion = await client.chat.completions.create({
@@ -223,7 +223,7 @@ export async function generateSearchQueriesFromDescription(description: string):
     throw new Error('No valid queries generated from OpenAI response');
   }
 
-  console.log(`[QueryGeneration] Generated ${queries.length} queries`);
+  logger.info('query_generation_complete', { query_count: queries.length });
 
   return {
     description: trimmedDescription,

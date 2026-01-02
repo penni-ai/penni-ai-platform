@@ -20,6 +20,9 @@ import {
   detectPlatformFromUrl,
   extractProfileUrl,
 } from './brightdata-cache.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger({ component: 'streaming-batch-processor' });
 
 /**
  * Download results from a single snapshot
@@ -55,7 +58,7 @@ async function downloadSnapshot(
         profiles = data.profiles as BrightDataProfile[];
       } else {
         // If data is an object but not an array, log warning and return empty array
-        console.warn(`[Streaming] Unexpected response structure for snapshot ${snapshotId}:`, {
+        logger.warn('streaming_snapshot_unexpected_structure', {
           hasData: !!data,
           dataType: typeof data,
           dataKeys: data ? Object.keys(data) : [],
@@ -63,13 +66,13 @@ async function downloadSnapshot(
         return [];
       }
     } else {
-      console.warn(`[Streaming] Unexpected response type for snapshot ${snapshotId}:`, typeof data);
+      logger.warn('streaming_snapshot_unexpected_type', { snapshot_id: snapshotId, data_type: typeof data });
       return [];
     }
     
     // Validate that we got an array
     if (!Array.isArray(profiles)) {
-      console.error(`[Streaming] Profiles is not an array for snapshot ${snapshotId}:`, typeof profiles);
+      logger.error('streaming_snapshot_profiles_not_array', { snapshot_id: snapshotId, profiles_type: typeof profiles });
       return [];
     }
     
@@ -189,7 +192,10 @@ async function processBatchAsReady(
   const { snapshot_id, platform, batch_index } = snapshot;
   
   try {
-    console.log(`[Streaming] Batch ${batch_index + 1} (${platform}) ready, downloading...`);
+    logger.debug('streaming_batch_download_start', {
+      batch_index: batch_index + 1,
+      platform,
+    });
     
     // Download batch
     const profiles = await downloadSnapshot(snapshot_id, apiKey, baseUrl);
@@ -199,7 +205,11 @@ async function processBatchAsReady(
       throw new Error(`Downloaded profiles is not an array for batch ${batch_index + 1}: ${typeof profiles}`);
     }
     
-    console.log(`[Streaming] Batch ${batch_index + 1} downloaded ${profiles.length} profiles`);
+    logger.debug('streaming_batch_download_complete', {
+      batch_index: batch_index + 1,
+      platform,
+      profiles: profiles.length,
+    });
 
     // Cache the newly downloaded profiles
     if (profiles.length > 0) {
@@ -210,7 +220,10 @@ async function processBatchAsReady(
       }));
       // Cache async without blocking
       setCachedProfilesBatch(profilesToCache).catch(err => {
-        console.warn(`[Streaming] Failed to cache profiles for batch ${batch_index + 1}:`, err);
+        logger.warn('streaming_batch_cache_failed', {
+          batch_index: batch_index + 1,
+          error: err,
+        });
       });
     }
 
@@ -226,9 +239,9 @@ async function processBatchAsReady(
       });
     }
     
-    console.log(`[Streaming] Batch ${batch_index + 1} processing complete`);
+    logger.debug('streaming_batch_processing_complete', { batch_index: batch_index + 1, platform });
   } catch (error) {
-    console.error(`[Streaming] Error processing batch ${batch_index + 1}:`, error);
+    logger.error('streaming_batch_processing_failed', { batch_index: batch_index + 1, error });
     throw error;
   }
 }
@@ -262,15 +275,18 @@ export async function processBatchedCollectionStreaming(
   const apiKey = getBrightDataApiKey();
   const baseUrl = getBrightDataBaseUrl();
 
-  console.log(`[Streaming] Starting streaming batch processing: ${urls.length} profiles, batch size: ${batchSize}`);
+  logger.info('streaming_processing_start', { profiles: urls.length, batch_size: batchSize });
 
   // Step 0: Check cache for all URLs
-  console.log(`[Streaming] Checking cache for ${urls.length} profiles...`);
+  logger.debug('streaming_cache_check_start', { profiles: urls.length });
   const cachedProfiles = await getCachedProfilesBatch(urls);
   const cachedUrls = new Set(cachedProfiles.keys());
   const uncachedUrls = urls.filter(url => !cachedUrls.has(url));
 
-  console.log(`[Streaming] Cache: ${cachedProfiles.size} hits, ${uncachedUrls.length} misses`);
+  logger.info('streaming_cache_check_result', {
+    cache_hits: cachedProfiles.size,
+    cache_misses: uncachedUrls.length,
+  });
 
   let totalProfiles = 0;
   let completedBatches = 0;
@@ -313,12 +329,12 @@ export async function processBatchedCollectionStreaming(
     // Wait for all cached batches to complete in parallel
     await Promise.all(cachedBatchPromises);
 
-    console.log(`[Streaming] Processed ${cachedProfiles.size} cached profiles`);
+    logger.info('streaming_cache_processed', { profiles: cachedProfiles.size });
   }
 
   // If all profiles were cached, return early
   if (uncachedUrls.length === 0) {
-    console.log(`[Streaming] All profiles served from cache!`);
+    logger.info('streaming_cache_all_served');
     return {
       totalBatches: completedBatches,
       completedBatches,
@@ -331,7 +347,10 @@ export async function processBatchedCollectionStreaming(
   // Skip BrightData if cache hit rate is >= 50% (we have enough data)
   const cacheHitRate = cachedProfiles.size / urls.length;
   if (cacheHitRate >= 0.5) {
-    console.log(`[Streaming] Cache hit rate ${(cacheHitRate * 100).toFixed(0)}% >= 50%, skipping BrightData for ${uncachedUrls.length} uncached profiles`);
+    logger.info('streaming_cache_skip_brightdata', {
+      cache_hit_rate: cacheHitRate,
+      uncached_profiles: uncachedUrls.length,
+    });
     return {
       totalBatches: completedBatches,
       completedBatches,
@@ -372,7 +391,11 @@ export async function processBatchedCollectionStreaming(
     allBatches.push({ urls: batch, platform: 'tiktok', batchIndex: cachedBatchCount + allBatches.length });
   });
   
-  console.log(`[Streaming] Created ${allBatches.length} batches (${instagramBatches.length} Instagram, ${tiktokBatches.length} TikTok)`);
+  logger.info('streaming_batches_created', {
+    total_batches: allBatches.length,
+    instagram_batches: instagramBatches.length,
+    tiktok_batches: tiktokBatches.length,
+  });
 
   // Step 2: Trigger all batches with concurrency control (max 20 at once)
   const BATCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per batch
@@ -387,7 +410,12 @@ export async function processBatchedCollectionStreaming(
   for (let i = 0; i < allBatches.length; i += maxTriggerConcurrency) {
     const batchChunk = allBatches.slice(i, i + maxTriggerConcurrency);
     
-    console.log(`[Streaming] Triggering batches ${i + 1}-${Math.min(i + maxTriggerConcurrency, allBatches.length)} of ${allBatches.length} (max ${maxTriggerConcurrency} concurrent)`);
+    logger.debug('streaming_batches_triggering', {
+      start_batch: i + 1,
+      end_batch: Math.min(i + maxTriggerConcurrency, allBatches.length),
+      total_batches: allBatches.length,
+      max_concurrent: maxTriggerConcurrency,
+    });
     
     const chunkResults = await Promise.allSettled(
       batchChunk.map(async (batch) => {
@@ -405,7 +433,7 @@ export async function processBatchedCollectionStreaming(
       if (result.status === 'fulfilled') {
         snapshots.push(result.value);
       } else {
-        console.error(`[Streaming] Failed to trigger batch: ${result.reason}`);
+        logger.error('streaming_batch_trigger_failed', { reason: result.reason });
       }
     }
     
@@ -423,7 +451,10 @@ export async function processBatchedCollectionStreaming(
     timingTracker.endSubStage('brightdata_collection', 'batch_triggering');
   }
   
-  console.log(`[Streaming] Successfully triggered ${snapshots.length}/${allBatches.length} batches`);
+  logger.info('streaming_batches_triggered', {
+    triggered: snapshots.length,
+    total: allBatches.length,
+  });
   
   // Step 3: Poll and process batches as they become ready
   const startTime = Date.now();
@@ -435,7 +466,7 @@ export async function processBatchedCollectionStreaming(
     const elapsed = Date.now() - startTime;
     if (elapsed >= maxWaitMs) {
       const remaining = snapshots.filter(s => !processedSnapshots.has(s.snapshot_id));
-      console.error(`[Streaming] Timeout: ${remaining.length} batches still processing`);
+      logger.error('streaming_batches_timeout', { remaining: remaining.length });
       failedBatches += remaining.length;
       break;
     }
@@ -457,7 +488,7 @@ export async function processBatchedCollectionStreaming(
               await onBatchComplete(result);
             } : undefined;
             const processPromise = processBatchAsReady(snapshot, apiKey, baseUrl, batchCallback).catch((error) => {
-              console.error(`[Streaming] Failed to process batch ${snapshot.batch_index + 1}:`, error);
+              logger.error('streaming_batch_process_failed', { batch_index: snapshot.batch_index + 1, error });
               failedBatches++;
             });
 
@@ -465,21 +496,29 @@ export async function processBatchedCollectionStreaming(
           } else if (progress.status === 'failed') {
             processedSnapshots.add(snapshot.snapshot_id);
             failedBatches++;
-            console.error(`[Streaming] Batch ${snapshot.batch_index + 1} failed`);
+            logger.error('streaming_batch_failed', { batch_index: snapshot.batch_index + 1 });
           } else {
             // Check if batch has timed out (5 minutes)
             const batchAge = Date.now() - snapshot.triggered_at;
             if (batchAge >= BATCH_TIMEOUT_MS) {
               processedSnapshots.add(snapshot.snapshot_id);
               failedBatches++;
-              console.error(`[Streaming] Batch ${snapshot.batch_index + 1} timed out after ${Math.round(batchAge / 1000)}s (status: ${progress.status})`);
+              logger.error('streaming_batch_timed_out', {
+                batch_index: snapshot.batch_index + 1,
+                elapsed_seconds: Math.round(batchAge / 1000),
+                status: progress.status,
+              });
             } else {
               // Log status for debugging stuck batches
-              console.log(`[Streaming] Batch ${snapshot.batch_index + 1} status: ${progress.status} (${Math.round(batchAge / 1000)}s elapsed)`);
+              logger.debug('streaming_batch_status', {
+                batch_index: snapshot.batch_index + 1,
+                status: progress.status,
+                elapsed_seconds: Math.round(batchAge / 1000),
+              });
             }
           }
         } catch (error) {
-          console.error(`[Streaming] Error checking snapshot ${snapshot.snapshot_id}:`, error);
+          logger.error('streaming_snapshot_check_failed', { snapshot_id: snapshot.snapshot_id, error });
         }
       });
     
@@ -491,7 +530,11 @@ export async function processBatchedCollectionStreaming(
     // If not all processed, wait before next poll
     if (processedSnapshots.size < snapshots.length) {
       const ready = snapshots.filter(s => processedSnapshots.has(s.snapshot_id)).length;
-      console.log(`[Streaming] Progress: ${ready}/${snapshots.length} batches ready, waiting ${pollingInterval}s...`);
+      logger.debug('streaming_progress', {
+        ready,
+        total: snapshots.length,
+        polling_interval: pollingInterval,
+      });
       await new Promise(resolve => setTimeout(resolve, pollingInterval * 1000));
     }
   }
@@ -500,7 +543,13 @@ export async function processBatchedCollectionStreaming(
   await Promise.allSettled(processingPromises);
   
   const totalTime = Math.floor((Date.now() - startTime) / 1000);
-  console.log(`[Streaming] Completed! Processed ${completedBatches} batches, ${failedBatches} failed, ${totalProfiles} profiles in ${totalTime}s (${cachedProfiles.size} from cache)`);
+  logger.info('streaming_completed', {
+    completed_batches: completedBatches,
+    failed_batches: failedBatches,
+    total_profiles: totalProfiles,
+    duration_seconds: totalTime,
+    cache_hits: cachedProfiles.size,
+  });
 
   return {
     totalBatches: snapshots.length + (cachedProfiles.size > 0 ? 1 : 0),
@@ -510,4 +559,3 @@ export async function processBatchedCollectionStreaming(
     cacheHits: cachedProfiles.size,
   };
 }
-

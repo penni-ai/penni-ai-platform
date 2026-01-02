@@ -92,13 +92,13 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
     return typeof statusPipelineId === 'string' && statusPipelineId ? statusPipelineId : null;
   });
 
-  let isCancellingPipeline = $state(false);
-  let cancelPipelineError = $state<string | null>(null);
+	  let isCancellingPipeline = $state(false);
+	  let cancelPipelineError = $state<string | null>(null);
 
-  async function cancelPipeline(): Promise<void> {
-    if (!browser) return;
-    const pipelineId = activePipelineId;
-    if (!pipelineId || isCancellingPipeline) return;
+	  async function cancelPipeline(): Promise<void> {
+	    if (!browser) return;
+	    const pipelineId = activePipelineId();
+	    if (!pipelineId || isCancellingPipeline) return;
 
     cancelPipelineError = null;
     const confirmed = window.confirm('Cancel this influencer search?');
@@ -116,10 +116,29 @@ import type { SerializedCampaign } from '$lib/server/campaigns';
       }
     } catch (error) {
       cancelPipelineError = error instanceof Error ? error.message : 'Failed to cancel pipeline';
-    } finally {
-      isCancellingPipeline = false;
-    }
-  }
+	    } finally {
+	      isCancellingPipeline = false;
+	    }
+	  }
+
+	  async function rerunCancelledPipeline(): Promise<void> {
+	    if (!browser) return;
+	    if (isSearchFormSubmitting) return;
+
+	    const confirmed = window.confirm('Rerun this influencer search?');
+	    if (!confirmed) return;
+
+	    const description = buildDescription() || influencerSummary || 'Find relevant influencers for my campaign.';
+	    const targetCampaignId = effectiveCampaign?.id ?? campaignId ?? null;
+	    onSubmit({
+	      business_description: description,
+	      top_n: topNLocal,
+	      min_followers: minFollowersLocal,
+	      max_followers: maxFollowersLocal,
+	      campaign_id: targetCampaignId,
+	      strict_location_matching: strictLocationMatching
+	    });
+	  }
 
   let brand = $state('');
   let website = $state('');
@@ -1742,33 +1761,65 @@ let showGmailTypeModal = $state(false);
                     {/each}
                   </div>
                 {/key}
-                <p style="font-size: 12px; text-align: center; color: var(--color-text-muted); font-style: italic; margin: 0;">
-                  Preliminary matches. Final results may differ after analysis.
-                </p>
-            </div>
-          {:else}
-            <!-- No preview profiles yet - show "Starting Search" -->
-            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 48px;">
-              <div style="display: flex; flex-direction: column; align-items: center; gap: 16px;">
-                <!-- Animated search icon -->
-                <div style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)); display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite;">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="m21 21-4.35-4.35"></path>
-                  </svg>
-                </div>
-                <!-- "Starting Search" with animated dots -->
-                <div style="font-size: 18px; font-weight: 600; color: var(--color-text);">
-                  Starting Search<span class="animated-dots"></span>
-                </div>
-                <p style="font-size: 14px; color: var(--color-text-muted); text-align: center; max-width: 320px; margin: 0;">
-                  We're generating search queries to find the best creators for your campaign.
-                </p>
-              </div>
-            </div>
-          {/if}
-        </div>
-      {/if}
+	              <p style="font-size: 12px; text-align: center; color: var(--color-text-muted); font-style: italic; margin: 0;">
+	                Preliminary matches. Final results may differ after analysis.
+	              </p>
+	              {#if pipelineStatus?.status === 'cancelled'}
+	                <div style="display: flex; justify-content: center; padding-top: 12px;">
+	                  <Button
+	                    variant="primary"
+	                    size="sm"
+	                    disabled={isSearchFormSubmitting}
+	                    onclick={() => void rerunCancelledPipeline()}
+	                  >
+	                    Rerun search
+	                  </Button>
+	                </div>
+	              {/if}
+	          </div>
+	        {:else}
+	          {#if pipelineStatus?.status === 'cancelled'}
+	            <!-- Pipeline cancelled before any preview candidates were available -->
+	            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 48px;">
+	              <div style="font-size: 18px; font-weight: 600; color: var(--color-text);">
+	                Search cancelled
+	              </div>
+	              <p style="font-size: 14px; color: var(--color-text-muted); text-align: center; max-width: 380px; margin: 0;">
+	                Rerun the search to keep finding creators.
+	              </p>
+	              <Button
+	                variant="primary"
+	                size="sm"
+	                disabled={isSearchFormSubmitting}
+	                onclick={() => void rerunCancelledPipeline()}
+	              >
+	                Rerun search
+	              </Button>
+	            </div>
+	          {:else}
+	            <!-- No preview profiles yet - show "Starting Search" -->
+	            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 48px;">
+	              <div style="display: flex; flex-direction: column; align-items: center; gap: 16px;">
+	                <!-- Animated search icon -->
+	                <div style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)); display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite;">
+	                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+	                    <circle cx="11" cy="11" r="8"></circle>
+	                    <path d="m21 21-4.35-4.35"></path>
+	                  </svg>
+	                </div>
+	                <!-- "Starting Search" with animated dots -->
+	                <div style="font-size: 18px; font-weight: 600; color: var(--color-text);">
+	                  Starting Search<span class="animated-dots"></span>
+	                </div>
+	                <p style="font-size: 14px; color: var(--color-text-muted); text-align: center; max-width: 320px; margin: 0;">
+	                  We're generating search queries to find the best creators for your campaign.
+	                </p>
+	              </div>
+	            </div>
+	          {/if}
+	        {/if}
+	      </div>
+	    {/if}
 
       {#if shouldShowResults()}
         <!-- Scrollable table area -->
@@ -1835,56 +1886,85 @@ let showGmailTypeModal = $state(false);
                   </button>
                 {/if}
               </div>
-	            {:else}
-	              <!-- Show pipeline status when still running (progressive results) -->
-	              {@const batchesCompleted = pipelineStatus?.stages?.brightdata_collection?.batches_completed ?? 0}
-	              {@const totalBatches = pipelineStatus?.stages?.brightdata_collection?.total_batches ?? 0}
-	              {@const progress = pipelineStatus?.overall_progress ?? 0}
-	              <div style="flex: 1; display: flex; align-items: center; gap: 16px;">
-	                <!-- Animated pulse indicator -->
-	                <div style="width: 10px; height: 10px; background: var(--color-primary); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; flex-shrink: 0;"></div>
+		            {:else}
+		              {#if pipelineStatus?.status === 'cancelled'}
+		                <div style="flex: 1; display: flex; align-items: center; gap: 16px;">
+		                  <div style="width: 10px; height: 10px; background: var(--color-text-muted); border-radius: 50%; flex-shrink: 0;"></div>
 
-	                <!-- Progress bar and text -->
-	                <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
-                  <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-size: 14px; font-weight: 500; color: var(--color-text);">
-                      Showing best {pipelineStatus?.profiles?.length ?? 0} matches so far
-                    </span>
-                    <span style="font-size: 12px; color: var(--color-text-muted);">
-                      {Math.round($tweenedProgress)}%
-                    </span>
-                  </div>
-                  <!-- Progress bar -->
-                  <div style="height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden;">
-                    <div style="height: 100%; width: {$tweenedProgress}%; background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover)); border-radius: 3px;"></div>
-                  </div>
-	                  {#if batchesCompleted > 0 && totalBatches > 0}
-	                    <span style="font-size: 11px; color: var(--color-text-muted);">
-	                      {batchesCompleted} of {totalBatches} batches complete — results update as more finish
-	                    </span>
-	                  {/if}
-	                </div>
+		                  <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+		                    <div style="display: flex; align-items: center; justify-content: space-between;">
+		                      <span style="font-size: 14px; font-weight: 500; color: var(--color-text);">
+		                        Search cancelled
+		                      </span>
+		                      <span style="font-size: 12px; color: var(--color-text-muted);">
+		                        {pipelineStatus?.profiles?.length ?? 0} matches saved
+		                      </span>
+		                    </div>
+		                    <span style="font-size: 11px; color: var(--color-text-muted);">
+		                      Rerun the search to keep finding creators.
+		                    </span>
+		                  </div>
 
-	                {#if pipelineStatus?.status === 'running' || pipelineStatus?.status === 'pending'}
-	                  <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0;">
-	                    <Button
-	                      variant="outline"
-	                      size="sm"
-	                      onclick={() => void cancelPipeline()}
-	                      disabled={isCancellingPipeline || !activePipelineId}
-	                    >
-	                      {isCancellingPipeline ? 'Cancelling…' : 'Cancel search'}
-	                    </Button>
-	                    {#if cancelPipelineError}
-	                      <span style="font-size: 11px; color: var(--color-error); max-width: 240px; text-align: right;">
-	                        {cancelPipelineError}
+		                  <Button
+		                    variant="primary"
+		                    size="sm"
+		                    onclick={() => void rerunCancelledPipeline()}
+		                    disabled={isSearchFormSubmitting}
+		                  >
+		                    Rerun search
+		                  </Button>
+		                </div>
+		              {:else}
+		                <!-- Show pipeline status when still running (progressive results) -->
+		                {@const batchesCompleted = pipelineStatus?.stages?.brightdata_collection?.batches_completed ?? 0}
+		                {@const totalBatches = pipelineStatus?.stages?.brightdata_collection?.total_batches ?? 0}
+		                {@const progress = pipelineStatus?.overall_progress ?? 0}
+		                <div style="flex: 1; display: flex; align-items: center; gap: 16px;">
+		                  <!-- Animated pulse indicator -->
+		                  <div style="width: 10px; height: 10px; background: var(--color-primary); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; flex-shrink: 0;"></div>
+
+		                  <!-- Progress bar and text -->
+		                  <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+	                    <div style="display: flex; align-items: center; justify-content: space-between;">
+	                      <span style="font-size: 14px; font-weight: 500; color: var(--color-text);">
+	                        Showing best {pipelineStatus?.profiles?.length ?? 0} matches so far
 	                      </span>
-	                    {/if}
-	                  </div>
-	                {/if}
-	              </div>
-	            {/if}
-	          </div>
+	                      <span style="font-size: 12px; color: var(--color-text-muted);">
+	                        {Math.round($tweenedProgress)}%
+	                      </span>
+	                    </div>
+	                    <!-- Progress bar -->
+	                    <div style="height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden;">
+	                      <div style="height: 100%; width: {$tweenedProgress}%; background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover)); border-radius: 3px;"></div>
+	                    </div>
+			                  {#if batchesCompleted > 0 && totalBatches > 0}
+			                    <span style="font-size: 11px; color: var(--color-text-muted);">
+			                      {batchesCompleted} of {totalBatches} batches complete — results update as more finish
+			                    </span>
+			                  {/if}
+		                  </div>
+
+		                  {#if pipelineStatus?.status === 'running' || pipelineStatus?.status === 'pending'}
+		                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0;">
+		                      <Button
+		                        variant="outline"
+		                        size="sm"
+		                        onclick={() => void cancelPipeline()}
+		                        disabled={isCancellingPipeline || !activePipelineId()}
+		                      >
+		                        {isCancellingPipeline ? 'Cancelling…' : 'Cancel search'}
+		                      </Button>
+		                      {#if cancelPipelineError}
+		                        <span style="font-size: 11px; color: var(--color-error); max-width: 240px; text-align: right;">
+		                          {cancelPipelineError}
+		                        </span>
+		                      {/if}
+		                    </div>
+		                  {/if}
+		                </div>
+		              {/if}
+		            {/if}
+		          </div>
             
             <!-- Status indicators & Action row -->
             <div style="padding: 20px 32px; display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
@@ -2744,20 +2824,27 @@ let showGmailTypeModal = $state(false);
   .premium-overlay {
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, rgba(255, 111, 97, 0.15) 0%, rgba(255, 111, 97, 0.25) 100%);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    background:
+      radial-gradient(1200px 420px at 15% -10%, rgba(255, 111, 97, 0.16), transparent 55%),
+      linear-gradient(180deg, rgba(248, 250, 252, 0.88), rgba(241, 245, 249, 0.78));
+    backdrop-filter: blur(6px) saturate(1.05);
+    -webkit-backdrop-filter: blur(6px) saturate(1.05);
     z-index: 10;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
   }
 
   .premium-overlay-content {
     text-align: center;
-    padding: 2rem;
-    max-width: 400px;
+    padding: 2rem 2.25rem;
+    max-width: 440px;
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
   }
 
   .premium-badge {
@@ -2765,14 +2852,15 @@ let showGmailTypeModal = $state(false);
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 1rem;
-    background: var(--coral);
-    color: white;
+    background: rgba(255, 111, 97, 0.12);
+    color: var(--coral);
     font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     border-radius: 2rem;
     margin-bottom: 1.5rem;
+    border: 1px solid rgba(255, 111, 97, 0.25);
   }
 
   .premium-badge svg {

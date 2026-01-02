@@ -18,6 +18,9 @@ import {
   getBrightDataApiKey,
   getBrightDataBaseUrl,
 } from './brightdata-internal.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger({ component: 'batch-processor' });
 
 /**
  * Get BrightData Instagram dataset ID
@@ -167,12 +170,21 @@ async function triggerAllBatches(
   for (let i = 0; i < batches.length; i += maxConcurrent) {
     const batchChunk = batches.slice(i, i + maxConcurrent);
     
-    console.log(`[Batch Processor] Triggering batches ${i + 1}-${Math.min(i + maxConcurrent, batches.length)} of ${batches.length} (concurrency: ${batchChunk.length})`);
+    logger.debug('batch_triggering', {
+      start_batch: i + 1,
+      end_batch: Math.min(i + maxConcurrent, batches.length),
+      total_batches: batches.length,
+      concurrency: batchChunk.length,
+    });
     
     const chunkResults = await Promise.allSettled(
       batchChunk.map(async (batch) => {
         const snapshotId = await triggerBatch(batch.urls, batch.platform, apiKey, baseUrl, client);
-        console.log(`[Batch Processor] Batch ${batch.batchIndex + 1} (${batch.platform}) triggered: ${snapshotId.substring(0, 8)}...`);
+        logger.debug('batch_triggered', {
+          batch_index: batch.batchIndex + 1,
+          platform: batch.platform,
+          snapshot_id: snapshotId.substring(0, 8),
+        });
         return { snapshot_id: snapshotId, platform: batch.platform, batch_index: batch.batchIndex };
       })
     );
@@ -182,7 +194,7 @@ async function triggerAllBatches(
       if (result.status === 'fulfilled') {
         snapshots.push(result.value);
       } else {
-        console.error(`[Batch Processor] Failed to trigger batch: ${result.reason}`);
+        logger.error('batch_trigger_failed', { reason: result.reason });
       }
     }
     
@@ -247,7 +259,11 @@ async function pollAllSnapshots(
   const progressMap = new Map<string, BrightDataProgressResponse>();
   let pollCount = 0;
   
-  console.log(`[Batch Processor] Starting to poll ${snapshots.length} snapshots every ${pollingInterval}s (max wait: ${maxWaitTime}s)`);
+  logger.info('batch_polling_start', {
+    snapshots: snapshots.length,
+    polling_interval: pollingInterval,
+    max_wait_seconds: maxWaitTime,
+  });
   
   while (true) {
     pollCount++;
@@ -277,18 +293,25 @@ async function pollAllSnapshots(
     const running = allProgress.filter(p => p.status === 'running');
     const failed = allProgress.filter(p => p.status === 'failed');
     
-    console.log(`[Batch Processor Poll #${pollCount}] [${elapsedSeconds}s] Ready: ${ready.length}/${snapshots.length}, Running: ${running.length}, Failed: ${failed.length}`);
+    logger.debug('batch_poll_status', {
+      poll_count: pollCount,
+      elapsed_seconds: elapsedSeconds,
+      ready: ready.length,
+      total: snapshots.length,
+      running: running.length,
+      failed: failed.length,
+    });
     
     // Check for failures
     if (failed.length > 0) {
       const failedSnapshots = failed.map(f => f.snapshot_id).join(', ');
-      console.error(`[Batch Processor] ${failed.length} snapshot(s) failed: ${failedSnapshots}`);
+      logger.error('batch_poll_failed_snapshots', { failed: failed.length, snapshots: failedSnapshots });
       // Continue processing successful ones, but log failures
     }
     
     // Check if all ready/completed
     if (ready.length === snapshots.length) {
-      console.log(`[Batch Processor] All ${snapshots.length} snapshots are ready! Total time: ${elapsedSeconds}s`);
+      logger.info('batch_poll_complete', { snapshots: snapshots.length, elapsed_seconds: elapsedSeconds });
       return allProgress;
     }
     
@@ -361,12 +384,20 @@ async function downloadAllSnapshots(
   for (let i = 0; i < snapshots.length; i += maxConcurrent) {
     const chunk = snapshots.slice(i, i + maxConcurrent);
     
-    console.log(`[Batch Processor] Downloading snapshots ${i + 1}-${Math.min(i + maxConcurrent, snapshots.length)} of ${snapshots.length}`);
+    logger.debug('batch_download_start', {
+      start_batch: i + 1,
+      end_batch: Math.min(i + maxConcurrent, snapshots.length),
+      total: snapshots.length,
+    });
     
     const chunkResults = await Promise.allSettled(
       chunk.map(async (snapshot) => {
         const profiles = await downloadSnapshot(snapshot.snapshot_id, apiKey, baseUrl);
-        console.log(`[Batch Processor] Downloaded ${profiles.length} profiles from batch ${snapshot.batch_index + 1} (${snapshot.platform})`);
+        logger.debug('batch_download_complete', {
+          batch_index: snapshot.batch_index + 1,
+          platform: snapshot.platform,
+          profiles: profiles.length,
+        });
         return profiles;
       })
     );
@@ -376,7 +407,7 @@ async function downloadAllSnapshots(
       if (result.status === 'fulfilled') {
         allProfiles.push(...result.value);
       } else {
-        console.error(`[Batch Processor] Failed to download snapshot: ${result.reason}`);
+        logger.error('batch_download_failed', { reason: result.reason });
       }
     }
     
@@ -409,7 +440,11 @@ export async function processBatchedCollection(
   const apiKey = getBrightDataApiKey();
   const baseUrl = getBrightDataBaseUrl();
   
-  console.log(`[Batch Processor] Starting batch processing: ${urls.length} profiles, batch size: ${batchSize}, max concurrent: ${maxConcurrentBatches}`);
+  logger.info('batch_processing_start', {
+    profiles: urls.length,
+    batch_size: batchSize,
+    max_concurrent_batches: maxConcurrentBatches,
+  });
   
   // Step 1: Group URLs by platform and create batches
   const instagramUrls: string[] = [];
@@ -437,7 +472,11 @@ export async function processBatchedCollection(
     allBatches.push({ urls: batch, platform: 'tiktok', batchIndex: allBatches.length });
   });
   
-  console.log(`[Batch Processor] Created ${allBatches.length} batches (${instagramBatches.length} Instagram, ${tiktokBatches.length} TikTok)`);
+  logger.info('batch_created', {
+    total_batches: allBatches.length,
+    instagram_batches: instagramBatches.length,
+    tiktok_batches: tiktokBatches.length,
+  });
   
   // Step 2: Trigger all batches with controlled concurrency
   const snapshots = await triggerAllBatches(allBatches, apiKey, baseUrl, maxConcurrentBatches);
@@ -446,13 +485,13 @@ export async function processBatchedCollection(
     throw new Error('Failed to trigger any batches');
   }
   
-  console.log(`[Batch Processor] Successfully triggered ${snapshots.length}/${allBatches.length} batches`);
+  logger.info('batch_triggered_all', { triggered: snapshots.length, total: allBatches.length });
   
   // Step 3: Poll all snapshots until ready
   const finalProgresses = await pollAllSnapshots(snapshots, apiKey, baseUrl, pollingInterval, maxWaitTime);
   
   // Step 4: Download all snapshots with controlled concurrency
-  console.log(`[Batch Processor] Downloading results from ${snapshots.length} snapshots...`);
+  logger.info('batch_download_results_start', { snapshots: snapshots.length });
   const allProfiles = await downloadAllSnapshots(snapshots, apiKey, baseUrl, maxConcurrentBatches);
   
   const totalTime = Math.floor((Date.now() - startTime) / 1000);
@@ -460,8 +499,12 @@ export async function processBatchedCollection(
   const successfulBatches = finalProgresses.filter(p => p.status === 'ready' || p.status === 'completed').length;
   const failedBatches = finalProgresses.filter(p => p.status === 'failed').length;
   
-  console.log(`[Batch Processor] Completed! Downloaded ${allProfiles.length} profiles in ${totalTime}s`);
-  console.log(`[Batch Processor] Successful batches: ${successfulBatches}, Failed: ${failedBatches}`);
+  logger.info('batch_processing_complete', {
+    profiles: allProfiles.length,
+    duration_seconds: totalTime,
+    successful_batches: successfulBatches,
+    failed_batches: failedBatches,
+  });
   
   return {
     profiles: allProfiles,
@@ -479,4 +522,3 @@ export async function processBatchedCollection(
     },
   };
 }
-

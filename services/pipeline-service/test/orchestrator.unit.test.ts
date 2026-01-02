@@ -4,7 +4,7 @@ import { FakeFirestore } from './helpers/fake-firebase';
 
 let db: FakeFirestore;
 const createPipelineJob = vi.fn(async () => 'job_orch_1');
-const publishMessage = vi.fn(async () => 'msg_1');
+const enqueueTask = vi.fn(async () => {});
 
 vi.mock('../dist/utils/firebase-admin.js', () => ({
 	getFirestoreInstance: () => db
@@ -14,12 +14,8 @@ vi.mock('../dist/utils/firestore-tracker.js', () => ({
 	createPipelineJob: (...args: any[]) => createPipelineJob(...args)
 }));
 
-vi.mock('@google-cloud/pubsub', () => ({
-	PubSub: class {
-		topic(_name: string) {
-			return { publishMessage: (...args: any[]) => publishMessage(...args) };
-		}
-	}
+vi.mock('../dist/utils/cloud-tasks.js', () => ({
+	enqueueTask: (...args: any[]) => enqueueTask(...args)
 }));
 
 function makeRes() {
@@ -48,7 +44,6 @@ describe('orchestrator (unit)', () => {
 		delete process.env.FIREBASE_STORAGE_EMULATOR_HOST;
 		delete process.env.FIREBASE_AUTH_EMULATOR_HOST;
 		process.env.GOOGLE_CLOUD_PROJECT = 'proj_1';
-		process.env.PUBSUB_TOPIC_NAME = 'pipeline.start';
 	});
 
 	it('returns 400 for invalid follower bounds', async () => {
@@ -86,7 +81,7 @@ describe('orchestrator (unit)', () => {
 		expect(createPipelineJob).not.toHaveBeenCalled();
 	});
 
-	it('publishes to Pub/Sub in production mode', async () => {
+	it('enqueues a stage task in production mode', async () => {
 		// Seed campaign to pass validation.
 		await db
 			.collection('users')
@@ -115,22 +110,18 @@ describe('orchestrator (unit)', () => {
 		expect(res.body?.job_id).toBe('job_orch_1');
 
 		expect(createPipelineJob).toHaveBeenCalledTimes(1);
-		expect(publishMessage).toHaveBeenCalledTimes(1);
-		const published = publishMessage.mock.calls[0]?.[0];
-		expect(published?.json?.job_id).toBe('job_orch_1');
-		expect(published?.json?.weaviate_top_n).toBe(800);
-		expect(published?.json?.exclude_profile_urls).toEqual(['https://instagram.com/already/']);
-		expect(published?.json?.strict_location_matching).toBe(true);
+		expect(enqueueTask).toHaveBeenCalledTimes(1);
+		const enqueued = enqueueTask.mock.calls[0]?.[0];
+		expect(enqueued?.kind).toBe('stage');
+		expect(enqueued?.path).toBe('/tasks/pipeline-stage');
+		expect(enqueued?.payload?.job_id).toBe('job_orch_1');
+		expect(enqueued?.payload?.weaviate_top_n).toBe(800);
+		expect(enqueued?.payload?.exclude_profile_urls).toEqual(['https://instagram.com/already/']);
+		expect(enqueued?.payload?.strict_location_matching).toBe(true);
 	});
 
-	it('skips campaign validation in emulator mode and logs fetch failures', async () => {
+	it('skips campaign validation in emulator mode and enqueues tasks', async () => {
 		process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
-
-		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-		const fetchMock = vi.fn(async () => {
-			throw new Error('net down');
-		});
-		vi.stubGlobal('fetch', fetchMock as any);
 
 		const { handlePipelineStart } = await import('../dist/handlers/orchestrator.js');
 
@@ -148,13 +139,7 @@ describe('orchestrator (unit)', () => {
 
 		expect(res.statusCode).toBe(202);
 		expect(createPipelineJob).toHaveBeenCalledTimes(1);
-
-		// Allow fetch().catch(...) to run.
-		await new Promise((resolve) => setImmediate(resolve));
-		expect(errorSpy).toHaveBeenCalled();
-
-		errorSpy.mockRestore();
-		vi.unstubAllGlobals();
+		expect(enqueueTask).toHaveBeenCalledTimes(1);
 	});
 
 	it('returns 500 when job creation fails', async () => {

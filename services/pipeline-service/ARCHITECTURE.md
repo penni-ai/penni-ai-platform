@@ -2,11 +2,11 @@
 
 ## Overview
 
-The Pipeline Service is a **monolithic Cloud Run service** that combines HTTP orchestration and Pub/Sub-triggered background processing into a single application. This architecture provides fast response times for job creation while enabling long-running asynchronous pipeline execution.
+The Pipeline Service is a **monolithic Cloud Run service** that combines HTTP orchestration and Cloud Tasks-driven background processing into a single application. This architecture provides fast response times for job creation while enabling long-running asynchronous pipeline execution.
 
 The pipeline is **cache-first** (BrightData Firestore cache), **streams results to the frontend** (Firestore + progressive Storage artifacts), and **stops early** once enough high-fit profiles are found.
 
-## Architecture Pattern: Orchestrator-Worker with Pub/Sub
+## Architecture Pattern: Orchestrator-Worker with Cloud Tasks
 
 ```
 ┌─────────────────┐
@@ -23,27 +23,26 @@ The pipeline is **cache-first** (BrightData Firestore cache), **streams results 
 │  │  POST /pipeline/start             │ │
 │  │  - Validates request              │ │
 │  │  - Creates Firestore job          │ │
-│  │  - Publishes to Pub/Sub           │ │
+│  │  - Enqueues Cloud Tasks           │ │
 │  │  - Returns 202 Accepted           │ │
 │  └──────────────┬────────────────────┘ │
 │                 │                       │
-│                 │ Publishes message     │
+│                 │ Enqueues tasks        │
 │                 ▼                       │
 │  ┌──────────────────────────────────┐  │
-│  │  Google Cloud Pub/Sub             │  │
-│  │  Topic: pipeline.start           │  │
+│  │  Cloud Tasks Queues               │  │
+│  │  pipeline-stage / batch / poll    │  │
 │  └──────────────┬───────────────────┘  │
 │                 │                       │
-│                 │ Triggers via push     │
-│                 │ subscription          │
+│                 │ Invokes task handlers │
 │                 ▼                       │
 │  ┌──────────────────────────────────┐  │
-│  │  WORKER                          │  │
-│  │  POST /pubsub/pipeline-start     │  │
-│  │  - Decodes Pub/Sub message       │  │
-│  │  - Executes full pipeline        │  │
-│  │  - Updates Firestore status     │  │
-│  │  - Returns 204 immediately       │  │
+│  │  TASK HANDLERS                   │  │
+│  │  POST /tasks/pipeline-stage      │  │
+│  │  POST /tasks/pipeline-batch      │  │
+│  │  POST /tasks/pipeline-poll       │  │
+│  │  - Executes pipeline stages      │  │
+│  │  - Updates Firestore status      │  │
 │  └──────────────────────────────────┘  │
 └─────────────────────────────────────────┘
          │
@@ -80,7 +79,7 @@ The pipeline is **cache-first** (BrightData Firestore cache), **streams results 
 - ✅ **Request Validation**: Validates input using Zod schema
 - ✅ **Business Logic Validation**: Checks campaign existence, follower bounds
 - ✅ **Job Creation**: Creates Firestore document with job metadata
-- ✅ **Pub/Sub Publishing**: Publishes message to trigger background processing
+- ✅ **Cloud Tasks Enqueue**: Enqueues a stage task to trigger background processing
 - ✅ **Fast Response**: Returns `202 Accepted` immediately (typically < 500ms)
 
 **Flow**:
@@ -90,77 +89,53 @@ The pipeline is **cache-first** (BrightData Firestore cache), **streams results 
 3. Validate campaign exists (if campaign_id provided)
 4. Validate follower bounds (if provided)
 5. Create Firestore job document (status: "pending")
-6. Publish message to Pub/Sub topic "pipeline.start"
+6. Enqueue Cloud Task to `/tasks/pipeline-stage`
 7. Return 202 Accepted with job_id
 ```
 
 **Key Characteristics**:
-- **Synchronous**: Waits for Firestore write and Pub/Sub publish
+- **Synchronous**: Waits for Firestore write and Cloud Tasks enqueue
 - **Fast**: Completes in < 500ms typically
 - **Idempotent**: Can be retried safely (creates new job each time)
 - **Non-blocking**: Doesn't wait for pipeline execution
 
-### 2. Pub/Sub Topic (`pipeline.start`)
+### 2. Cloud Tasks Queues
 
-**Purpose**: Decouples job creation from job execution, enabling:
+**Purpose**: Decouple job creation from job execution, enabling:
 - Asynchronous processing
 - Retry handling
-- Scalability (multiple workers can process messages)
-- Reliability (messages persist if service is down)
+- Concurrency control
+- Durability across restarts
 
-**Message Format**:
-```json
-{
-  "job_id": "job_1234567890_abc123",
-  "uid": "user-123",
-  "campaign_id": "campaign-456",
-  "business_description": "coffee shop in San Francisco",
-  "top_n": 30,
-  "min_followers": 10000,
-  "max_followers": 1000000,
-  "platform": "instagram",
-  "request_id": "req_1234567890_xyz789"
-}
-```
+**Queues**:
+- `pipeline-stage` - Stage orchestration (query expansion + weaviate search + batch creation)
+- `pipeline-batch` - Batch execution (cache + BrightData triggering)
+- `pipeline-poll` - BrightData polling/download tasks
 
 **Delivery**:
-- Push subscription to Cloud Run endpoint `/pubsub/pipeline-start`
-- Pub/Sub automatically retries failed deliveries
-- Messages are acknowledged with `204 No Content`
+- HTTP tasks invoke `/tasks/pipeline-stage`, `/tasks/pipeline-batch`, `/tasks/pipeline-poll`
+- OIDC-authenticated requests with the pipeline service account
 
-### 3. Worker (`/pubsub/pipeline-start`)
+### 3. Task Handlers
 
-**Purpose**: Executes the full pipeline asynchronously when triggered by Pub/Sub.
+**Purpose**: Execute the pipeline asynchronously via Cloud Tasks.
 
 **Responsibilities**:
-- ✅ **Message Parsing**: Decodes base64 Pub/Sub message
-- ✅ **Pipeline Execution**: Runs all 5 pipeline stages
+- ✅ **Stage Execution**: Query expansion + Weaviate search + batch creation
+- ✅ **Batch Execution**: Cache-first analysis + BrightData triggering
+- ✅ **Polling**: BrightData progress checks + downloads
 - ✅ **Status Updates**: Updates Firestore with progress
 - ✅ **Error Handling**: Catches errors and updates job status
-- ✅ **Quick Acknowledgment**: Returns `204` immediately (doesn't await pipeline)
 
 **Flow**:
 ```
-1. Receive Pub/Sub push notification
-2. Decode base64 message data
-3. Parse JSON payload
-4. Return 204 immediately (acknowledge message)
-5. Execute pipeline asynchronously:
-   a. Query Expansion (OpenAI)
-   b. Parallel Hybrid Search (Weaviate)
-   c. Extract Top N Profiles
-   d. BrightData Collection (streaming batches)
-   e. LLM Analysis (concurrent)
-6. Store results in Firestore + Cloud Storage
-7. Update job status to "completed"
+1. /tasks/pipeline-stage runs query expansion + weaviate search
+2. Creates batch documents and enqueues /tasks/pipeline-batch
+3. Batch tasks trigger BrightData or process cached profiles
+4. Poll tasks check BrightData until ready, then download results
+5. Results stored in Firestore + Cloud Storage
+6. Finalization merges results and updates job status
 ```
-
-**Key Characteristics**:
-- **Asynchronous**: Pipeline runs in background after acknowledging message
-- **Long-running**: Can take 5-30 minutes depending on batch size
-- **Resilient**: Errors are caught and logged, job status updated
-- **Cancellable**: Checks for cancellation at each stage
-- **Progress Tracking**: Updates Firestore with stage progress
 
 ## Pipeline Stages (Worker Execution)
 
@@ -194,14 +169,14 @@ This stage is optimized for “time-to-first-scored-profiles”.
 - **Input**: Weaviate candidate URLs (up to `weaviate_top_n`)
 - **Action**: Load cached raw BrightData rows in bulk, normalize, run LLM fit immediately
 - **Output**: Scored profiles stored incrementally (per-batch files + progressive top-N)
-- **Stop condition**: If we already found `top_n` profiles with `fit_score >= 90` (9/10+), skip BrightData entirely
+- **Stop condition**: If we already found `top_n` profiles with `fit_score >= 100` (10/10), skip BrightData entirely
 
 **Phase B — BrightData live collection only for cache misses**
 - **Service**: BrightData API + Firestore cache write-through
 - **Input**: Remaining (uncached) URLs from the Weaviate pool
 - **Batching**: 20 urls per batch, keep 5 batches in-flight when possible (≈100 urls)
 - **Processing**: As each snapshot becomes ready → download → normalize → LLM fit → persist batch → update progressive top-N
-- **Stop condition**: Stop early as soon as `top_n` profiles with `fit_score >= 90` are found, or end when the pool is exhausted
+- **Stop condition**: Stop early as soon as `top_n` profiles with `fit_score >= 100` are found, or end when the pool is exhausted
 
 **LLM concurrency**
 - Hard cap of 100 concurrent profile analyses (env-configurable but clamped to ≤100 in worker)
@@ -216,7 +191,7 @@ This stage is optimized for “time-to-first-scored-profiles”.
 The UI experience is built around **realtime Firestore updates** and **Storage-backed payloads**:
 
 - The campaign page listens to `pipeline_jobs/{job_id}` via Firestore `onSnapshot` (realtime).
-- When counts/paths change (e.g. `weaviate_search.candidates_count`, `progressive_profiles_count`, `profiles_count`), the page fetches `GET /api/pipeline/{job_id}` to load JSON from Storage server-side (avoids CORS and keeps bucket access private).
+- When payload signals change (e.g. `weaviate_search.candidates_count`, `progressive_profiles_revision`, `profiles_count`), the page fetches `GET /api/pipeline/{job_id}` to load JSON from Storage server-side (avoids CORS and keeps bucket access private).
 - During execution, the worker writes:
   - **Weaviate candidates** → `candidates_storage_path` (preliminary list)
   - **Batch results** → `pipeline_jobs/{job_id}/profiles_batch_{i}.json` (one file per batch)
@@ -233,7 +208,7 @@ Weaviate candidates → BrightData batches (streaming, high concurrency) → LLM
 
 **Issues**
 - Spent time and money collecting profiles that were already cached.
-- No “good-fit” early-stop: often processed the full candidate pool even after enough 9/10+ matches were found.
+- No “good-fit” early-stop: often processed the full candidate pool even after enough 10/10 matches were found.
 - Higher BrightData concurrency (more in-flight batches than needed) increased cost/pressure and didn’t improve time-to-first-good-result.
 
 ### Current approach (cache-first + early stop)
@@ -242,7 +217,7 @@ Weaviate candidates → BrightData batches (streaming, high concurrency) → LLM
 Weaviate pool (>=500, or top_n*4)
   → Firestore BrightData cache lookup
      → LLM fit cached first → progressive results to frontend
-        → if enough (>= top_n with fit >= 90): stop
+        → if enough (>= top_n with fit >= 100): stop
         → else: trigger BrightData only for cache misses (20 urls/batch, 5 in-flight)
               → download → normalize → LLM fit → progressive results
               → stop when target reached or pool exhausted
@@ -266,12 +241,12 @@ Weaviate pool (>=500, or top_n*4)
    - Client doesn't wait for long-running pipeline
 
 2. **Scalability**
-   - Multiple Cloud Run instances can process Pub/Sub messages
-   - Pub/Sub handles message distribution
-   - Worker can scale independently
+   - Multiple Cloud Run instances can process task invocations
+   - Cloud Tasks handles queueing and dispatch
+   - Task handlers scale independently
 
 3. **Reliability**
-   - Pub/Sub retries failed messages
+   - Cloud Tasks retries failed tasks
    - Job status tracked in Firestore
    - Errors don't crash the service
 
@@ -293,11 +268,11 @@ Weaviate pool (>=500, or top_n*4)
    - ❌ Can't scale orchestrator and worker independently
    - ❌ Both share same resource limits
 
-2. **Pub/Sub Push**
+2. **Cloud Tasks**
    - ✅ Automatic retries
    - ✅ Decoupled architecture
-   - ❌ Requires public endpoint (Cloud Run handles this)
-   - ❌ Message acknowledgment complexity
+   - ✅ Concurrency + rate limits per queue
+   - ❌ Requires accurate task base URL
 
 ## Request/Response Flow
 
@@ -349,14 +324,14 @@ Firestore snapshot example:
 ### Orchestrator Errors
 - **Validation Errors**: Returns `400 Bad Request` with details
 - **Firestore Errors**: Returns `500 Internal Server Error`
-- **Pub/Sub Errors**: Returns `500 Internal Server Error`
+- **Task Enqueue Errors**: Returns `500 Internal Server Error`
 
-### Worker Errors
-- **Message Parsing Errors**: Logs error, returns `204` (acknowledges to prevent retries)
-- **Pipeline Errors**: 
+### Task Handler Errors
+- **Validation Errors**: Returns `400 Bad Request` (Cloud Tasks will retry based on status)
+- **Pipeline Errors**:
   - Updates job status to "error" in Firestore
   - Logs detailed error information
-  - Returns `204` (acknowledges message)
+  - Returns `500` (allows Cloud Tasks retry policy to apply)
 - **Cancellation**: Checks at each stage, updates status to "cancelled"
 
 ## Deployment
@@ -367,10 +342,12 @@ Firestore snapshot example:
 - **Timeout**: 3600s (1 hour, for long-running pipelines)
 - **Concurrency**: 1 (one request per instance)
 - **Min Instances**: 0 (scale to zero when idle)
-- **Max Instances**: 10 (auto-scales based on Pub/Sub load)
+- **Max Instances**: 10 (auto-scales based on task load)
 
 ### Environment Variables
-- `PUBSUB_TOPIC_NAME`: `pipeline.start`
+- `PIPELINE_TASKS_BASE_URL`: Cloud Run service URL
+- `CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL`: Task OIDC signer
+- `CLOUD_TASKS_OIDC_AUDIENCE`: Task OIDC audience
 - `WEAVIATE_COLLECTION_NAME`: `influencer_profiles`
 - `MAX_CONCURRENT_WEAVIATE_SEARCHES`: `12`
 - `MAX_CONCURRENT_LLM_REQUESTS`: `<= 100` (worker clamps to 100)
@@ -386,10 +363,10 @@ Firestore snapshot example:
 
 ### Key Metrics
 - **Orchestrator Latency**: P50, P95, P99 response times
-- **Worker Duration**: Pipeline execution time distribution
+- **Task Duration**: Pipeline task execution time distribution
 - **Job Success Rate**: Completed vs failed jobs
 - **Stage Durations**: Time per pipeline stage
-- **Pub/Sub Message Age**: Time between publish and processing
+- **Queue Backlog Age**: Oldest task age per queue
 
 ### Logging
 - Structured JSON logs for all operations

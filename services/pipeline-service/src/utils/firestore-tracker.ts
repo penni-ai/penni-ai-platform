@@ -11,11 +11,13 @@ import {
   resolvedStorageBucketName,
 } from './firebase-admin.js';
 import type { PipelineTimingData } from './timing-tracker.js';
+import { createLogger } from './logger.js';
 
 const db = getFirestoreInstance();
 const storage = getStorageInstance();
 const PIPELINE_COLLECTION = 'pipeline_jobs';
 const STORAGE_BUCKET_NAME = resolvedStorageBucketName || storage.bucket().name;
+const logger = createLogger({ component: 'firestore-tracker' });
 
 // Log configuration for debugging
 const pipelineServiceProjectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || 'unknown';
@@ -23,7 +25,7 @@ const pipelineServiceFirestoreEmulator = process.env.FIRESTORE_EMULATOR_HOST || 
 const pipelineServiceStorageBucket = STORAGE_BUCKET_NAME;
 const pipelineServiceStorageEmulator = process.env.FIREBASE_STORAGE_EMULATOR_HOST || process.env.STORAGE_EMULATOR_HOST || 'none';
 
-console.log(`[PipelineService] Firestore/Storage configuration:`, {
+logger.info('firestore_storage_configuration', {
 	projectId: pipelineServiceProjectId,
 	firestoreEmulator: pipelineServiceFirestoreEmulator,
 	storageBucket: pipelineServiceStorageBucket,
@@ -60,7 +62,7 @@ export async function cancelPipelineJob(jobId: string): Promise<void> {
     updated_at: Timestamp.now(),
   });
   
-  console.log(`[Firestore] Cancelled pipeline job ${jobId}`);
+  logger.info('pipeline_cancelled', { job_id: jobId });
 }
 
 /**
@@ -83,6 +85,7 @@ export type PipelineStage =
 export interface PipelineJobDocument {
   job_id: string;
   business_description: string;
+  pipeline_description?: string;
   status: PipelineJobStatus;
   current_stage: PipelineStage | null;
   completed_stages: PipelineStage[];
@@ -95,6 +98,18 @@ export interface PipelineJobDocument {
   cancel_requested?: boolean;
   uid?: string | null;
   campaign_id?: string | null;
+  strict_location_matching?: boolean;
+  tasks_execution_mode?: 'tasks';
+
+  // Task orchestration helpers
+  good_fit_count?: number;
+  stop_requested?: boolean;
+  cache_batches_total?: number;
+  cache_batches_completed?: number;
+  cache_batches_failed?: number;
+  brightdata_batches_total?: number;
+  brightdata_in_flight?: number;
+  finalization_started?: boolean;
 
   // Centralized timing data
   timing?: PipelineTimingData;
@@ -104,6 +119,7 @@ export interface PipelineJobDocument {
     status: StageStatus;
     queries: string[];
     prompt?: string; // The full prompt sent to the LLM for query generation
+    started_at?: Timestamp | null;
     completed_at?: Timestamp | null;
     error?: string | null;
   };
@@ -114,6 +130,7 @@ export interface PipelineJobDocument {
     deduplicated_results: number;
     queries_executed: number;
     candidates_count?: number;
+    started_at?: Timestamp | null;
     completed_at?: Timestamp | null;
     error?: string | null;
   };
@@ -129,6 +146,7 @@ export interface PipelineJobDocument {
     batches_failed?: number;
     total_batches?: number;
     completed_batch_indices?: number[]; // Track which batch indices have completed (for out-of-order completion)
+    started_at?: Timestamp | null;
     completed_at?: Timestamp | null;
     error?: string | null;
   };
@@ -136,6 +154,7 @@ export interface PipelineJobDocument {
   llm_analysis?: {
     status: StageStatus;
     profiles_analyzed: number;
+    started_at?: Timestamp | null;
     completed_at?: Timestamp | null;
     error?: string | null;
   };
@@ -152,6 +171,7 @@ export interface PipelineJobDocument {
   progressive_profiles_signed_url?: string;
   progressive_profiles_storage_path?: string;
   progressive_profiles_count?: number;
+  progressive_profiles_revision?: number;
   progressive_is_complete?: boolean; // True when all batches are processed
 
   // Legacy: Keep for backwards compatibility, but will be empty for large datasets
@@ -174,6 +194,9 @@ export interface PipelineJobDocument {
     openai_cost?: number;
     total_cost?: number;
   };
+
+  pipeline_summary?: string | null;
+  pipeline_waterfall?: string | null;
 }
 
 /**
@@ -205,16 +228,16 @@ export async function createPipelineJob(
   };
   if (metadata?.uid && typeof metadata.uid === 'string' && metadata.uid.trim()) {
     jobDoc.uid = metadata.uid.trim();
-    console.log(`[Firestore] Setting uid for pipeline job ${jobId}: ${jobDoc.uid}`);
+    logger.info('pipeline_uid_set', { job_id: jobId, uid: jobDoc.uid });
   } else {
-    console.warn(`[Firestore] No uid provided for pipeline job ${jobId}. Metadata:`, metadata);
+    logger.warn('pipeline_uid_missing', { job_id: jobId, metadata });
   }
   if (metadata?.campaignId && typeof metadata.campaignId === 'string' && metadata.campaignId.trim()) {
     jobDoc.campaign_id = metadata.campaignId.trim();
   }
   
   await db.collection(PIPELINE_COLLECTION).doc(jobId).set(jobDoc);
-  console.log(`[Firestore] Created pipeline job: ${jobId} with uid: ${jobDoc.uid || 'none'}`);
+  logger.info('pipeline_created', { job_id: jobId, uid: jobDoc.uid || 'none' });
   
   return jobId;
 }
@@ -245,7 +268,7 @@ export async function updatePipelineJobStatus(
   }
   
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
-  console.log(`[Firestore] Updated pipeline job ${jobId} status: ${status}`);
+  logger.info('pipeline_status_updated', { job_id: jobId, status });
 }
 
 /**
@@ -317,7 +340,12 @@ export async function updateProgress(
   }
   
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
-  console.log(`[Firestore] Updated progress for ${jobId}: ${clampedProgress}% (stage: ${stage || 'finalization'}, subStage: ${subStage || 'none'})`);
+  logger.debug('pipeline_progress_updated', {
+    job_id: jobId,
+    overall_progress: clampedProgress,
+    stage: stage || 'finalization',
+    sub_stage: subStage || 'none',
+  });
 }
 
 /**
@@ -333,7 +361,7 @@ export async function updatePipelineStage(
     overall_progress: Math.min(100, Math.max(0, progress)),
     updated_at: Timestamp.now(),
   });
-  console.log(`[Firestore] Updated pipeline job ${jobId} stage: ${stage} (${progress}%)`);
+  logger.debug('pipeline_stage_updated', { job_id: jobId, stage, progress });
 }
 
 /**
@@ -363,7 +391,7 @@ export async function completeStage(
     updated_at: Timestamp.now(),
   });
   
-  console.log(`[Firestore] Completed stage ${stage} for pipeline job ${jobId}`);
+  logger.info('pipeline_stage_completed', { job_id: jobId, stage });
 }
 
 /**
@@ -383,6 +411,10 @@ export async function updateQueryExpansionStage(
     'query_expansion.completed_at': status === 'completed' ? Timestamp.now() : null,
     updated_at: Timestamp.now(),
   };
+
+  if (status === 'running') {
+    updates['query_expansion.started_at'] = Timestamp.now();
+  }
   
   if (queries) {
     updates['query_expansion.queries'] = queries;
@@ -397,7 +429,7 @@ export async function updateQueryExpansionStage(
   }
   
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
-  console.log(`[Firestore] Updated query expansion stage for ${jobId}: ${status}`);
+  logger.info('pipeline_query_expansion_updated', { job_id: jobId, status });
 }
 
 /**
@@ -416,6 +448,10 @@ export async function updateWeaviateSearchStage(
     'weaviate_search.completed_at': status === 'completed' ? Timestamp.now() : null,
     updated_at: Timestamp.now(),
   };
+
+  if (status === 'running') {
+    updates['weaviate_search.started_at'] = Timestamp.now();
+  }
   
   if (totalResults !== undefined) {
     updates['weaviate_search.total_results'] = totalResults;
@@ -434,7 +470,7 @@ export async function updateWeaviateSearchStage(
   }
   
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
-  console.log(`[Firestore] Updated Weaviate search stage for ${jobId}: ${status}`);
+  logger.info('pipeline_weaviate_search_updated', { job_id: jobId, status });
 }
 
 /**
@@ -454,6 +490,10 @@ export async function updateBrightDataStage(
     'brightdata_collection.completed_at': status === 'completed' ? Timestamp.now() : null,
     updated_at: Timestamp.now(),
   };
+
+  if (status === 'running') {
+    updates['brightdata_collection.started_at'] = Timestamp.now();
+  }
 
   if (profilesRequested !== undefined) {
     updates['brightdata_collection.profiles_requested'] = profilesRequested;
@@ -492,6 +532,10 @@ export async function updateLLMAnalysisStage(
     'llm_analysis.completed_at': status === 'completed' ? Timestamp.now() : null,
     updated_at: Timestamp.now(),
   };
+
+  if (status === 'running') {
+    updates['llm_analysis.started_at'] = Timestamp.now();
+  }
   
   if (profilesAnalyzed !== undefined) {
     updates['llm_analysis.profiles_analyzed'] = profilesAnalyzed;
@@ -512,7 +556,7 @@ export async function storeRemainingProfiles(
   remainingProfiles: Array<BrightDataUnifiedProfile & { fit_score?: number; fit_rationale?: string; fit_summary?: string }>
 ): Promise<string> {
   if (!Array.isArray(remainingProfiles) || remainingProfiles.length === 0) {
-    console.log(`[Storage] No remaining profiles to store for job ${jobId}`);
+    logger.debug('storage_remaining_profiles_empty', { job_id: jobId });
     return '';
   }
   
@@ -548,7 +592,7 @@ export async function storeRemainingProfiles(
       throw new Error(`Remaining profiles count mismatch: expected ${remainingProfiles.length}, saved ${savedProfiles.length}`);
     }
   } catch (error) {
-    console.error(`[Storage] Validation error for remaining profiles job ${jobId}:`, error);
+    logger.error('storage_remaining_profiles_validation_failed', { job_id: jobId, error });
     throw error;
   }
 
@@ -560,7 +604,7 @@ export async function storeRemainingProfiles(
     updated_at: Timestamp.now(),
   });
 
-  console.log(`[Storage] Stored ${remainingProfiles.length} remaining profiles: ${jobId}`);
+  logger.info('storage_remaining_profiles_saved', { job_id: jobId, count: remainingProfiles.length });
   return filePath;
 }
 
@@ -610,7 +654,7 @@ export async function storePipelineResults(
       throw new Error(`Profile count mismatch: expected ${profiles.length}, saved ${savedProfiles.length}`);
     }
   } catch (error) {
-    console.error(`[Storage] Validation error for job ${jobId}:`, error);
+    logger.error('storage_profiles_validation_failed', { job_id: jobId, error });
     throw error;
   }
 
@@ -626,7 +670,7 @@ export async function storePipelineResults(
   }
 
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update(updates);
-  console.log(`[Storage] Stored ${profiles.length} profiles: ${jobId}`);
+  logger.info('storage_profiles_saved', { job_id: jobId, count: profiles.length });
 }
 
 /**
@@ -829,7 +873,7 @@ async function loadBatchFromStorage(jobId: string, batchIndex: number): Promise<
     const profiles = JSON.parse(contents.toString('utf-8'));
     return Array.isArray(profiles) ? profiles : [];
   } catch (error) {
-    console.error(`[Storage] Error loading batch ${batchIndex} from ${filePath}:`, error);
+    logger.error('storage_batch_load_failed', { job_id: jobId, batch_index: batchIndex, path: filePath, error });
     return [];
   }
 }
@@ -879,7 +923,7 @@ export async function appendBatchResults(
     });
   });
   
-  console.log(`[Storage] Saved batch ${batchIndex} with ${newProfiles.length} profiles for job ${jobId}`);
+  logger.debug('storage_batch_saved', { job_id: jobId, batch_index: batchIndex, count: newProfiles.length });
 }
 
 /**
@@ -925,16 +969,18 @@ export async function mergeBatchResults(
       const batchProfiles = await loadBatchFromStorage(jobId, batchIndex);
       allProfiles.push(...batchProfiles);
     } catch (err) {
-      console.warn(`[Storage] Could not load batch ${batchIndex} for job ${jobId}:`, err);
+      logger.warn('storage_batch_load_skipped', { job_id: jobId, batch_index: batchIndex, error: err });
     }
   }
 
   // Validate total count matches expected
   if (jobDoc.exists) {
     if (allProfiles.length !== expectedCount) {
-      console.warn(
-        `[Storage] Profile count mismatch: expected ${expectedCount}, found ${allProfiles.length} in batch files`
-      );
+      logger.warn('storage_profile_count_mismatch', {
+        job_id: jobId,
+        expected: expectedCount,
+        found: allProfiles.length,
+      });
     }
   }
 
@@ -948,7 +994,7 @@ export async function mergeBatchResults(
     updated_at: Timestamp.now(),
   });
 
-  console.log(`[Storage] Merged ${batchIndices.length} batches into ${allProfiles.length} profiles for job ${jobId}`);
+  logger.info('storage_batches_merged', { job_id: jobId, batch_count: batchIndices.length, profile_count: allProfiles.length });
 
   return allProfiles;
 }
@@ -978,7 +1024,7 @@ export async function updateBatchCounters(
     updated_at: Timestamp.now(),
   });
   
-  console.log(`[Firestore] Updated batch counters for ${jobId}: ${batchesCompleted}/${totalBatches} completed`);
+  logger.debug('pipeline_batch_counters_updated', { job_id: jobId, completed: batchesCompleted, total: totalBatches });
 }
 
 /**
@@ -990,7 +1036,7 @@ export async function finalizePipelineProgress(jobId: string): Promise<void> {
     current_stage: null,
     updated_at: Timestamp.now(),
   });
-  console.log(`[Firestore] Finalized pipeline job ${jobId} progress at 100%`);
+  logger.info('pipeline_progress_finalized', { job_id: jobId });
 }
 
 /**
@@ -1004,14 +1050,14 @@ export async function updateProgressiveTopN(
   topN: number
 ): Promise<void> {
   if (batchesCompleted === 0) {
-    console.log(`[Storage] No batches completed yet for job ${jobId}, skipping progressive update`);
+    logger.debug('storage_progressive_update_skipped', { job_id: jobId, reason: 'no_batches_completed' });
     return;
   }
 
   // Get the actual completed batch indices from Firestore
   const jobDoc = await db.collection(PIPELINE_COLLECTION).doc(jobId).get();
   if (!jobDoc.exists) {
-    console.error(`[Storage] Job ${jobId} not found when updating progressive top-N`);
+    logger.error('storage_progressive_job_missing', { job_id: jobId });
     return;
   }
 
@@ -1019,7 +1065,7 @@ export async function updateProgressiveTopN(
   const completedBatchIndices: number[] = jobData.brightdata_collection?.completed_batch_indices || [];
 
   if (completedBatchIndices.length === 0) {
-    console.log(`[Storage] No completed batch indices found for job ${jobId}, skipping progressive update`);
+    logger.debug('storage_progressive_update_skipped', { job_id: jobId, reason: 'no_completed_batches' });
     return;
   }
 
@@ -1031,12 +1077,12 @@ export async function updateProgressiveTopN(
       const batchProfiles = await loadBatchFromStorage(jobId, batchIndex);
       allProfiles.push(...batchProfiles);
     } catch (err) {
-      console.warn(`[Storage] Could not load batch ${batchIndex} for job ${jobId}:`, err);
+      logger.warn('storage_progressive_batch_load_failed', { job_id: jobId, batch_index: batchIndex, error: err });
     }
   }
 
   if (allProfiles.length === 0) {
-    console.log(`[Storage] No profiles found in ${batchesCompleted} batch files for job ${jobId}`);
+    logger.debug('storage_progressive_no_profiles', { job_id: jobId, batch_count: batchesCompleted });
     return;
   }
 
@@ -1073,11 +1119,18 @@ export async function updateProgressiveTopN(
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
     progressive_profiles_storage_path: filePath,
     progressive_profiles_count: progressiveTopN.length,
+    progressive_profiles_revision: FieldValue.increment(1),
     progressive_is_complete: false,
     updated_at: Timestamp.now(),
   });
 
-  console.log(`[Storage] Updated progressive top-${topN} for job ${jobId}: ${progressiveTopN.length} profiles from ${batchesCompleted} batches (${allProfiles.length} total analyzed)`);
+  logger.info('storage_progressive_top_n_updated', {
+    job_id: jobId,
+    top_n: topN,
+    profiles: progressiveTopN.length,
+    batches_completed: batchesCompleted,
+    total_analyzed: allProfiles.length,
+  });
 }
 
 /**
@@ -1088,5 +1141,5 @@ export async function finalizeProgressiveResults(jobId: string): Promise<void> {
     progressive_is_complete: true,
     updated_at: Timestamp.now(),
   });
-  console.log(`[Firestore] Marked progressive results as complete for job ${jobId}`);
+  logger.info('pipeline_progressive_complete', { job_id: jobId });
 }

@@ -137,6 +137,19 @@
 		</div>
 	</section>
 
+	{#if run.pipeline_summary || run.pipeline_waterfall}
+		<section class="section-card">
+			<h3>Pipeline Summary</h3>
+			<pre class="code-block">{run.pipeline_summary ?? '—'}</pre>
+			{#if run.pipeline_waterfall}
+				<div class="waterfall-block">
+					<h4>Waterfall</h4>
+					<pre class="code-block">{run.pipeline_waterfall}</pre>
+				</div>
+			{/if}
+		</section>
+	{/if}
+
 	<section class="section-card">
 		<h3>Timing</h3>
 		<pre class="code-block">{JSON.stringify(run.timing ?? {}, null, 2)}</pre>
@@ -279,6 +292,12 @@
 		border-radius: 12px;
 		font-size: 12px;
 		overflow-x: auto;
+	}
+
+	.waterfall-block h4 {
+		margin: 12px 0 8px 0;
+		font-size: 13px;
+		color: rgba(15, 23, 42, 0.7);
 	}
 
 	.mono {

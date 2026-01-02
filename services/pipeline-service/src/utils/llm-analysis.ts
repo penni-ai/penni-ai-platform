@@ -6,6 +6,9 @@
 import OpenAI from 'openai';
 import type { BrightDataUnifiedProfile } from '../types/brightdata.js';
 import { isFixtureMode } from './test-mode.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger({ component: 'llm-analysis' });
 
 /**
  * Get OpenAI API key from environment variables
@@ -337,7 +340,7 @@ export async function analyzeProfileFit(
     }
 
     if (!content) {
-      console.error('[LLM Analysis] Response structure:', JSON.stringify(response, null, 2));
+      logger.error('llm_response_invalid_structure', { response });
       throw new Error('No text content in OpenAI response. Check response structure above.');
     }
 
@@ -358,7 +361,7 @@ export async function analyzeProfileFit(
       fit_summary: parsed.summary || 'No summary provided',
     };
   } catch (error) {
-    console.error(`[LLM Analysis] Error analyzing profile ${profile.account_id}:`, error);
+    logger.error('llm_profile_analysis_failed', { account_id: profile.account_id, error });
     // Return default values on error
     return {
       fit_score: 0,

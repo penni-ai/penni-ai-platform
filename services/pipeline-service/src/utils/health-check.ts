@@ -8,6 +8,9 @@ import { getBrightDataApiKey, getBrightDataBaseUrl, getBrightDataInstagramDatase
 import { getWeaviateClientInstance } from './weaviate-search.js';
 import OpenAI from 'openai';
 import { isFixtureMode } from './test-mode.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger({ component: 'health-check' });
 
 interface HealthCheckResult {
   service: string;
@@ -46,7 +49,7 @@ async function checkStorageBucket(): Promise<HealthCheckResult> {
     };
   }
   
-  console.log('[HealthCheck] Proceeding with production bucket test');
+  logger.info('health_check_storage_bucket_test');
   
   // For production, test write/delete operations
   try {
@@ -320,7 +323,7 @@ async function checkDeepInfra(): Promise<HealthCheckResult> {
       }
     } catch (fetchError) {
       // If fetch fails, just validate key format (might be network issue)
-      console.warn('[HealthCheck] DeepInfra API test failed, but key format is valid:', fetchError);
+      logger.warn('health_check_deepinfra_failed_key_valid', { error: fetchError });
     }
 
     return {
@@ -430,7 +433,7 @@ async function checkFirestore(): Promise<HealthCheckResult> {
  * Run all health checks
  */
 export async function runHealthChecks(): Promise<HealthCheckSummary> {
-  console.log('[HealthCheck] Running pre-flight health checks...');
+  logger.info('health_check_run');
 
   if (isFixtureMode()) {
     const checks = await Promise.all([
@@ -454,14 +457,14 @@ export async function runHealthChecks(): Promise<HealthCheckSummary> {
       errors,
     };
 
-    console.log('[HealthCheck] Fixture mode health check results:');
+    logger.info('health_check_results_fixture');
     checks.forEach(check => {
       const icon = check.status === 'ok' ? '✅' : '❌';
-      console.log(`  ${icon} ${check.service}: ${check.message}`);
+      logger.info('health_check_result', { service: check.service, status: check.status, message: check.message });
     });
 
     if (!allHealthy) {
-      console.warn(`[HealthCheck] ⚠️  ${errors.length} health check(s) failed in fixture mode`);
+      logger.warn('health_check_fixture_failed', { failures: errors.length });
     }
 
     return summary;
@@ -486,22 +489,22 @@ export async function runHealthChecks(): Promise<HealthCheckSummary> {
   };
 
   // Log results
-  console.log('[HealthCheck] Health check results:');
+  logger.info('health_check_results');
   checks.forEach(check => {
     const icon = check.status === 'ok' ? '✅' : '❌';
-    console.log(`  ${icon} ${check.service}: ${check.message}`);
+    logger.info('health_check_result', { service: check.service, status: check.status, message: check.message });
     if (check.details) {
-      console.log(`     Details:`, check.details);
+      logger.debug('health_check_details', { service: check.service, details: check.details });
     }
   });
 
   if (!allHealthy) {
-    console.warn(`[HealthCheck] ⚠️  ${errors.length} health check(s) failed:`);
+    logger.warn('health_check_failed', { failures: errors.length });
     errors.forEach(error => {
-      console.warn(`  ❌ ${error.service}: ${error.message}`);
+      logger.warn('health_check_failure_detail', { service: error.service, message: error.message });
     });
   } else {
-    console.log('[HealthCheck] ✅ All health checks passed');
+    logger.info('health_check_all_passed');
   }
 
   return summary;

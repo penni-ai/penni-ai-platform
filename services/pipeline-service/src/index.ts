@@ -1,6 +1,7 @@
 import { createApp, type StartupHealthCheck } from './app.js';
 import { getOrInitAdminApp, resolvedFirebaseProjectId, resolvedStorageBucketName } from './utils/firebase-admin.js';
 import { runHealthChecks } from './utils/health-check.js';
+import { createLogger } from './utils/logger.js';
 
 // Initialize Firebase Admin (required for Firestore operations)
 getOrInitAdminApp();
@@ -8,51 +9,43 @@ getOrInitAdminApp();
 // Run health checks once on startup
 let startupHealthCheck: StartupHealthCheck = null;
 (async () => {
+  const logger = createLogger({ component: 'startup' });
   try {
     // Log GCP/Firebase configuration
     const projectId = resolvedFirebaseProjectId || process.env.GOOGLE_CLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || 'not configured';
     const storageBucket = resolvedStorageBucketName || process.env.STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET || 'not configured';
-    const pubsubTopic = process.env.PUBSUB_TOPIC_NAME || 'pipeline.start';
     const weaviateUrl = process.env.WEAVIATE_URL || 'not configured';
     const brightdataBaseUrl = process.env.BRIGHTDATA_BASE_URL || 'not configured';
     
-    console.log('[Startup] GCP/Firebase Configuration:');
-    console.log(`  Project ID: ${projectId}`);
-    console.log(`  Storage Bucket: ${storageBucket}`);
-    console.log(`  Pub/Sub Topic: ${pubsubTopic}`);
-    console.log('');
-    
-    console.log('[Startup] External Services:');
-    console.log(`  Weaviate URL: ${weaviateUrl}`);
-    console.log(`  BrightData Base URL: ${brightdataBaseUrl}`);
-    console.log('');
-    
-    // Log model configuration
     const openaiModel = process.env.OPENAI_MODEL || 'gpt-5-nano';
     const deepinfraModel = process.env.DEEPINFRA_EMBEDDING_MODEL || 'Qwen/Qwen3-Embedding-8B';
-    console.log('[Startup] Model Configuration:');
-    console.log(`  OpenAI Model: ${openaiModel}`);
-    console.log(`  DeepInfra Embedding Model: ${deepinfraModel}`);
-    console.log(`  Max Concurrent Weaviate Searches: ${process.env.MAX_CONCURRENT_WEAVIATE_SEARCHES || '12'}`);
-    console.log(`  Max Concurrent LLM Requests: ${process.env.MAX_CONCURRENT_LLM_REQUESTS || '20'}`);
-    console.log('');
-    
-    console.log('[Startup] Running initial health checks...');
+
+    logger.info('startup_configuration', {
+      project_id: projectId,
+      storage_bucket: storageBucket,
+      weaviate_url: weaviateUrl,
+      brightdata_base_url: brightdataBaseUrl,
+      openai_model: openaiModel,
+      deepinfra_embedding_model: deepinfraModel,
+      max_concurrent_weaviate_searches: process.env.MAX_CONCURRENT_WEAVIATE_SEARCHES || '12',
+      max_concurrent_llm_requests: process.env.MAX_CONCURRENT_LLM_REQUESTS || '20',
+    });
+
+    logger.info('startup_health_checks_begin');
     const summary = await runHealthChecks();
     startupHealthCheck = {
       summary,
       timestamp: new Date(),
     };
     if (summary.allHealthy) {
-      console.log('[Startup] ✅ All health checks passed - service ready');
+      logger.info('startup_health_checks_ok');
     } else {
-      console.warn('[Startup] ⚠️  Some health checks failed, but service will continue');
-      summary.errors.forEach((error: any) => {
-        console.warn(`  ❌ ${error.service}: ${error.message}`);
+      logger.warn('startup_health_checks_degraded', {
+        errors: summary.errors,
       });
     }
   } catch (error) {
-    console.error('[Startup] ❌ Health check failed during startup:', error);
+    logger.error('startup_health_checks_failed', { error });
     startupHealthCheck = {
       summary: {
         allHealthy: false,
@@ -70,14 +63,15 @@ const app = createApp({ getStartupHealthCheck: () => startupHealthCheck });
 const port = process.env.PORT || 8080;
 
 const server = app.listen(port, () => {
-  console.log(`Pipeline service listening on port ${port}`);
+  createLogger({ component: 'startup' }).info('server_listening', { port });
 });
 
 // Graceful shutdown handler for SIGTERM (Cloud Run sends this on shutdown)
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully...');
+  const logger = createLogger({ component: 'startup' });
+  logger.info('shutdown_signal_received', { signal: 'SIGTERM' });
   server.close(() => {
-    console.log('Server closed');
+    logger.info('server_closed');
     process.exit(0);
   });
 });

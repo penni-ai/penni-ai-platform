@@ -23,7 +23,7 @@
 │  2. ✅ Validate request schema (Zod validation)                             │
 │  3. ✅ Validate campaign exists (if provided)                                 │
 │  4. ✅ Create Firestore job document (status: "pending")                    │
-│  5. ✅ Publish message to Pub/Sub topic "pipeline.start"                     │
+│  5. ✅ Enqueue Cloud Tasks stage job (/tasks/pipeline-stage)                 │
 │  6. ✅ Return 202 Accepted immediately with job_id                           │
 │                                                                               │
 │  Response Time: < 500ms                                                      │
@@ -32,33 +32,28 @@
                                 │ Publish Message
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    PUB/SUB TOPIC: pipeline.start                            │
+│                    CLOUD TASKS QUEUES                                       │
 │                                                                               │
-│  Message Format:                                                             │
-│  {                                                                           │
-│    job_id: "job_123...",                                                    │
-│    uid: "user-123",                                                          │
-│    business_description: "...",                                             │
-│    top_n: 30,                                                                │
-│    min_followers, max_followers, platform, campaign_id                      │
-│  }                                                                           │
+│  Queues:                                                                     │
+│  - pipeline-stage                                                            │
+│  - pipeline-batch                                                            │
+│  - pipeline-poll                                                             │
 │                                                                               │
 │  Features:                                                                   │
-│  - 7-day message retention                                                   │
-│  - Automatic retry with exponential backoff                                   │
-│  - Dead letter queue for failed messages                                     │
+│  - Retry with exponential backoff                                            │
+│  - Concurrency + rate limits per queue                                       │
+│  - OIDC-authenticated requests to Cloud Run                                 │
 └───────────────────────────────┬───────────────────────────────────────────────┘
                                 │
-                                │ Push Subscription
-                                │ (pipeline-worker-sub)
+                                │ Task invocation
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                  WORKER ENDPOINT (/pubsub/pipeline-start)                   │
-│                    Cloud Run Service - Pub/Sub Handler                      │
+│                  TASK HANDLERS (/tasks/*)                                   │
+│                    Cloud Run Service - Task Handler                         │
 │                                                                               │
-│  1. ✅ Decode base64 Pub/Sub message                                         │
-│  2. ✅ Return 204 No Content immediately (acknowledge message)               │
-│  3. ✅ Execute pipeline asynchronously (non-blocking)                       │
+│  1. ✅ Execute pipeline stages (stage/batch/poll)                            │
+│  2. ✅ Update Firestore status + progress                                    │
+│  3. ✅ Enqueue follow-up tasks as needed                                     │
 └───────────────────────────────┬───────────────────────────────────────────────┘
                                 │
                                 │ Async Execution
@@ -142,7 +137,7 @@
 │  │  - keep 5 batches in-flight       │  │  - analyze each ready batch       │ │
 │  │  - download when snapshot ready   │  │  - update progressive top-N       │ │
 │  │  - write-through cache            │  │  - stop early once >= top_n with  │ │
-│  │                                  │  │    fit_score >= 90 (9/10+)        │ │
+│  │                                  │  │    fit_score >= 100 (10/10)       │ │
 │  │  Updates Firestore:               │  │                                  │ │
 │  │  - brightdata_collection.*        │  │  Updates Firestore:               │ │
 │  │    (cache_hits, api_calls,        │  │  - llm_analysis.*                 │ │
@@ -186,7 +181,7 @@
 │  Client listens to Firestore document: pipeline_jobs/{job_id} (onSnapshot)   │
 │                                                                               │
 │  Status values:                                                               │
-│    - "pending" → Job created, waiting for Pub/Sub                            │
+│    - "pending" → Job created, waiting for tasks                              │
 │    - "running" → Pipeline execution in progress                              │
 │    - "completed" → All stages finished, results available                    │
 │    - "error" → Pipeline failed at some stage                                 │
@@ -234,16 +229,16 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  Cloud Run   │  │   Pub/Sub    │  │  Firestore   │  │   Storage    │
+│  Cloud Run   │  │ Cloud Tasks  │  │  Firestore   │  │   Storage    │
 │              │  │              │  │              │  │              │
-│ - HTTP       │  │ - Topic:     │  │ - Job        │  │ - Results    │
-│   Orchestrator│  │   pipeline. │  │   tracking   │  │   storage    │
-│              │  │   start      │  │              │  │              │
-│ - Pub/Sub    │  │ - Push       │  │ - Status     │  │ - Profiles   │
-│   Worker     │  │   Subscription│  │   updates    │  │   JSON       │
-│              │  │              │  │              │  │              │
-│ - Health     │  │ - Dead       │  │ - Stage      │  │              │
-│   Checks     │  │   Letter Q   │  │   progress   │  │              │
+│ - HTTP       │  │ - Queues:    │  │ - Job        │  │ - Results    │
+│   Orchestrator│  │   stage     │  │   tracking   │  │   storage    │
+│              │  │   batch/poll │  │              │  │              │
+│ - Task       │  │ - Retries    │  │ - Status     │  │ - Profiles   │
+│   Handlers   │  │ - Rate       │  │   updates    │  │   JSON       │
+│              │  │   limits     │  │              │  │              │
+│ - Health     │  │              │  │ - Stage      │  │              │
+│   Checks     │  │              │  │   progress   │  │              │
 └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
@@ -260,13 +255,13 @@ Pipeline Execution Error:
   │
   ├─→ Log error with request_id, job_id
   │
-  └─→ If Pub/Sub message fails:
+  └─→ If Cloud Tasks delivery fails:
         │
-        ├─→ Pub/Sub retries (exponential backoff: 10s → 600s)
+        ├─→ Cloud Tasks retries (exponential backoff)
         │
-        ├─→ After 3 retries → Dead Letter Topic (pipeline.failed)
+        ├─→ Task stays queued until retry budget is exhausted
         │
-        └─→ Manual replay possible from dead letter queue
+        └─→ Manual replay possible by re-enqueueing the task
 
 Health Check Failure:
   │
@@ -308,14 +303,16 @@ Health Check:
 
 Endpoints:
   - POST /pipeline/start (HTTP orchestrator)
-  - POST /pubsub/pipeline-start (Pub/Sub worker)
+  - POST /tasks/pipeline-stage (stage task)
+  - POST /tasks/pipeline-batch (batch task)
+  - POST /tasks/pipeline-poll (poll task)
   - GET /health (health checks)
 ```
 
 ## Key Design Patterns
 
 1. **Asynchronous Processing**: HTTP orchestrator returns immediately, pipeline runs in background
-2. **Pub/Sub Decoupling**: Separates job creation from execution, enables retries and scaling
+2. **Cloud Tasks Decoupling**: Separates job creation from execution, enables retries and scaling
 3. **Streaming Processing**: BrightData batches processed incrementally for better UX
 4. **Concurrent Stages**: LLM analysis overlaps with BrightData collection for efficiency
 5. **Progress Tracking**: Real-time updates to Firestore for client polling
@@ -335,6 +332,6 @@ Endpoints:
 ## Scalability
 
 - **Cloud Run**: Auto-scales based on request volume
-- **Pub/Sub**: Handles high message throughput
+- **Cloud Tasks**: Handles high task throughput
 - **Concurrent Processing**: Configurable concurrency limits
 - **Batch Processing**: Efficient API usage with batching

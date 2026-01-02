@@ -1,6 +1,6 @@
 /**
- * Pub/Sub worker handler for pipeline execution
- * Executes the full pipeline asynchronously when triggered by Pub/Sub message
+ * Long-running pipeline runner (legacy, not wired to HTTP)
+ * Executes the full pipeline in-process for local/manual execution
  */
 
 import { generateSearchQueriesFromDescription } from '../utils/search-query-generator.js';
@@ -42,6 +42,8 @@ import {
   downloadResults,
 } from '../utils/brightdata-internal.js';
 import { PipelineTimingTracker } from '../utils/timing-tracker.js';
+import { writePipelineSummary } from '../utils/pipeline-summary.js';
+import { createLogger } from '../utils/logger.js';
 import type { BrightDataProfile, BrightDataPlatform, BrightDataUnifiedProfile } from '../types/brightdata.js';
 
 function getGoodFitThreshold(): number {
@@ -132,7 +134,7 @@ function extractTopCandidates(results: any[], topN: number, platform?: string | 
  * Extract top N profile URLs from search results
  */
 /**
- * Handle Pub/Sub message for pipeline execution
+ * Handle pipeline execution payload
  */
 export async function handlePipelineExecution(messageData: {
   job_id: string;
@@ -167,6 +169,24 @@ export async function handlePipelineExecution(messageData: {
 
   // Initialize timing tracker
   const timingTracker = new PipelineTimingTracker(jobId);
+  const logger = createLogger({
+    component: 'worker',
+    job_id: jobId,
+    uid,
+    campaign_id: campaign_id ?? null,
+    request_id: requestId,
+  });
+  let summaryWritten = false;
+
+  const writeSummaryOnce = async (reason: string): Promise<void> => {
+    if (summaryWritten) return;
+    summaryWritten = true;
+    try {
+      await writePipelineSummary(jobId);
+    } catch (error) {
+      logger.warn('pipeline_summary_failed', { reason, error });
+    }
+  };
 
   if (isFixtureMode()) {
     const delayMs = getFixtureDelayMs();
@@ -174,6 +194,7 @@ export async function handlePipelineExecution(messageData: {
       await delay(delayMs);
       if (await isJobCancelled(jobId)) {
         await updatePipelineJobStatus(jobId, 'cancelled');
+        await writeSummaryOnce('cancelled');
         return;
       }
     }
@@ -320,7 +341,7 @@ export async function handlePipelineExecution(messageData: {
             fullCampaignDescription = `${businessDescription}\n\n${fullCampaignDescription}`;
           }
           
-          console.log(`[Worker] Using full campaign description from campaign ${campaign_id}`, {
+          logger.debug('campaign_description_loaded', {
             campaign_id,
             description_length: fullCampaignDescription.length,
             description_preview: fullCampaignDescription.substring(0, 200) + (fullCampaignDescription.length > 200 ? '...' : ''),
@@ -339,7 +360,7 @@ export async function handlePipelineExecution(messageData: {
             }
           });
         } else {
-          console.log(`[Worker] Campaign ${campaign_id} exists but has no collected data, using business_description`, {
+          logger.debug('campaign_description_missing_collected', {
             campaign_id,
             campaignDataKeys: Object.keys(campaignData || {}),
             hasCollectedDoc: collectedDoc.exists,
@@ -348,17 +369,17 @@ export async function handlePipelineExecution(messageData: {
           });
         }
       } else {
-        console.log(`[Worker] Campaign ${campaign_id} not found in Firestore, using business_description`);
+        logger.info('campaign_missing', { campaign_id });
       }
     } catch (error) {
-      console.warn(`[Worker] Failed to fetch campaign details for ${campaign_id}, using business_description:`, error);
+      logger.warn('campaign_description_failed', { campaign_id, error });
       // Continue with business_description if campaign fetch fails
     }
   }
 
   try {
     // Log all pipeline parameters
-    console.log(`[Worker] Pipeline starting: ${jobId}`, {
+    logger.info('pipeline_start', {
       job_id: jobId,
       request_id: requestId,
       uid: uid,
@@ -379,7 +400,7 @@ export async function handlePipelineExecution(messageData: {
     await timingTracker.saveToFirestore(); // Save initial timing
 
     // Stage 1: Query Expansion
-    console.log(`[Worker] Step 1: Generating search queries (job: ${jobId})...`);
+    logger.info('query_generation_start');
     
     await updatePipelineStage(jobId, 'query_expansion', 0);
     timingTracker.startStage('query_expansion');
@@ -397,7 +418,7 @@ export async function handlePipelineExecution(messageData: {
       const queryResult = await generateSearchQueriesFromDescription(fullCampaignDescription);
       queries = queryResult.queries;
       const prompt = queryResult.prompt;
-      console.log(`[Worker] Generated ${queries.length} queries`);
+      logger.info('query_generation_complete', { query_count: queries.length });
 
       // Check for cancellation again
       if (await isJobCancelled(jobId)) {
@@ -415,14 +436,16 @@ export async function handlePipelineExecution(messageData: {
         timingTracker.endStage('query_expansion');
         await timingTracker.saveToFirestore();
         await updatePipelineJobStatus(jobId, 'cancelled');
+        await writeSummaryOnce('cancelled');
         return;
       }
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      console.error(`[Worker] Query expansion failed for job ${jobId}:`, error);
+      logger.error('query_generation_failed', { error });
       timingTracker.endStage('query_expansion');
       await updateQueryExpansionStage(jobId, 'error', undefined, errorMsg);
       await timingTracker.saveToFirestore();
       await updatePipelineJobStatus(jobId, 'error', errorMsg);
+      await writeSummaryOnce('query_expansion_error');
       throw error;
     }
 
@@ -432,7 +455,7 @@ export async function handlePipelineExecution(messageData: {
     await updateWeaviateSearchStage(jobId, 'running');
     await timingTracker.saveToFirestore();
 
-    console.log(`[Worker] Step 2: Performing parallel hybrid searches (job: ${jobId})...`);
+    logger.info('weaviate_search_start');
 
     const alphaValues = [0.2, 0.8];
     // NOTE: We run multiple alphas per query, but alpha variants often overlap heavily.
@@ -474,7 +497,10 @@ export async function handlePipelineExecution(messageData: {
       queriesExecuted = searchResult.queriesExecuted;
       totalResultsFromSearch = deduplicatedResults.length;
 
-      console.log(`[Worker] Weaviate search: ${queriesExecuted} searches → ${totalResultsFromSearch} unique profiles`);
+      logger.info('weaviate_search_complete', {
+        searches: queriesExecuted,
+        total_results: totalResultsFromSearch,
+      });
 
       // Check for cancellation after searches
       if (await isJobCancelled(jobId)) {
@@ -498,6 +524,7 @@ export async function handlePipelineExecution(messageData: {
         timingTracker.endStage('weaviate_search');
         await timingTracker.saveToFirestore();
         await updatePipelineJobStatus(jobId, 'cancelled');
+        await writeSummaryOnce('cancelled');
         return;
       }
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -512,19 +539,24 @@ export async function handlePipelineExecution(messageData: {
       );
       await timingTracker.saveToFirestore();
       await updatePipelineJobStatus(jobId, 'error', errorMsg);
+      await writeSummaryOnce('weaviate_search_error');
       throw error;
     }
 
     // Stage 3: Extract Top N Profiles
     const topCandidates = extractTopCandidates(deduplicatedResults, weaviateTopN, platform);
-    console.log(`[Worker] Step 3: Extracted ${topCandidates.length} candidates (weaviate_top_n=${weaviateTopN}, llm_top_n=${llmTopN})`);
+    logger.info('weaviate_candidates_extracted', {
+      candidates: topCandidates.length,
+      weaviate_top_n: weaviateTopN,
+      llm_top_n: llmTopN,
+    });
 
     // Save all Weaviate candidates to Storage for frontend preview
     if (topCandidates.length > 0) {
       try {
         await saveWeaviateCandidates(jobId, topCandidates);
       } catch (error) {
-        console.error(`[Worker] Failed to save candidates:`, error);
+        logger.warn('weaviate_candidates_save_failed', { error });
         // Don't fail the pipeline if candidate saving fails
       }
     }
@@ -542,6 +574,7 @@ export async function handlePipelineExecution(messageData: {
         profiles_analyzed: 0,
       });
       await finalizePipelineProgress(jobId);
+      await writeSummaryOnce('completed_no_profiles');
       return;
     }
 
@@ -553,7 +586,11 @@ export async function handlePipelineExecution(messageData: {
     await updateLLMAnalysisStage(jobId, 'running');
     await timingTracker.saveToFirestore();
 
-    console.log(`[Worker] Step 4-5: Cache-first analyze + BrightData as-needed (${topProfileUrls.length} candidates, target=${llmTopN} good fits, threshold=${getGoodFitThreshold()})`);
+    logger.info('brightdata_llm_start', {
+      candidates: topProfileUrls.length,
+      target_good_fits: llmTopN,
+      threshold: getGoodFitThreshold(),
+    });
 
     const goodFitThreshold = getGoodFitThreshold();
     const targetGoodCount = llmTopN;
@@ -600,9 +637,12 @@ export async function handlePipelineExecution(messageData: {
         throw new Error(`Batch ${batchIndex + 1} profiles is not an array: ${typeof profiles}`);
       }
 
-      console.log(
-        `[Worker] Batch ${batchIndex + 1}${isCached ? ' (cached)' : ''}: ${profiles.length} ${platform} profiles`
-      );
+      logger.debug('brightdata_batch_received', {
+        batch_index: batchIndex + 1,
+        platform,
+        cached: isCached,
+        profiles: profiles.length,
+      });
 
       // Track BrightData batch timing (cache batches still count as "collection" work)
       timingTracker.addBatchTiming('brightdata_collection', batchIndex, batchRelativeStart);
@@ -653,25 +693,30 @@ export async function handlePipelineExecution(messageData: {
       try {
         await updateProgressiveTopN(jobId, batchesCompleted, llmTopN);
       } catch (progressiveError) {
-        console.warn(`[Worker] Failed to update progressive top-N for batch ${batchIndex + 1}:`, progressiveError);
+        logger.warn('progressive_topn_failed', { batch_index: batchIndex + 1, error: progressiveError });
       }
 
       const batchRelativeEnd = Date.now() / 1000 - timingTracker.getPipelineStartTime();
       timingTracker.addBatchTiming('brightdata_collection', batchIndex, batchRelativeStart, batchRelativeEnd);
 
-      console.log(
-        `[Worker] Batch ${batchIndex + 1} complete: ${analyzedProfiles.length} analyzed (${goodInBatch} >= ${goodFitThreshold}) (good_found=${goodFound}/${targetGoodCount})`
-      );
+      logger.debug('batch_complete', {
+        batch_index: batchIndex + 1,
+        analyzed_profiles: analyzedProfiles.length,
+        good_in_batch: goodInBatch,
+        good_fit_threshold: goodFitThreshold,
+        good_found: goodFound,
+        target_good: targetGoodCount,
+      });
     };
 
     // Build cache + BrightData plans up-front so Firestore can show total_batches.
     // Cache lookup for the entire candidate pool.
-    console.log(`[Worker] Checking BrightData cache for ${topProfileUrls.length} profiles...`);
+    logger.info('brightdata_cache_check_start', { profiles: topProfileUrls.length });
     const cachedProfilesMap = await getCachedProfilesBatch(topProfileUrls);
     cacheHits = cachedProfilesMap.size;
     const cachedUrls = new Set(cachedProfilesMap.keys());
     const uncachedUrls = topProfileUrls.filter((url) => !cachedUrls.has(url));
-    console.log(`[Worker] BrightData cache: ${cacheHits} hits, ${uncachedUrls.length} misses`);
+    logger.info('brightdata_cache_check_result', { cache_hits: cacheHits, cache_misses: uncachedUrls.length });
 
     // Cache batches (chunked) - process fully before any BrightData triggers.
     const cachedInstagramProfiles: BrightDataProfile[] = [];
@@ -741,7 +786,10 @@ export async function handlePipelineExecution(messageData: {
 
       const hitTargetFromCache = goodFound >= targetGoodCount;
       if (hitTargetFromCache) {
-        console.log(`[Worker] Target reached from cache only (good_found=${goodFound}/${targetGoodCount}), skipping BrightData`);
+        logger.info('brightdata_skip_due_to_cache', {
+          good_found: goodFound,
+          target_good: targetGoodCount,
+        });
       }
 
       // Phase B: BrightData, only if needed
@@ -789,16 +837,22 @@ export async function handlePipelineExecution(messageData: {
                 urlCount: batch.urls.length,
               });
 
-              console.log(
-                `[Worker] Triggered BrightData batch ${batch.batchIndex + 1} (${batch.platform}) snapshot ${snapshot.snapshot_id} (${batch.urls.length} urls) (in_flight=${inFlight.size}/${maxInFlightBatches})`
-              );
+              logger.debug('brightdata_batch_triggered', {
+                batch_index: batch.batchIndex + 1,
+                platform: batch.platform,
+                snapshot_id: snapshot.snapshot_id,
+                urls: batch.urls.length,
+                in_flight: inFlight.size,
+                max_in_flight: maxInFlightBatches,
+              });
             } catch (error) {
               batchesFailed++;
               await updateBatchCounters(jobId, batchesCompleted, 0, batchesFailed, totalPlannedBatches);
-              console.error(
-                `[Worker] Failed to trigger BrightData batch ${batch.batchIndex + 1} (${batch.platform}):`,
-                error
-              );
+              logger.error('brightdata_batch_trigger_failed', {
+                batch_index: batch.batchIndex + 1,
+                platform: batch.platform,
+                error,
+              });
             }
           }
         };
@@ -811,9 +865,11 @@ export async function handlePipelineExecution(messageData: {
 
           const elapsed = Date.now() - brightdataStart;
           if (elapsed >= maxWaitMs) {
-            console.error(
-              `[Worker] BrightData timeout after ${Math.round(elapsed / 1000)}s: ${inFlight.size} batches still in-flight, ${pendingBatches.length - nextToTrigger} not triggered`
-            );
+            logger.error('brightdata_timeout', {
+              elapsed_seconds: Math.round(elapsed / 1000),
+              in_flight: inFlight.size,
+              not_triggered: pendingBatches.length - nextToTrigger,
+            });
             batchesFailed += inFlight.size + (pendingBatches.length - nextToTrigger);
             break;
           }
@@ -836,14 +892,19 @@ export async function handlePipelineExecution(messageData: {
             if (ageMs >= BATCH_TIMEOUT_MS) {
               inFlight.delete(snapshot.snapshotId);
               batchesFailed++;
-              console.error(
-                `[Worker] BrightData batch ${snapshot.batchIndex + 1} timed out after ${Math.round(ageMs / 1000)}s (snapshot=${snapshot.snapshotId})`
-              );
+              logger.error('brightdata_batch_timed_out', {
+                batch_index: snapshot.batchIndex + 1,
+                snapshot_id: snapshot.snapshotId,
+                elapsed_seconds: Math.round(ageMs / 1000),
+              });
               continue;
             }
 
             if (progressResult.status !== 'fulfilled') {
-              console.warn(`[Worker] BrightData progress check failed for snapshot ${snapshot.snapshotId}:`, progressResult.reason);
+              logger.warn('brightdata_progress_failed', {
+                snapshot_id: snapshot.snapshotId,
+                reason: progressResult.reason,
+              });
               continue;
             }
 
@@ -854,7 +915,10 @@ export async function handlePipelineExecution(messageData: {
             } else if (progress.status === 'failed') {
               inFlight.delete(snapshot.snapshotId);
               batchesFailed++;
-              console.error(`[Worker] BrightData batch ${snapshot.batchIndex + 1} failed (snapshot=${snapshot.snapshotId})`);
+              logger.error('brightdata_batch_failed', {
+                batch_index: snapshot.batchIndex + 1,
+                snapshot_id: snapshot.snapshotId,
+              });
             }
           }
 
@@ -866,7 +930,10 @@ export async function handlePipelineExecution(messageData: {
             if (await isJobCancelled(jobId)) throw new Error('Pipeline job was cancelled');
             if (goodFound >= targetGoodCount) break;
 
-            console.log(`[Worker] Downloading BrightData snapshot ${snapshot.snapshotId} (batch ${snapshot.batchIndex + 1})...`);
+            logger.debug('brightdata_snapshot_download_start', {
+              snapshot_id: snapshot.snapshotId,
+              batch_index: snapshot.batchIndex + 1,
+            });
             const profiles = await downloadResults(snapshot.snapshotId, apiKey, baseUrl);
             apiCalls += profiles.length;
 
@@ -878,7 +945,10 @@ export async function handlePipelineExecution(messageData: {
                 data: profile,
               }));
               setCachedProfilesBatch(profilesToCache).catch((err) => {
-                console.warn(`[Worker] Failed to cache profiles for batch ${snapshot.batchIndex + 1}:`, err);
+                logger.warn('brightdata_batch_cache_failed', {
+                  batch_index: snapshot.batchIndex + 1,
+                  error: err,
+                });
               });
             }
 
@@ -891,7 +961,10 @@ export async function handlePipelineExecution(messageData: {
           }
 
           if (goodFound >= targetGoodCount) {
-            console.log(`[Worker] Target reached during BrightData processing (good_found=${goodFound}/${targetGoodCount}), stopping early`);
+            logger.info('brightdata_target_reached', {
+              good_found: goodFound,
+              target_good: targetGoodCount,
+            });
             break;
           }
 
@@ -911,7 +984,12 @@ export async function handlePipelineExecution(messageData: {
       }
 
       // If no more work can be done, we finalize with whatever we have.
-      console.log(`[Worker] Collection/analyze complete: ${batchesCompleted} batches, ${batchesFailed} failed (good_found=${goodFound}/${targetGoodCount})`);
+      logger.info('brightdata_llm_complete', {
+        batches_completed: batchesCompleted,
+        batches_failed: batchesFailed,
+        good_found: goodFound,
+        target_good: targetGoodCount,
+      });
 
       // Ensure Firestore reflects the final counters even if the last events were failures/timeouts.
       await updateBatchCounters(jobId, batchesCompleted, 0, batchesFailed, totalPlannedBatches);
@@ -922,15 +1000,18 @@ export async function handlePipelineExecution(messageData: {
       try {
         await finalizeProgressiveResults(jobId);
       } catch (progressiveError) {
-        console.warn(`[Worker] Failed to finalize progressive results:`, progressiveError);
+        logger.warn('progressive_finalize_failed', { error: progressiveError });
       }
 
       mergedProfiles.sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
       const finalProfiles = mergedProfiles.slice(0, llmTopN);
       const remainingProfiles = mergedProfiles.slice(llmTopN);
 
-      console.log(`[Worker] Selected top ${finalProfiles.length} profiles (from ${mergedProfiles.length} analyzed)`);
-      console.log(`[Worker] Storing ${remainingProfiles.length} remaining profiles separately`);
+      logger.info('pipeline_results_selected', {
+        final_profiles: finalProfiles.length,
+        analyzed_profiles: mergedProfiles.length,
+        remaining_profiles: remainingProfiles.length,
+      });
 
       timingTracker.endStage('brightdata_collection');
       timingTracker.endStage('llm_analysis');
@@ -944,7 +1025,7 @@ export async function handlePipelineExecution(messageData: {
         try {
           await storeRemainingProfiles(jobId, remainingProfiles);
         } catch (error) {
-          console.error(`[Worker] Failed to store remaining profiles:`, error);
+          logger.warn('store_remaining_profiles_failed', { error });
         }
       }
 
@@ -965,7 +1046,11 @@ export async function handlePipelineExecution(messageData: {
         total_cost: totalCost,
       };
 
-      console.log(`[Worker] Pipeline costs: BrightData $${brightdataCost.toFixed(4)}, OpenAI $${openaiCost.toFixed(4)}, Total $${totalCost.toFixed(4)}`);
+      logger.info('pipeline_costs', {
+        brightdata_cost: brightdataCost,
+        openai_cost: openaiCost,
+        total_cost: totalCost,
+      });
 
       await storePipelineResults(jobId, finalProfiles, pipelineStats);
       timingTracker.endPipeline();
@@ -973,12 +1058,14 @@ export async function handlePipelineExecution(messageData: {
       await updatePipelineJobStatus(jobId, 'completed');
       await updateProgress(jobId, null);
       await finalizePipelineProgress(jobId);
+      await writeSummaryOnce('completed');
     } catch (error) {
       if (error instanceof Error && error.message === 'Pipeline job was cancelled') {
         timingTracker.endStage('brightdata_collection');
         timingTracker.endStage('llm_analysis');
         await timingTracker.saveToFirestore();
         await updatePipelineJobStatus(jobId, 'cancelled');
+        await writeSummaryOnce('cancelled');
         return;
       }
 
@@ -989,12 +1076,13 @@ export async function handlePipelineExecution(messageData: {
       await updateLLMAnalysisStage(jobId, 'error', undefined, errorMsg);
       await timingTracker.saveToFirestore();
       await updatePipelineJobStatus(jobId, 'error', errorMsg);
+      await writeSummaryOnce('brightdata_llm_error');
       throw error;
     }
 
-    console.log(`[Worker] Pipeline completed: ${jobId}`);
+    logger.info('pipeline_completed', { job_id: jobId });
   } catch (error) {
-    console.error('[Worker] Pipeline execution error:', {
+    logger.error('pipeline_execution_failed', {
       request_id: requestId,
       job_id: jobId,
       uid: uid,
@@ -1008,8 +1096,9 @@ export async function handlePipelineExecution(messageData: {
       timingTracker.endPipeline();
       await timingTracker.saveToFirestore();
       await updatePipelineJobStatus(jobId, 'error', errorMessage);
+      await writeSummaryOnce('pipeline_error');
     } catch (firestoreError) {
-      console.error('[Worker] Failed to update Firestore with error:', firestoreError);
+      logger.error('pipeline_error_firestore_update_failed', { error: firestoreError });
     }
     throw error;
   }

@@ -5,6 +5,7 @@
 
 import { createHash } from 'crypto';
 import { getFirestoreInstance } from './firebase-admin.js';
+import { createLogger } from './logger.js';
 import type {
   BrightDataCacheDoc,
   BrightDataPlatform,
@@ -18,6 +19,7 @@ const CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** Firestore collection name for cache */
 const CACHE_COLLECTION = 'brightdata_cache';
+const logger = createLogger({ component: 'brightdata-cache' });
 
 /**
  * Normalize a profile URL for consistent cache keys
@@ -93,7 +95,7 @@ export async function getCachedProfile(
 
     return data.raw_data;
   } catch (error) {
-    console.warn('[BrightDataCache] Error getting cached profile:', {
+    logger.warn('brightdata_cache_get_failed', {
       url: profileUrl,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -152,7 +154,7 @@ export async function getCachedProfilesBatch(
       }
     }
 
-    console.info('[BrightDataCache] Batch lookup complete:', {
+    logger.debug('brightdata_cache_batch_lookup_complete', {
       requested: urls.length,
       cacheHits: results.size,
       cacheMisses: urls.length - results.size,
@@ -160,7 +162,7 @@ export async function getCachedProfilesBatch(
 
     return results;
   } catch (error) {
-    console.warn('[BrightDataCache] Error in batch lookup:', {
+    logger.warn('brightdata_cache_batch_lookup_failed', {
       error: error instanceof Error ? error.message : String(error),
     });
     return results;
@@ -190,7 +192,7 @@ export async function setCachedProfile(
   try {
     await db.collection(CACHE_COLLECTION).doc(docId).set(cacheDoc);
   } catch (error) {
-    console.warn('[BrightDataCache] Error caching profile:', {
+    logger.warn('brightdata_cache_set_failed', {
       url: profileUrl,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -236,11 +238,11 @@ export async function setCachedProfilesBatch(
       await batch.commit();
     }
 
-    console.info('[BrightDataCache] Batch cache write complete:', {
+    logger.debug('brightdata_cache_batch_write_complete', {
       profilesCached: profiles.length,
     });
   } catch (error) {
-    console.warn('[BrightDataCache] Error in batch cache write:', {
+    logger.warn('brightdata_cache_batch_write_failed', {
       error: error instanceof Error ? error.message : String(error),
     });
   }

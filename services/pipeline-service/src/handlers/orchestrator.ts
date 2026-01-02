@@ -1,12 +1,13 @@
 /**
  * HTTP orchestrator handler for POST /pipeline/start
- * Validates request, creates Firestore job, publishes to Pub/Sub, returns 202 Accepted
+ * Validates request, creates Firestore job, enqueues Cloud Tasks, returns 202 Accepted
  */
 
 import { z } from 'zod';
-import { PubSub } from '@google-cloud/pubsub';
 import { createPipelineJob } from '../utils/firestore-tracker.js';
 import { getFirestoreInstance } from '../utils/firebase-admin.js';
+import { enqueueTask } from '../utils/cloud-tasks.js';
+import { createLogger } from '../utils/logger.js';
 
 const db = getFirestoreInstance();
 
@@ -29,13 +30,6 @@ const pipelineStartSchema = z.object({
 type PipelineStartRequest = z.infer<typeof pipelineStartSchema>;
 
 /**
- * Get Pub/Sub topic name from environment
- */
-function getPubSubTopicName(): string {
-  return process.env.PUBSUB_TOPIC_NAME || 'pipeline.start';
-}
-
-/**
  * Get GCP project ID from environment
  */
 function getProjectId(): string {
@@ -47,6 +41,7 @@ function getProjectId(): string {
  */
 export async function handlePipelineStart(req: any, res: any): Promise<void> {
   const requestId = req.body?.request_id || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const logger = req.logger?.child({ component: 'orchestrator', request_id: requestId }) ?? createLogger({ component: 'orchestrator', request_id: requestId });
   
   try {
     // Validate request body
@@ -76,10 +71,9 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
     if (data.campaign_id && !isEmulator) {
       // Only validate in production - in emulator, allow campaigns to be created on-the-fly
       const campaignPath = `users/${data.uid}/campaigns/${data.campaign_id}`;
-      console.log(`[Orchestrator] Checking campaign existence: ${campaignPath}`, {
+      logger.debug('campaign_check_start', {
         uid: data.uid,
         campaign_id: data.campaign_id,
-        request_id: requestId,
       });
       
       const campaignSnapshot = await db
@@ -90,10 +84,9 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
         .get();
       
       if (!campaignSnapshot.exists) {
-        console.error(`[Orchestrator] Campaign not found: ${campaignPath}`, {
+        logger.warn('campaign_not_found', {
           uid: data.uid,
           campaign_id: data.campaign_id,
-          request_id: requestId,
         });
         
         res.status(400).json({
@@ -109,18 +102,16 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
         return;
       }
       
-      console.log(`[Orchestrator] Campaign found: ${campaignPath}`, {
+      logger.debug('campaign_found', {
         uid: data.uid,
         campaign_id: data.campaign_id,
-        request_id: requestId,
       });
     } else if (data.campaign_id && isEmulator) {
       // In emulator mode, log but don't fail - campaigns may be created dynamically
       const campaignPath = `users/${data.uid}/campaigns/${data.campaign_id}`;
-      console.log(`[Orchestrator] Emulator mode - skipping campaign validation: ${campaignPath}`, {
+      logger.debug('campaign_validation_skipped_emulator', {
         uid: data.uid,
         campaign_id: data.campaign_id,
-        request_id: requestId,
       });
     }
 
@@ -141,7 +132,7 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
     const weaviateTopN = Math.max(topN * 4, 500); // 4x top_n for Weaviate candidates, minimum 500
     const llmTopN = topN; // Same as top_n for final LLM results
 
-    console.log(`[Orchestrator] Pipeline start request:`, {
+    logger.info('pipeline_start_request', {
       request_id: requestId,
       uid: data.uid,
       campaign_id: data.campaign_id || null,
@@ -166,7 +157,7 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
       }
     );
 
-    console.log(`[Orchestrator] Job created: ${jobId}`, {
+    logger.info('pipeline_job_created', {
       request_id: requestId,
       uid: data.uid,
       campaign_id: data.campaign_id || null,
@@ -189,65 +180,12 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
       strict_location_matching: data.strict_location_matching, // Pass through for strict location matching
     };
 
-    // Check if we're in emulator mode (Pub/Sub not available)
-    // isEmulator already declared above for campaign validation
-    if (isEmulator) {
-      // In emulator mode, bypass Pub/Sub and directly call the worker endpoint
-      console.log(`[Orchestrator] Emulator mode detected, calling worker directly: ${jobId}`);
-      
-      // Get the service URL from environment or default to localhost
-      const servicePort = process.env.PORT || '8081';
-      const serviceUrl = `http://localhost:${servicePort}/pubsub/pipeline-start`;
-      
-      // Format message as Pub/Sub would (base64 encoded JSON)
-      const messageJson = JSON.stringify(messageData);
-      const messageBase64 = Buffer.from(messageJson).toString('base64');
-      
-      // Call worker endpoint directly (don't await - fire and forget like Pub/Sub)
-      fetch(serviceUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: {
-            data: messageBase64,
-            attributes: {
-              job_id: jobId,
-              uid: data.uid,
-              request_id: requestId,
-            },
-          },
-        }),
-      }).catch((error) => {
-        console.error('[Orchestrator] Failed to call worker endpoint directly', {
-          jobId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-      
-      console.log(`[Orchestrator] Worker called directly: ${jobId}`);
-    } else {
-      // Production mode: Use Pub/Sub
-      const projectId = getProjectId();
-      const topicName = getPubSubTopicName();
-      const pubsub = new PubSub({ projectId });
-      const topic = pubsub.topic(topicName);
-
-      // Skip topic existence check - topic should already exist (created by setup-pubsub.sh)
-      // Checking existence requires additional permissions that may not be granted
-
-    const messageId = await topic.publishMessage({
-      json: messageData,
-      attributes: {
-        job_id: jobId,
-        uid: data.uid,
-        request_id: requestId,
-      },
+    logger.info('tasks_mode_enqueue', { job_id: jobId, emulator: isEmulator });
+    await enqueueTask({
+      kind: 'stage',
+      path: '/tasks/pipeline-stage',
+      payload: messageData,
     });
-
-    console.log(`[Orchestrator] Published to Pub/Sub: ${jobId}`);
-    }
 
     // Return 202 Accepted immediately
     res.status(202).json({
@@ -257,7 +195,7 @@ export async function handlePipelineStart(req: any, res: any): Promise<void> {
       request_id: requestId,
     });
   } catch (error) {
-    console.error('[Orchestrator] Error handling pipeline start request', {
+    logger.error('pipeline_start_failed', {
       request_id: requestId,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,

@@ -7,9 +7,11 @@ import weaviate, { type WeaviateClient } from 'weaviate-client';
 import type { MultiTargetVectorJoin } from 'weaviate-client';
 import type { WeaviateHybridSearchResponse } from '../types/weaviate-search.js';
 import { isFixtureMode, loadFixture } from './test-mode.js';
+import { createLogger } from './logger.js';
 
 let cachedWeaviateClient: WeaviateClient | null = null;
 let clientInitPromise: Promise<WeaviateClient> | null = null;
+const logger = createLogger({ component: 'weaviate' });
 
 const MAX_CONCURRENT_SEARCHES = Number(process.env.MAX_CONCURRENT_WEAVIATE_SEARCHES || 24);
 const DEFAULT_WEAVIATE_TIMEOUT_MS = 120_000;
@@ -458,11 +460,15 @@ export async function performParallelHybridSearches(
     try {
       await onProgressUpdate('embedding_generation');
     } catch (error) {
-      console.error('[Weaviate] Failed to update progress after embedding generation:', error);
+      logger.warn('weaviate_progress_update_failed', { stage: 'embedding_generation', error });
     }
   }
   
-  console.log(`[Weaviate] ${searchConfigs.length} searches, ${embeddingMap.size} embeddings (${embeddingDurationMs}ms)`);
+  logger.info('weaviate_embeddings_ready', {
+    searches: searchConfigs.length,
+    embeddings: embeddingMap.size,
+    duration_ms: embeddingDurationMs,
+  });
 
   const allSearchResults: WeaviateHybridSearchResponse[] = [];
   const errors: Array<{ keyword: string; alpha: number; error: string }> = [];
@@ -487,7 +493,11 @@ export async function performParallelHybridSearches(
         })
         .catch((error) => {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-          console.error(`[ParallelHybridSearch] Search failed for keyword "${keyword}" with alpha=${alpha}:`, errorMsg);
+          logger.warn('weaviate_search_failed', {
+            keyword,
+            alpha,
+            error: errorMsg,
+          });
           return { success: false, keyword, alpha, error: errorMsg };
         });
     });
@@ -505,7 +515,7 @@ export async function performParallelHybridSearches(
           errors.push({ keyword: data.keyword, alpha: data.alpha, error: data.error });
         }
       } else {
-        console.error('[ParallelHybridSearch] Batch promise rejected:', result.reason);
+        logger.error('weaviate_search_batch_failed', { reason: result.reason });
       }
     }
     
@@ -551,12 +561,16 @@ export async function performParallelHybridSearches(
     try {
       await onProgressUpdate('searches_complete');
     } catch (error) {
-      console.error('[Weaviate] Failed to update progress after searches complete:', error);
+      logger.warn('weaviate_progress_update_failed', { stage: 'searches_complete', error });
     }
   }
   
   const totalRuntimeMs = Date.now() - startTime;
-  console.log(`[Weaviate] ${allSearchResults.length} searches → ${deduplicatedResults.length} unique profiles (${totalRuntimeMs}ms)`);
+  logger.info('weaviate_search_complete', {
+    searches: allSearchResults.length,
+    unique_profiles: deduplicatedResults.length,
+    duration_ms: totalRuntimeMs,
+  });
   
   return {
     allSearchResults,

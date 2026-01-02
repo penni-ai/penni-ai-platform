@@ -14,9 +14,11 @@ import type {
   BrightDataTikTokProfile,
 } from '../types/brightdata.js';
 import { isFixtureMode, loadFixture } from './test-mode.js';
+import { createLogger } from './logger.js';
 
 const fixtureSnapshots = new Map<string, { urls: string[]; platform: BrightDataPlatform }>();
 let fixtureSnapshotCounter = 0;
+const logger = createLogger({ component: 'brightdata' });
 
 /**
  * Create a configured axios instance for BrightData API
@@ -305,7 +307,7 @@ export async function downloadResults(snapshotId: string, apiKey: string, baseUr
   try {
     // Correct API format: snapshot_id is a path parameter, not query parameter
     // GET /datasets/v3/snapshot/{snapshot_id}?format=json
-    console.log(`[BrightData Download] Downloading snapshot ${snapshotId}...`);
+    logger.debug('brightdata_download_start', { snapshot_id: snapshotId });
     
     const downloadResponse = await client.get(`/snapshot/${snapshotId}`, {
       params: {
@@ -318,30 +320,45 @@ export async function downloadResults(snapshotId: string, apiKey: string, baseUr
 
     const data = downloadResponse.data;
     
-    console.log(`[BrightData Download] Received response for snapshot ${snapshotId}, data type: ${Array.isArray(data) ? 'array' : typeof data}`);
+    logger.debug('brightdata_download_response', {
+      snapshot_id: snapshotId,
+      data_type: Array.isArray(data) ? 'array' : typeof data,
+    });
     
     // Log sample of raw response structure for debugging
     if (Array.isArray(data) && data.length > 0) {
       const firstProfile = data[0];
       const profileKeys = Object.keys(firstProfile);
       const hasPlatform = 'platform' in firstProfile || 'account' in firstProfile || 'account_id' in firstProfile;
-      console.log(`[BrightData Download] Sample profile keys (${profileKeys.length}): ${profileKeys.slice(0, 10).join(', ')}${profileKeys.length > 10 ? '...' : ''}`);
-      console.log(`[BrightData Download] Platform detection: has 'platform'=${'platform' in firstProfile}, has 'account'=${'account' in firstProfile}, has 'account_id'=${'account_id' in firstProfile}`);
+      logger.debug('brightdata_download_sample_keys', {
+        snapshot_id: snapshotId,
+        key_count: profileKeys.length,
+        keys: profileKeys.slice(0, 10),
+      });
+      logger.debug('brightdata_download_platform_detection', {
+        snapshot_id: snapshotId,
+        has_platform: 'platform' in firstProfile,
+        has_account: 'account' in firstProfile,
+        has_account_id: 'account_id' in firstProfile,
+      });
       
       // Detect platform from raw response
       if ('account' in firstProfile && 'fbid' in firstProfile) {
-        console.log(`[BrightData Download] Detected Instagram profile structure`);
+        logger.debug('brightdata_download_platform_detected', { snapshot_id: snapshotId, platform: 'instagram' });
       } else if ('account_id' in firstProfile && 'nickname' in firstProfile) {
-        console.log(`[BrightData Download] Detected TikTok profile structure`);
+        logger.debug('brightdata_download_platform_detected', { snapshot_id: snapshotId, platform: 'tiktok' });
       } else if ('platform' in firstProfile) {
-        console.log(`[BrightData Download] Profile already has platform field: ${(firstProfile as any).platform}`);
+        logger.debug('brightdata_download_platform_field_present', {
+          snapshot_id: snapshotId,
+          platform: (firstProfile as any).platform,
+        });
       }
     }
     
     // Handle different response formats
     // API returns the data directly (could be array or single object)
     if (Array.isArray(data)) {
-      console.log(`[BrightData Download] Returning ${data.length} profiles from array`);
+      logger.debug('brightdata_download_array', { snapshot_id: snapshotId, count: data.length });
       return data as BrightDataProfile[];
     }
     
@@ -349,28 +366,32 @@ export async function downloadResults(snapshotId: string, apiKey: string, baseUr
     if (data && typeof data === 'object') {
       // Check if it's wrapped in a data property
       if (data.data && Array.isArray(data.data)) {
-        console.log(`[BrightData Download] Returning ${data.data.length} profiles from data.data array`);
+        logger.debug('brightdata_download_data_array', { snapshot_id: snapshotId, count: data.data.length });
         return data.data as BrightDataProfile[];
       }
       // Check if it's wrapped in results property
       if (data.results && Array.isArray(data.results)) {
-        console.log(`[BrightData Download] Returning ${data.results.length} profiles from data.results array`);
+        logger.debug('brightdata_download_results_array', { snapshot_id: snapshotId, count: data.results.length });
         return data.results as BrightDataProfile[];
       }
       // Single object - wrap in array
-      console.log(`[BrightData Download] Single object returned, wrapping in array`);
+      logger.debug('brightdata_download_single_object', { snapshot_id: snapshotId });
       return [data] as BrightDataProfile[];
     }
     
     // Fallback: return as-is (should be array)
-    console.log(`[BrightData Download] Returning data as-is`);
+    logger.debug('brightdata_download_passthrough', { snapshot_id: snapshotId });
     return data as BrightDataProfile[];
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const errorMessage = error.response?.data 
         ? JSON.stringify(error.response.data)
         : error.message;
-      console.error(`[BrightData Download] Error downloading snapshot ${snapshotId}: ${error.response?.status || 'Unknown'} - ${errorMessage}`);
+      logger.error('brightdata_download_failed', {
+        snapshot_id: snapshotId,
+        status: error.response?.status || 'Unknown',
+        error: errorMessage,
+      });
       throw new Error(`BrightData download error: ${error.response?.status || 'Unknown'} - ${errorMessage}`);
     }
     throw error;
@@ -604,7 +625,7 @@ export async function waitForCompletion(
     // Log status summary only every 5 polls or on status change
     if (pollCount % 5 === 0 || allProgress.some(p => p.status === 'ready' || p.status === 'failed')) {
       const statusSummary = allProgress.map((p) => `${p.snapshot_id?.substring(0, 8)}...=${p.status}`).join(', ');
-      console.log(`[BrightData] [${elapsedSeconds}s] ${statusSummary}`);
+      logger.debug('brightdata_poll_status', { elapsed_seconds: elapsedSeconds, status_summary: statusSummary });
     }
 
     // Check if all ready/completed or any failed
@@ -613,14 +634,14 @@ export async function waitForCompletion(
     const failed = allProgress.filter((p) => p.status === 'failed');
 
     if (failed.length > 0) {
-      console.error(`[BrightData] Collection failed for ${failed.length} snapshot(s)`);
+      logger.error('brightdata_collection_failed', { failed_count: failed.length });
       throw new Error(
         `BrightData collection failed for ${failed.length} snapshot(s): ${failed.map((f) => f.message || f.snapshot_id || 'Unknown error').join(', ')}`
       );
     }
 
     if (ready.length === snapshots.length) {
-      console.log(`[BrightData] Complete: ${snapshots.length} snapshots (${elapsedSeconds}s)`);
+      logger.info('brightdata_collection_complete', { snapshot_count: snapshots.length, elapsed_seconds: elapsedSeconds });
       return allProgress;
     }
 
@@ -632,7 +653,7 @@ export async function waitForCompletion(
     }
 
     // Wait before next poll
-    console.log(`[BrightData] Waiting ${pollingInterval}s before next poll...`);
+    logger.debug('brightdata_poll_wait', { polling_interval: pollingInterval });
     await new Promise((resolve) => setTimeout(resolve, pollingInterval * 1000));
   }
 }

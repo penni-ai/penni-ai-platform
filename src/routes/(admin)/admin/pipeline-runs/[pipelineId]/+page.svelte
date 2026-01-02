@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import type { PipelineBatchRecord, PipelineRunRecord } from '$lib/server/admin/pipeline-runs';
+	import PipelineWaterfallTimeline from '$lib/components/admin/PipelineWaterfallTimeline.svelte';
 
 	let { data }: { data: PageData } = $props();
 	const run = data.run as PipelineRunRecord;
@@ -134,6 +135,17 @@
 	</section>
 
 	<section class="section-card">
+		<h3>Waterfall</h3>
+		<PipelineWaterfallTimeline run={run} batches={batches} />
+		{#if run.pipeline_waterfall}
+			<details class="raw-waterfall">
+				<summary>Raw waterfall (text)</summary>
+				<pre class="code-block">{run.pipeline_waterfall}</pre>
+			</details>
+		{/if}
+	</section>
+
+	<section class="section-card">
 		<h3>Stage Detail</h3>
 		<div class="stage-grid">
 			{#each stageOrder as stageKey}
@@ -261,12 +273,6 @@
 		<section class="section-card">
 			<h3>Pipeline Summary</h3>
 			<pre class="code-block">{run.pipeline_summary ?? '—'}</pre>
-			{#if run.pipeline_waterfall}
-				<div class="waterfall-block">
-					<h4>Waterfall</h4>
-					<pre class="code-block">{run.pipeline_waterfall}</pre>
-				</div>
-			{/if}
 		</section>
 	{/if}
 
@@ -414,10 +420,11 @@
 		overflow-x: auto;
 	}
 
-	.waterfall-block h4 {
-		margin: 12px 0 8px 0;
-		font-size: 13px;
+	.raw-waterfall summary {
+		cursor: pointer;
+		font-size: 12px;
 		color: rgba(15, 23, 42, 0.7);
+		margin: 10px 0 8px 0;
 	}
 
 	.mono {

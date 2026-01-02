@@ -58,6 +58,9 @@ export type PipelineBatchRecord = {
 	urls?: string[];
 	snapshot_id?: string | null;
 	poll_attempts?: number;
+	started_at?: number | null;
+	triggered_at?: number | null;
+	completed_at?: number | null;
 	created_at?: number | null;
 	updated_at?: number | null;
 	last_error?: string | null;
@@ -282,6 +285,9 @@ const serializePipelineBatch = (id: string, data: FirebaseFirestore.DocumentData
 		urls: Array.isArray(data.urls) ? data.urls.filter((value: unknown) => typeof value === 'string') : [],
 		snapshot_id: typeof data.snapshot_id === 'string' ? data.snapshot_id : null,
 		poll_attempts: typeof data.poll_attempts === 'number' ? data.poll_attempts : undefined,
+		started_at: toMillis(data.started_at),
+		triggered_at: toMillis(data.triggered_at),
+		completed_at: toMillis(data.completed_at),
 		created_at: toMillis(data.created_at),
 		updated_at: toMillis(data.updated_at),
 		last_error: typeof data.last_error === 'string' ? data.last_error : null

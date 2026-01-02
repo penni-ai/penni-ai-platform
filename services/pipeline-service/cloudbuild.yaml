@@ -38,7 +38,7 @@ steps:
           --min-instances=0 \
           --concurrency=1 \
           --set-secrets=OPENAI_API_KEY=openai-api-key:latest,WEAVIATE_API_KEY=weaviate-api-key:latest,WEAVIATE_URL=weaviate-url:latest,DEEPINFRA_API_KEY=deepinfra-api-key:latest,BRIGHTDATA_API_KEY=brightdata-api-key:latest \
-          --set-env-vars=PIPELINE_TASKS_BASE_URL=$$SERVICE_URL,CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL=pipeline-service@$PROJECT_ID.iam.gserviceaccount.com,CLOUD_TASKS_OIDC_AUDIENCE=$$SERVICE_URL,WEAVIATE_COLLECTION_NAME=influencer_profiles,MAX_CONCURRENT_WEAVIATE_SEARCHES=12,MAX_CONCURRENT_LLM_REQUESTS=5
+          --set-env-vars=PIPELINE_TASKS_BASE_URL=$$SERVICE_URL,CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL=pipeline-service@$PROJECT_ID.iam.gserviceaccount.com,CLOUD_TASKS_OIDC_AUDIENCE=$$SERVICE_URL,WEAVIATE_COLLECTION_NAME=influencer_profiles,MAX_CONCURRENT_WEAVIATE_SEARCHES=12,MAX_CONCURRENT_LLM_REQUESTS=5,BRIGHTDATA_MAX_IN_FLIGHT=20
 
 images:
   - 'gcr.io/$PROJECT_ID/pipeline-service:$BUILD_ID'

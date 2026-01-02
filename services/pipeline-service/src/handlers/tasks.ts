@@ -94,6 +94,9 @@ type PipelineBatchRecord = {
 	urls: string[];
 	snapshot_id?: string | null;
 	poll_attempts?: number;
+	started_at?: Timestamp | null;
+	triggered_at?: Timestamp | null;
+	completed_at?: Timestamp | null;
 	created_at: Timestamp;
 	updated_at: Timestamp;
 	last_error?: string | null;
@@ -283,6 +286,9 @@ async function createBatch(jobId: string, batch: Omit<PipelineBatchRecord, 'crea
 	const now = Timestamp.now();
 	await getBatchRef(jobId, batch.batch_id).set({
 		...batch,
+		started_at: null,
+		triggered_at: null,
+		completed_at: null,
 		created_at: now,
 		updated_at: now,
 	});
@@ -300,16 +306,34 @@ async function claimBatch(jobId: string, batchId: number): Promise<PipelineBatch
 			return data;
 		}
 
-		tx.update(ref, { status: 'running', updated_at: Timestamp.now() });
-		return { ...data, status: 'running' };
+		const now = Timestamp.now();
+		const updates: Partial<PipelineBatchRecord> = { status: 'running', updated_at: now };
+		if (!data.started_at) {
+			updates.started_at = now;
+		}
+
+		tx.update(ref, updates);
+		return { ...data, ...updates, status: 'running' };
 	});
 }
 
 async function updateBatch(jobId: string, batchId: number, updates: Partial<PipelineBatchRecord>) {
-	await getBatchRef(jobId, batchId).update({
+	const now = Timestamp.now();
+	const nextUpdates: Record<string, unknown> = {
 		...updates,
-		updated_at: Timestamp.now(),
-	});
+		updated_at: now,
+	};
+
+	if (typeof updates.status === 'string') {
+		if (updates.status === 'triggered') {
+			nextUpdates.triggered_at = now;
+		}
+		if (updates.status === 'completed' || updates.status === 'failed' || updates.status === 'skipped') {
+			nextUpdates.completed_at = now;
+		}
+	}
+
+	await getBatchRef(jobId, batchId).update(nextUpdates);
 }
 
 async function incrementJobCounters(jobId: string, updates: Record<string, number>): Promise<void> {

@@ -57,6 +57,7 @@
 		"openai": "^5.23.2",
 		"patch-package": "^8.0.1",
 		"picomatch": "^4.0.3",
-		"stripe": "^19.2.0"
+		"stripe": "^19.2.0",
+		"vis-timeline": "^8.5.0"
 	}
 }

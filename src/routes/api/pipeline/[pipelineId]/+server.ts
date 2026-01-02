@@ -50,6 +50,7 @@ interface PipelineJobDocument {
 		total_results?: number;
 		deduplicated_results?: number;
 		queries_executed?: number;
+		candidates_count?: number;
 		completed_at?: { toMillis?: () => number; toDate?: () => Date } | number | null;
 		error?: string | null;
 	};
@@ -234,6 +235,7 @@ export const GET = handleApiRoute(async (event) => {
 	const user = requireUser(event);
 	const pipelineId = event.params.pipelineId;
 	const requestId = event.locals.requestId || `req_${Date.now()}`;
+	const metaOnly = event.url.searchParams.get('meta') === '1' || event.url.searchParams.get('meta') === 'true';
 	
 	if (!pipelineId) {
 		throw new ApiProblem({
@@ -490,6 +492,58 @@ export const GET = handleApiRoute(async (event) => {
 	}
 	
 	// Load preliminary candidates from Storage if available (before LLM analysis)
+	if (metaOnly) {
+		return apiOk({
+			pipeline_id: data.job_id,
+			status: data.status,
+			current_stage: data.current_stage,
+			completed_stages: data.completed_stages ?? [],
+			overall_progress: data.overall_progress ?? 0,
+			start_time: timestampToMillis(data.start_time),
+			end_time: timestampToMillis(data.end_time),
+			error_message: data.error_message ?? null,
+			profiles_count: data.profiles_count ?? 0,
+			progressive_profiles_count: data.progressive_profiles_count ?? 0,
+			progressive_profiles_revision: (data as any).progressive_profiles_revision ?? 0,
+			stages: {
+				query_expansion: data.query_expansion ? {
+					status: data.query_expansion.status,
+					queries: data.query_expansion.queries ?? [],
+					prompt: data.query_expansion.prompt ?? undefined,
+					completed_at: timestampToMillis(data.query_expansion.completed_at),
+					error: data.query_expansion.error ?? null
+				} : null,
+				weaviate_search: data.weaviate_search ? {
+					status: data.weaviate_search.status,
+					total_results: data.weaviate_search.total_results,
+					deduplicated_results: data.weaviate_search.deduplicated_results,
+					queries_executed: data.weaviate_search.queries_executed,
+					candidates_count: data.weaviate_search.candidates_count ?? 0,
+					completed_at: timestampToMillis(data.weaviate_search.completed_at),
+					error: data.weaviate_search.error ?? null
+				} : null,
+				brightdata_collection: data.brightdata_collection ? {
+					status: data.brightdata_collection.status,
+					profiles_requested: data.brightdata_collection.profiles_requested,
+					profiles_collected: data.brightdata_collection.profiles_collected,
+					batches_completed: data.brightdata_collection.batches_completed,
+					batches_processing: data.brightdata_collection.batches_processing,
+					batches_failed: data.brightdata_collection.batches_failed,
+					total_batches: data.brightdata_collection.total_batches,
+					completed_at: timestampToMillis(data.brightdata_collection.completed_at),
+					error: data.brightdata_collection.error ?? null
+				} : null,
+				llm_analysis: data.llm_analysis ? {
+					status: data.llm_analysis.status,
+					profiles_analyzed: data.llm_analysis.profiles_analyzed,
+					completed_at: timestampToMillis(data.llm_analysis.completed_at),
+					error: data.llm_analysis.error ?? null
+				} : null
+			},
+			pipeline_stats: data.pipeline_stats
+		}, { headers: { 'cache-control': 'no-store' } });
+	}
+
 	let preliminaryCandidates: any[] = [];
 	if (data.candidates_storage_path) {
 		console.log(`[API] Loading preliminary candidates from storage path: ${data.candidates_storage_path}`, {

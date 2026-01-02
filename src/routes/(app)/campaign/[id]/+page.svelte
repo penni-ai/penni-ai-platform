@@ -126,24 +126,25 @@ function closeSearchLimitPanel() {
   searchLimitError = null;
 }
 
-// Pipeline listener - uses Svelte's effect cleanup for proper lifecycle management
+// Pipeline updates: poll server meta + refetch profiles when counts/revision change
 	$effect(() => {
 	  const pipelineId = effectivePipelineId;
 	  const authReady = $firebaseAuthReady;
 
-  // Reset state when pipeline changes
-  pipelineStatus = null;
-  pipelineError = null;
+	  // Reset state when pipeline changes
+	  pipelineStatus = null;
+	  pipelineError = null;
 
-  // Wait for auth and pipeline ID
-  if (!authReady || !pipelineId) return;
+	  // Wait for auth and pipeline ID
+	  if (!authReady || !pipelineId) return;
 
+	  let destroyed = false;
 	  let loadedProfilesForPipeline: string | null = null;
 	  let lastLoadedProgressiveCount = 0;
 	  let lastLoadedProfilesCount = 0;
 	  let lastLoadedProgressiveRevision = 0;
 	  let loadToken = 0;
-	
+
 	  // Fetch profiles via API (avoids CORS issues with direct storage access)
 	  const loadProfiles = async (
 	    progressiveCount: number = 0,
@@ -151,10 +152,12 @@ function closeSearchLimitPanel() {
 	    progressiveRevision: number = 0
 	  ) => {
 	    // Skip if already loaded and counts haven't changed
-	    if (loadedProfilesForPipeline === pipelineId &&
-	        progressiveRevision <= lastLoadedProgressiveRevision &&
-	        progressiveCount <= lastLoadedProgressiveCount &&
-	        profilesCount <= lastLoadedProfilesCount) {
+	    if (
+	      loadedProfilesForPipeline === pipelineId &&
+	      progressiveRevision <= lastLoadedProgressiveRevision &&
+	      progressiveCount <= lastLoadedProgressiveCount &&
+	      profilesCount <= lastLoadedProfilesCount
+	    ) {
 	      return;
 	    }
 	    try {
@@ -163,87 +166,131 @@ function closeSearchLimitPanel() {
 	        `/api/pipeline/${pipelineId}?rev=${progressiveRevision}&p=${profilesCount}&pc=${progressiveCount}`,
 	        { cache: 'no-store' }
 	      );
-	      if (response.ok) {
-	        const data = await response.json();
-	        if (currentToken !== loadToken) return;
-	        const profiles = Array.isArray(data.profiles)
-	          ? data.profiles.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
-	          : [];
-	        const preliminaryCandidates = Array.isArray(data.preliminary_candidates)
-	          ? data.preliminary_candidates.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
-	          : (pipelineStatus?.preliminary_candidates ?? []);
-	        pipelineStatus = {
-	          ...(pipelineStatus ?? {}),
-	          profiles,
-	          preliminary_candidates: preliminaryCandidates,
-	          is_progressive: data.is_progressive ?? false,
-	        } as PipelineStatus;
-	        loadedProfilesForPipeline = pipelineId;
-	        lastLoadedProgressiveCount = progressiveCount;
-	        lastLoadedProfilesCount = profilesCount;
-	        lastLoadedProgressiveRevision = progressiveRevision;
-	      }
+	      if (!response.ok) return;
+	      const data = await response.json();
+	      if (destroyed || currentToken !== loadToken) return;
+
+	      const profiles = Array.isArray(data.profiles)
+	        ? data.profiles.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
+	        : [];
+	      const preliminaryCandidates = Array.isArray(data.preliminary_candidates)
+	        ? data.preliminary_candidates.map((p: any) => ({ ...p, _id: p._id || getProfileId(p) }))
+	        : (pipelineStatus?.preliminary_candidates ?? []);
+	      pipelineStatus = {
+	        ...(pipelineStatus ?? {}),
+	        profiles,
+	        preliminary_candidates: preliminaryCandidates,
+	        is_progressive: data.is_progressive ?? false,
+	      } as PipelineStatus;
+	      loadedProfilesForPipeline = pipelineId;
+	      lastLoadedProgressiveCount = progressiveCount;
+	      lastLoadedProfilesCount = profilesCount;
+	      lastLoadedProgressiveRevision = progressiveRevision;
 	    } catch {
-	      // Will retry on next snapshot
+	      // Will retry on next poll
 	    }
 	  };
 
-  // Set up Firestore listener
-  const pipelineDocRef = doc(firebaseFirestore, 'pipeline_jobs', pipelineId);
-  let docNotFoundCount = 0;
+	  const stopPolling = (timer: ReturnType<typeof setInterval> | null) => {
+	    if (timer) clearInterval(timer);
+	  };
 
-  const unsubscribe = onSnapshot(
-    pipelineDocRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        docNotFoundCount++;
-        if (docNotFoundCount >= 10) {
-          pipelineError = { code: 'PIPELINE_NOT_FOUND', message: 'Pipeline not found', pipelineId };
-        } else {
-          pipelineStatus = {
-            status: 'pending',
-            overall_progress: 0,
-            current_stage: null,
-            completed_stages: [],
-            profiles_count: 0,
-            profiles: [],
-            stages: {}
-          } as PipelineStatus;
-        }
-        return;
-      }
+	  let docNotFoundCount = 0;
+	  let pollInFlight = false;
+	  let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-      docNotFoundCount = 0;
-      pipelineError = null;
-      const data = snapshot.data();
+	  const applyPipelineMeta = (meta: any) => {
+	    pipelineError = null;
 
-	      // Load profiles when available (including Weaviate candidates and progressive updates)
-	      const progressiveCount = data.progressive_profiles_count ?? 0;
-	      const progressiveRevision = data.progressive_profiles_revision ?? 0;
-	      const profilesCount = data.profiles_count ?? 0;
-	      const candidatesCount = data.weaviate_search?.candidates_count ?? 0;
-	      if (profilesCount > 0 || progressiveCount > 0 || candidatesCount > 0) {
-	        void loadProfiles(progressiveCount, profilesCount, progressiveRevision);
+	    const progressiveCount = meta.progressive_profiles_count ?? 0;
+	    const progressiveRevision = meta.progressive_profiles_revision ?? 0;
+	    const profilesCount = meta.profiles_count ?? 0;
+	    const candidatesCount =
+	      meta.weaviate_search?.candidates_count ?? meta.stages?.weaviate_search?.candidates_count ?? 0;
+
+	    if (profilesCount > 0 || progressiveCount > 0 || candidatesCount > 0) {
+	      void loadProfiles(progressiveCount, profilesCount, progressiveRevision);
+	    }
+
+	    pipelineStatus = {
+	      ...meta,
+	      profiles: pipelineStatus?.profiles ?? [],
+	      preliminary_candidates: pipelineStatus?.preliminary_candidates ?? [],
+	      is_progressive: pipelineStatus?.is_progressive ?? false,
+	    } as PipelineStatus;
+
+	    const isTerminal =
+	      meta.status === 'completed' || meta.status === 'cancelled' || meta.status === 'error';
+	    const needsProfiles = profilesCount > 0 || progressiveCount > 0 || candidatesCount > 0;
+	    const isProfilesSynced =
+	      loadedProfilesForPipeline === pipelineId &&
+	      progressiveRevision <= lastLoadedProgressiveRevision &&
+	      progressiveCount <= lastLoadedProgressiveCount &&
+	      profilesCount <= lastLoadedProfilesCount;
+
+	    if (isTerminal && (!needsProfiles || isProfilesSynced)) {
+	      stopPolling(pollTimer);
+	      pollTimer = null;
+	    }
+	  };
+
+	  const pollPipelineMeta = async () => {
+	    if (pollInFlight) return;
+	    pollInFlight = true;
+	    try {
+	      const response = await fetch(`/api/pipeline/${pipelineId}?meta=1&_=${Date.now()}`, {
+	        cache: 'no-store'
+	      });
+	      const body = await response.json().catch(() => ({}));
+	      if (destroyed) return;
+
+	      if (!response.ok) {
+	        const err = (body as any).error ?? body;
+	        const code = typeof err?.code === 'string' ? err.code : `HTTP_${response.status}`;
+	        const message =
+	          typeof err?.message === 'string' ? err.message : `Failed to load pipeline (${response.status})`;
+
+	        if (response.status === 404 && code === 'PIPELINE_NOT_FOUND') {
+	          docNotFoundCount++;
+	          if (docNotFoundCount >= 10) {
+	            pipelineError = { code: 'PIPELINE_NOT_FOUND', message: 'Pipeline not found', pipelineId };
+	            stopPolling(pollTimer);
+	            pollTimer = null;
+	          } else {
+	            pipelineStatus = {
+	              status: 'pending',
+	              overall_progress: 0,
+	              current_stage: null,
+	              completed_stages: [],
+	              profiles_count: 0,
+	              profiles: [],
+	              stages: {}
+	            } as PipelineStatus;
+	          }
+	          return;
+	        }
+
+	        pipelineError = { code, message, pipelineId };
+	        return;
 	      }
 
-      // Update status, preserving loaded profiles and preliminary candidates
-      pipelineStatus = {
-        ...data,
-        profiles: pipelineStatus?.profiles ?? [],
-        preliminary_candidates: pipelineStatus?.preliminary_candidates ?? [],
-        is_progressive: pipelineStatus?.is_progressive ?? false,
-      } as PipelineStatus;
-    },
-    (error) => {
-      pipelineError = { code: 'LISTENER_ERROR', message: error.message, pipelineId };
-    }
-  );
+	      docNotFoundCount = 0;
+	      applyPipelineMeta(body);
+	    } catch {
+	      // Ignore transient errors; next poll will retry.
+	    } finally {
+	      pollInFlight = false;
+	    }
+	  };
 
-  // Cleanup: Svelte calls this when effect re-runs or component unmounts
-  return () => {
-    unsubscribe();
-  };
-});
+	  void pollPipelineMeta();
+	  pollTimer = setInterval(pollPipelineMeta, 2500);
+
+	  return () => {
+	    destroyed = true;
+	    stopPolling(pollTimer);
+	  };
+	});
 
 onMount(() => {
   if (!browser) return;

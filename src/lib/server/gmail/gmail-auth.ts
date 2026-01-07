@@ -4,12 +4,14 @@ import { OAuth2Client } from 'google-auth-library';
 import { firestore, gmailConnectionsCollectionRef, serverTimestamp } from '../core';
 import { env } from '$env/dynamic/private';
 import { createLogger } from '$lib/server/core';
+import { cancelQueuedEmailsForConnection } from '$lib/server/email-queue/queue-service';
 
 function getGmailConfig() {
 	const clientId = env.GMAIL_OAUTH_CLIENT_ID;
 	const clientSecret = env.GMAIL_OAUTH_CLIENT_SECRET;
 	const redirectUri = env.GMAIL_OAUTH_REDIRECT_URI;
 	const encryptionKeyB64 = env.GMAIL_TOKEN_ENCRYPTION_KEY;
+	const previousKeyB64 = env.GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS;
 
 	if (!clientId || !clientSecret || !redirectUri) {
 		throw new Error(
@@ -26,7 +28,16 @@ function getGmailConfig() {
 		throw new Error('GMAIL_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.');
 	}
 
-	return { clientId, clientSecret, redirectUri, encryptionKey };
+	let previousEncryptionKey: Buffer | null = null;
+	if (previousKeyB64) {
+		const parsed = Buffer.from(previousKeyB64, 'base64');
+		if (parsed.length !== 32) {
+			throw new Error('GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS must be a base64-encoded 32-byte key.');
+		}
+		previousEncryptionKey = parsed;
+	}
+
+	return { clientId, clientSecret, redirectUri, encryptionKey, previousEncryptionKey };
 }
 
 const gmailLogger = createLogger({ component: 'gmail_oauth' });
@@ -34,7 +45,10 @@ const gmailLogger = createLogger({ component: 'gmail_oauth' });
 export type GmailAccountType = 'draft' | 'send';
 
 interface GmailConnectionDoc {
-	access_token: string;
+	access_token?: string; // Legacy plaintext storage
+	access_token_encrypted?: string;
+	access_token_iv?: string;
+	access_token_tag?: string;
 	expires_at: number;
 	email: string;
 	connected_at: number;
@@ -91,14 +105,35 @@ function encryptSecret(value: string) {
 }
 
 function decryptSecret(ciphertext: string, iv: string, tag: string): string {
-	const { encryptionKey } = getGmailConfig();
-	const decipher = createDecipheriv('aes-256-gcm', encryptionKey, Buffer.from(iv, 'base64'));
-	decipher.setAuthTag(Buffer.from(tag, 'base64'));
-	const decrypted = Buffer.concat([
-		decipher.update(Buffer.from(ciphertext, 'base64')),
-		decipher.final()
-	]);
-	return decrypted.toString('utf8');
+	const { encryptionKey, previousEncryptionKey } = getGmailConfig();
+	const keys = [encryptionKey, ...(previousEncryptionKey ? [previousEncryptionKey] : [])];
+
+	const ivBytes = Buffer.from(iv, 'base64');
+	const tagBytes = Buffer.from(tag, 'base64');
+	const ciphertextBytes = Buffer.from(ciphertext, 'base64');
+
+	for (const key of keys) {
+		try {
+			const decipher = createDecipheriv('aes-256-gcm', key, ivBytes);
+			decipher.setAuthTag(tagBytes);
+			const decrypted = Buffer.concat([decipher.update(ciphertextBytes), decipher.final()]);
+			return decrypted.toString('utf8');
+		} catch {
+			// Try the next candidate key (supports key rotation).
+		}
+	}
+
+	throw new Error('Failed to decrypt Gmail token. Key rotation may be required.');
+}
+
+function extractAccessToken(data: GmailConnectionDoc): string | null {
+	if (data.access_token) {
+		return data.access_token;
+	}
+	if (data.access_token_encrypted && data.access_token_iv && data.access_token_tag) {
+		return decryptSecret(data.access_token_encrypted, data.access_token_iv, data.access_token_tag);
+	}
+	return null;
 }
 
 function extractRefreshToken(data: GmailConnectionDoc): string {
@@ -114,6 +149,12 @@ function extractRefreshToken(data: GmailConnectionDoc): string {
 function deriveConnectionId(email: string): string {
 	const base = email.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'gmail';
 	return base.slice(0, 40);
+}
+
+function getEmailDomain(email: string): string | null {
+	const at = email.lastIndexOf('@');
+	if (at <= 0 || at >= email.length - 1) return null;
+	return email.slice(at + 1).toLowerCase();
 }
 
 async function resolveConnectionId(uid: string, email: string, preferred?: string | null): Promise<string> {
@@ -162,12 +203,14 @@ async function listConnectionDocs(uid: string): Promise<GmailConnection[]> {
 	const snapshot = await gmailConnectionsCollectionRef(uid).orderBy('connected_at').get();
 	return snapshot.docs.map((doc) => {
 		const data = doc.data() as GmailConnectionDoc;
+		const accessToken = extractAccessToken(data);
+		const expiresAt = typeof data.expires_at === 'number' ? data.expires_at : 0;
 		return {
 			id: doc.id,
 			email: data.email,
-			access_token: data.access_token,
+			access_token: accessToken ?? '',
 			refresh_token: extractRefreshToken(data),
-			expires_at: data.expires_at,
+			expires_at: accessToken ? expiresAt : 0,
 			connected_at: data.connected_at,
 			last_refreshed_at: data.last_refreshed_at ?? data.connected_at ?? null,
 			primary: Boolean(data.primary),
@@ -276,6 +319,7 @@ export async function storeGmailTokens(
 	const email = await getUserEmail(tokens.access_token);
 	const expiresAt = tokens.expiry_date;
 	const now = Date.now();
+	const encryptedAccess = encryptSecret(tokens.access_token);
 	const encryptedRefresh = encryptSecret(tokens.refresh_token);
 	const hasConnections = await hasAnyConnection(uid);
 	const connectionId = await resolveConnectionId(uid, email, options?.connectionId ?? null);
@@ -285,7 +329,10 @@ export async function storeGmailTokens(
 		.set(
 			{
 				email,
-				access_token: tokens.access_token,
+				access_token_encrypted: encryptedAccess.ciphertext,
+				access_token_iv: encryptedAccess.iv,
+				access_token_tag: encryptedAccess.tag,
+				access_token: FieldValue.delete(),
 				expires_at: expiresAt,
 				connected_at: now,
 				last_refreshed_at: now,
@@ -304,7 +351,7 @@ export async function storeGmailTokens(
 		await setPrimaryFlag(uid, connectionId);
 	}
 
-	gmailLogger.info('gmail_connected', { uid, email, connectionId });
+	gmailLogger.info('gmail_connected', { uid, connectionId, email_domain: getEmailDomain(email) });
 
 	const connection = await findConnection(uid, connectionId);
 	if (!connection) {
@@ -349,13 +396,17 @@ export async function refreshGmailToken(uid: string, connectionId: string): Prom
 
 		const refreshedToken = credentials.refresh_token ?? connection.refresh_token;
 		const encryptedRefresh = encryptSecret(refreshedToken);
+		const encryptedAccess = encryptSecret(credentials.access_token);
 		const now = Date.now();
 
 		await gmailConnectionsCollectionRef(uid)
 			.doc(connectionId)
 			.set(
 				{
-					access_token: credentials.access_token,
+					access_token_encrypted: encryptedAccess.ciphertext,
+					access_token_iv: encryptedAccess.iv,
+					access_token_tag: encryptedAccess.tag,
+					access_token: FieldValue.delete(),
 					expires_at: credentials.expiry_date,
 					last_refreshed_at: now,
 					refresh_token_encrypted: encryptedRefresh.ciphertext,
@@ -377,6 +428,17 @@ export async function refreshGmailToken(uid: string, connectionId: string): Prom
 		};
 	} catch (error) {
 		if (isInvalidGrant(error)) {
+			try {
+				const cancelled = await cancelQueuedEmailsForConnection(uid, connectionId, {
+					scrubContent: true,
+					reason: 'Cancelled due to Gmail permission revoked'
+				});
+				if (cancelled > 0) {
+					gmailLogger.info('gmail_invalid_grant_cancelled_queued_emails', { uid, connectionId, cancelled });
+				}
+			} catch (cancelError) {
+				gmailLogger.warn('gmail_invalid_grant_cancel_queue_failed', { uid, connectionId, error: cancelError });
+			}
 			await deleteConnectionDoc(uid, connectionId);
 			await ensurePrimaryAfterDisconnect(uid);
 			gmailLogger.warn('gmail_refresh_invalid_grant', { uid, connectionId });
@@ -391,16 +453,42 @@ export async function setPrimaryGmailConnection(uid: string, connectionId: strin
 }
 
 export async function revokeGmailTokens(uid: string, connectionId: string): Promise<void> {
-	const connection = await findConnection(uid, connectionId);
-	if (!connection) {
+	const doc = await gmailConnectionsCollectionRef(uid).doc(connectionId).get();
+	if (!doc.exists) {
 		return;
+	}
+
+	const data = doc.data() as GmailConnectionDoc;
+	const accessToken = extractAccessToken(data);
+	let refreshToken: string | null = null;
+	try {
+		refreshToken = extractRefreshToken(data);
+	} catch (error) {
+		refreshToken = null;
+		gmailLogger.warn('gmail_disconnect_missing_refresh_token', { uid, connectionId, error });
 	}
 
 	try {
 		const oauth2Client = createOAuth2Client();
-		await oauth2Client.revokeToken(connection.access_token);
+		const tokenToRevoke = refreshToken || accessToken;
+		if (tokenToRevoke) {
+			await oauth2Client.revokeToken(tokenToRevoke);
+		}
 	} catch (error) {
-		console.error('Failed to revoke Gmail tokens:', error);
+		const message = error instanceof Error ? error.message : String(error);
+		gmailLogger.warn('gmail_revoke_failed', { uid, connectionId, error_message: message });
+	}
+
+	try {
+		const cancelled = await cancelQueuedEmailsForConnection(uid, connectionId, {
+			scrubContent: true,
+			reason: 'Cancelled due to Gmail disconnect'
+		});
+		if (cancelled > 0) {
+			gmailLogger.info('gmail_disconnect_cancelled_queued_emails', { uid, connectionId, cancelled });
+		}
+	} catch (error) {
+		gmailLogger.warn('gmail_disconnect_cancel_queue_failed', { uid, connectionId, error });
 	}
 
 	await deleteConnectionDoc(uid, connectionId);

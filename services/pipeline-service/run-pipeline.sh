@@ -318,6 +318,9 @@ display_timing_summary() {
   echo ""
   
   # Results
+  local profiles_path=$(echo "$job_data" | jq -r '.profiles_storage_path // null' 2>/dev/null)
+  local candidates_path=$(echo "$job_data" | jq -r '.candidates_storage_path // null' 2>/dev/null)
+  # Backwards-compatible fallbacks (older jobs stored URLs)
   local profiles_url=$(echo "$job_data" | jq -r '.profiles_storage_url // null' 2>/dev/null)
   local candidates_url=$(echo "$job_data" | jq -r '.candidates_storage_url // null' 2>/dev/null)
   local final_count=$(echo "$job_data" | jq -r '.pipeline_stats.profiles_collected // 0' 2>/dev/null)
@@ -331,11 +334,15 @@ display_timing_summary() {
     echo "📊 Final Profiles: $final_count"
   fi
   
-  if [[ "$candidates_url" != "null" && -n "$candidates_url" ]]; then
+  if [[ "$candidates_path" != "null" && -n "$candidates_path" ]]; then
+    echo "📁 Candidates Path: $candidates_path"
+  elif [[ "$candidates_url" != "null" && -n "$candidates_url" ]]; then
     echo "🔗 Candidates URL: $candidates_url"
   fi
   
-  if [[ "$profiles_url" != "null" && -n "$profiles_url" ]]; then
+  if [[ "$profiles_path" != "null" && -n "$profiles_path" ]]; then
+    echo "📁 Profiles Path: $profiles_path"
+  elif [[ "$profiles_url" != "null" && -n "$profiles_url" ]]; then
     echo "🔗 Profiles URL: $profiles_url"
   fi
   
@@ -386,4 +393,3 @@ main() {
 
 # Run main function
 main "$@"
-

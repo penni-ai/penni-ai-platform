@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "annotations": {
+      "run.googleapis.com/ingress": "all"
+    }
+  },
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "image": "us-central1-docker.pkg.dev/penni-ai-platform/pipeline-service-images/pipeline-service:58cfc320-0898-486c-8e6e-304c60f00393"
+          }
+        ],
+        "serviceAccountName": "pipeline-service@penni-ai-platform.iam.gserviceaccount.com"
+      }
+    }
+  },
+  "status": {
+    "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app"
+  }
+}

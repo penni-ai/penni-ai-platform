@@ -156,9 +156,7 @@ describe('firestore-tracker (unit)', () => {
 		const final = finalSnap.data() as any;
 
 		expect(final.candidates_storage_path).toBe(`pipeline_jobs/${jobId}/candidates.json`);
-		expect(final.candidates_storage_url).toBe(
-			`https://storage.googleapis.com/test-bucket/pipeline_jobs/${jobId}/candidates.json`
-		);
+		expect(final.candidates_storage_url).toBeUndefined();
 		expect(final.profiles_storage_path).toBe(`pipeline_jobs/${jobId}/profiles.json`);
 		expect(final.profiles_count).toBe(3);
 		expect(final.remaining_profiles_storage_path).toBe(`pipeline_jobs/${jobId}/profiles_remaining.json`);

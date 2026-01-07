@@ -1,0 +1,3 @@
+ROLE                     MEMBERS
+roles/logging.logWriter  serviceAccount:cloud-build-deployer@penni-ai-platform.iam.gserviceaccount.com
+roles/run.admin          serviceAccount:cloud-build-deployer@penni-ai-platform.iam.gserviceaccount.com

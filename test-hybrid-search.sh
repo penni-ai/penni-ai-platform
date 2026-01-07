@@ -70,6 +70,8 @@ echo "$RESPONSE" | jq '{
 }'
 
 echo ""
-echo "📊 Full response saved to hybrid-response.json"
-echo "$RESPONSE" | jq '.' > hybrid-response.json
-
+OUT_DIR="${OUT_DIR:-test-results}"
+mkdir -p "$OUT_DIR"
+OUT_FILE="${OUT_DIR}/hybrid-response.$(date +%Y%m%dT%H%M%S).json"
+echo "📊 Full response saved to ${OUT_FILE}"
+echo "$RESPONSE" | jq '.' > "$OUT_FILE"

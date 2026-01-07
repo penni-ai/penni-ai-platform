@@ -8,9 +8,7 @@
         ".git",
         "firebase-debug.log",
         "firebase-debug.*.log",
-        "functions",
-        "penni-chatbot",
-        "chatbot-function"
+        "functions"
       ],
       "alwaysDeployFromSource": false
     }

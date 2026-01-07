@@ -1,4 +1,4 @@
-import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { outreachStateDocRef } from '$lib/server/core/firestore';
 import type { OutreachState } from '$lib/server/core/firestore';
 
@@ -41,6 +41,7 @@ export const GET = handleApiRoute(async (event) => {
 
 export const PUT = handleApiRoute(async (event) => {
 	const user = requireUser(event);
+	assertSameOrigin(event);
 	const campaignId = event.params.campaignId;
 	
 	if (!campaignId) {
@@ -121,6 +122,7 @@ export const PUT = handleApiRoute(async (event) => {
 
 export const DELETE = handleApiRoute(async (event) => {
 	const user = requireUser(event);
+	assertSameOrigin(event);
 	const campaignId = event.params.campaignId;
 	
 	if (!campaignId) {
@@ -143,4 +145,3 @@ export const DELETE = handleApiRoute(async (event) => {
 		});
 	}
 }, { component: 'outreach-state' });
-

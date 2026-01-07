@@ -130,14 +130,8 @@ env:
     value: 127.0.0.1:6201
     availability: [ RUNTIME ]
 
-  # Chatbot service configuration (local development)
-  - variable: CHATBOT_SERVICE_URL
-    value: http://localhost:8080
-    availability:
-      - RUNTIME
-
   # Pipeline service configuration (local development)
-  # Note: Pipeline service runs on port 8081, chatbot function runs on port 8080
+  # Note: Pipeline service runs on port 8081
   - variable: CLOUD_RUN_PIPELINE_SERVICE_URL
     value: http://localhost:8081
     availability:
@@ -149,4 +143,3 @@ env:
     availability:
       - BUILD
       - RUNTIME
-

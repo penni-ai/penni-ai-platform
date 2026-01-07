@@ -33,6 +33,7 @@
 		to: string;
 		subject: string;
 		htmlBody: string;
+		contentScrubbed?: boolean;
 		senderConnectionId: string;
 		senderEmail: string;
 		status: 'queued' | 'processing' | 'sent' | 'failed' | 'cancelled';
@@ -247,19 +248,41 @@
 	}
 
 	function getInitial(name: string | null, email: string): string {
-		if (name) return name.charAt(0).toUpperCase();
-		return email.charAt(0).toUpperCase();
+		const nameInitial = (name || '').trim().charAt(0);
+		if (nameInitial) return nameInitial.toUpperCase();
+		const emailInitial = (email || '').trim().charAt(0);
+		if (emailInitial) return emailInitial.toUpperCase();
+		return '?';
 	}
 
 	function getAvatarColor(email: string): string {
 		const colors = ['bg-coral', 'bg-amber-200', 'bg-purple-200', 'bg-blue-200', 'bg-orange-100'];
-		const index = email.charCodeAt(0) % colors.length;
+		const normalized = (email || '').trim();
+		if (!normalized) return colors[0];
+		const index = normalized.charCodeAt(0) % colors.length;
 		return colors[index];
 	}
 
 	function truncateSubject(subject: string, maxLength: number = 50): string {
 		if (subject.length <= maxLength) return subject;
 		return subject.substring(0, maxLength) + '...';
+	}
+
+	function displayRecipientName(email: QueuedEmail): string {
+		if (email.influencerName) return email.influencerName;
+		if (email.to) return email.to;
+		return email.contentScrubbed ? 'Recipient removed' : 'Unknown recipient';
+	}
+
+	function displayRecipientEmail(email: QueuedEmail): string | null {
+		if (email.influencerName && email.to) return email.to;
+		return null;
+	}
+
+	function displaySubject(email: QueuedEmail): string {
+		const trimmed = (email.subject || '').trim();
+		if (trimmed) return truncateSubject(trimmed);
+		return email.contentScrubbed ? '(content removed)' : '(no subject)';
 	}
 </script>
 
@@ -615,12 +638,12 @@
 								</div>
 								<div class="queue-content">
 									<div class="queue-recipient">
-										<span class="recipient-name">{email.influencerName ?? email.to}</span>
-										{#if email.influencerName}
-											<span class="recipient-email">{email.to}</span>
+										<span class="recipient-name">{displayRecipientName(email)}</span>
+										{#if displayRecipientEmail(email)}
+											<span class="recipient-email">{displayRecipientEmail(email)}</span>
 										{/if}
 									</div>
-									<p class="queue-subject">{truncateSubject(email.subject)}</p>
+									<p class="queue-subject">{displaySubject(email)}</p>
 								</div>
 								<div class="queue-meta">
 									<span class="queue-status queue-status-{email.status}">

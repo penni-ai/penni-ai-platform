@@ -1,0 +1,18 @@
+{
+  "appEngineIntegrationMode": "DISABLED",
+  "concurrencyMode": "PESSIMISTIC",
+  "createTime": "2026-01-07T09:47:08.771809Z",
+  "databaseEdition": "STANDARD",
+  "deleteProtectionState": "DELETE_PROTECTION_DISABLED",
+  "earliestVersionTime": "2026-01-07T09:47:08.771809Z",
+  "etag": "IMPmn+6S+ZEDMOHL4+eS+ZED",
+  "freeTier": false,
+  "locationId": "nam5",
+  "name": "projects/penni-ai-platform/databases/restore-test-20260107-094456",
+  "pointInTimeRecoveryEnablement": "POINT_IN_TIME_RECOVERY_DISABLED",
+  "realtimeUpdatesMode": "REALTIME_UPDATES_MODE_ENABLED",
+  "type": "FIRESTORE_NATIVE",
+  "uid": "789971d6-5caf-4693-a7b4-439ccb4e9961",
+  "updateTime": "2026-01-07T09:47:08.771809Z",
+  "versionRetentionPeriod": "3600s"
+}

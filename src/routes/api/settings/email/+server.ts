@@ -1,4 +1,4 @@
-import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { userDocRef } from '$lib/server/core/firestore';
 import type { UserEmailSettings } from '$lib/server/core/firestore';
 
@@ -27,6 +27,7 @@ export const GET = handleApiRoute(async (event) => {
 
 export const PUT = handleApiRoute(async (event) => {
 	const user = requireUser(event);
+	assertSameOrigin(event);
 	
 	let body: { footer?: { enabled: boolean; html?: string; text?: string }; branding?: UserEmailSettings['branding']; directSend?: boolean };
 	try {
@@ -62,4 +63,3 @@ export const PUT = handleApiRoute(async (event) => {
 		});
 	}
 }, { component: 'email-settings' });
-

@@ -102,16 +102,10 @@ export function emailQueueDocRef(uid: string, queueId: string): DocumentReferenc
 	return emailQueueCollectionRef(uid).doc(queueId);
 }
 
-// Campaign structure:
-// - campaigns/{campaignId}/collected (document) - collected data
-// - campaigns/{campaignId}/chat/{messageId} (collection) - messages
-export function chatCollectedDocRef(uid: string, campaignId: string): DocumentReference {
+// Campaign collected data:
+// - campaigns/{campaignId}/collected/data (document)
+export function campaignCollectedDocRef(uid: string, campaignId: string): DocumentReference {
 	return campaignDocRef(uid, campaignId).collection('collected').doc('data');
-}
-
-export function chatMessagesCollectionRef(uid: string, campaignId: string): CollectionReference {
-	// Messages collection: campaigns/{campaignId}/chat/{messageId}
-	return campaignDocRef(uid, campaignId).collection('chat');
 }
 
 // New organized structure: Outreach collection
@@ -261,10 +255,10 @@ export interface CampaignRecord {
 	accumulated_profile_urls?: string[]; // Deprecated: use profiles collection
 }
 
-// Chat collected data structure
+// Campaign collected data structure
 export type FieldStatus = 'not_collected' | 'collected' | 'confirmed';
 
-export interface ChatCollectedData {
+export interface CampaignCollectedData {
 	website: string | null;
 	business_name: string | null;
 	platform: string | null;
@@ -346,6 +340,8 @@ export interface QueuedEmail {
 	to: string; // Recipient email address
 	subject: string;
 	htmlBody: string; // Already-processed HTML (template vars filled)
+	// If true, sensitive content fields were scrubbed (e.g. after Gmail disconnect).
+	contentScrubbed?: boolean;
 	// Sender info
 	senderConnectionId: string; // Gmail connection to use
 	senderEmail: string; // Sender's email (for display)

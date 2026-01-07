@@ -1,7 +1,8 @@
-import { handleApiRoute, requireUser, apiOk, ApiProblem } from '$lib/server/core';
+import { handleApiRoute, requireUser, apiOk, ApiProblem, assertSameOrigin } from '$lib/server/core';
 import { setPrimaryGmailConnection } from '$lib/server/gmail';
 
 export const POST = handleApiRoute(async (event) => {
+	assertSameOrigin(event);
 	const user = requireUser(event);
 	let body: { connectionId?: string };
 	try {

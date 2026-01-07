@@ -1,5 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+function parseStructuredLogCall(call: unknown[]): Record<string, any> | null {
+	const first = call[0];
+	if (typeof first !== 'string') return null;
+	try {
+		const parsed = JSON.parse(first);
+		return parsed && typeof parsed === 'object' ? (parsed as Record<string, any>) : null;
+	} catch {
+		return null;
+	}
+}
+
+function findStructuredLogs(spy: ReturnType<typeof vi.spyOn>) {
+	return spy.mock.calls.map((call) => parseStructuredLogCall(call as unknown[])).filter(Boolean) as Record<string, any>[];
+}
+
+function expectStructuredLogMessage(spy: ReturnType<typeof vi.spyOn>, message: string) {
+	const matched = spy.mock.calls.some((call) => parseStructuredLogCall(call as unknown[])?.message === message);
+	expect(matched).toBe(true);
+}
+
 const apps: any[] = [];
 const initializeApp = vi.fn((options: any) => {
 	const app = { options };
@@ -130,12 +150,11 @@ describe('firebase-admin utils (unit)', () => {
 		expect(storage.app).toBe(app);
 	});
 
-	it('logs when all API keys are configured and masks secrets', async () => {
+	it('logs when all API keys are configured (without logging secret values)', async () => {
 		const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-		const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
 		process.env.GOOGLE_CLOUD_PROJECT = 'penni-ai-platform';
-		process.env.OPENAI_API_KEY = 'short'; // triggers "too short to mask"
+		process.env.OPENAI_API_KEY = 'short';
 		process.env.DEEPINFRA_API_KEY = 'di-key-long';
 		process.env.BRIGHTDATA_API_KEY = 'bd-key-long';
 		process.env.WEAVIATE_API_KEY = 'wv-key-long';
@@ -144,15 +163,20 @@ describe('firebase-admin utils (unit)', () => {
 		const mod = await import('../dist/utils/firebase-admin.js');
 		mod.getOrInitAdminApp();
 
-		expect(infoSpy).toHaveBeenCalledWith(
-			'[FirebaseAdmin] ✅ All API keys are configured'
-		);
+		expectStructuredLogMessage(infoSpy, 'firebase_admin_api_keys_ok');
 
-		// Storage emulator debug logging should not happen here (no emulator host), but keep spy for coverage stability.
-		expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Storage emulator configured'));
+		const logs = findStructuredLogs(infoSpy);
+		const status = logs.find((entry) => entry.message === 'firebase_admin_api_key_status');
+		expect(status).toBeTruthy();
+		expect(status).toMatchObject({
+			openai_configured: true,
+			deepinfra_configured: true,
+			brightdata_configured: true,
+			weaviate_api_configured: true,
+			weaviate_url_host: 'weaviate.example.test'
+		});
 
 		infoSpy.mockRestore();
-		logSpy.mockRestore();
 	});
 
 	it('uses FIREBASE_SERVICE_ACCOUNT (cert) when not in emulator', async () => {
@@ -196,7 +220,7 @@ describe('firebase-admin utils (unit)', () => {
 	});
 
 	it('logs storage emulator configuration when FIREBASE_STORAGE_EMULATOR_HOST has no protocol', async () => {
-		const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+		const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
 
 		process.env.GOOGLE_CLOUD_PROJECT = 'penni-ai-platform';
 		process.env.FIREBASE_STORAGE_EMULATOR_HOST = '127.0.0.1:9199';
@@ -205,10 +229,11 @@ describe('firebase-admin utils (unit)', () => {
 		const mod = await import('../dist/utils/firebase-admin.js');
 		mod.getStorageInstance();
 
-		expect(logSpy).toHaveBeenCalledWith('[FirebaseAdmin] Storage emulator configured:', {
-			storageEmulatorHost: '127.0.0.1:9199'
-		});
+		const logs = findStructuredLogs(infoSpy);
+		const entry = logs.find((log) => log.message === 'firebase_admin_storage_emulator_configured');
+		expect(entry).toBeTruthy();
+		expect(entry).toMatchObject({ storageEmulatorHost: '127.0.0.1:9199' });
 
-		logSpy.mockRestore();
+		infoSpy.mockRestore();
 	});
 });

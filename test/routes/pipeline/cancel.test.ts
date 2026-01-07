@@ -38,7 +38,7 @@ describe('routes/api/pipeline/[pipelineId]/cancel POST', () => {
 		expect(res.status).toBe(404);
 	});
 
-	it('returns 403 when pipeline belongs to another user', async () => {
+	it('returns 404 when pipeline belongs to another user', async () => {
 		vi.resetModules();
 		const firestore = new FakeFirestore({
 			'pipeline_jobs/job1': { job_id: 'job1', uid: 'other', status: 'running' }
@@ -48,7 +48,20 @@ describe('routes/api/pipeline/[pipelineId]/cancel POST', () => {
 
 		const { POST } = await import('../../../src/routes/api/pipeline/[pipelineId]/cancel/+server');
 		const res = await POST(makeEvent({ uid: 'u1', pipelineId: 'job1' }));
-		expect(res.status).toBe(403);
+		expect(res.status).toBe(404);
+	});
+
+	it('returns 404 when pipeline uid is missing', async () => {
+		vi.resetModules();
+		const firestore = new FakeFirestore({
+			'pipeline_jobs/job_missing_uid': { job_id: 'job_missing_uid', uid: null, status: 'running' }
+		});
+		const { adminDb } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+
+		const { POST } = await import('../../../src/routes/api/pipeline/[pipelineId]/cancel/+server');
+		const res = await POST(makeEvent({ uid: 'u1', pipelineId: 'job_missing_uid' }));
+		expect(res.status).toBe(404);
 	});
 
 	it('returns ok without updating when pipeline is already terminal', async () => {
@@ -86,4 +99,3 @@ describe('routes/api/pipeline/[pipelineId]/cancel POST', () => {
 		expect(snap.get('cancel_requested')).toBe(true);
 	});
 });
-

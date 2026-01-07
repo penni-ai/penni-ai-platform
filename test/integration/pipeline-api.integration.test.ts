@@ -213,7 +213,7 @@ describe('pipeline API routes (Firestore + Storage emulator)', () => {
 		expect(jobSnap.get('cancel_requested')).toBe(true);
 	});
 
-	it('POST /cancel returns 403 when user does not own the pipeline', async () => {
+	it('POST /cancel returns 404 when user does not own the pipeline', async () => {
 		const pipelineId = `job_forbidden_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 		await adminDb.collection('pipeline_jobs').doc(pipelineId).set({
 			job_id: pipelineId,
@@ -232,9 +232,8 @@ describe('pipeline API routes (Firestore + Storage emulator)', () => {
 			})
 		);
 
-		expect(res.status).toBe(403);
+		expect(res.status).toBe(404);
 		const body = await res.json();
-		expect(body.error?.code).toBe('PIPELINE_FORBIDDEN');
+		expect(body.error?.code).toBe('PIPELINE_NOT_FOUND');
 	});
 });
-

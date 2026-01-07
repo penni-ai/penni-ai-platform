@@ -1,0 +1,8 @@
+{
+  "fields": {
+    "runId": { "stringValue": "run_20260107-094456" },
+    "createdAt": { "timestampValue": "2026-01-07T09:46:18Z" },
+    "purpose": { "stringValue": "soc2_dr_restore_test" },
+    "containsCustomerData": { "booleanValue": false }
+  }
+}

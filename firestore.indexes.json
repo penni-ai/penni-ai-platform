@@ -1,6 +1,22 @@
 {
   "indexes": [
     {
+      "collectionGroup": "emailQueue",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "mode": "ASCENDING" },
+        { "fieldPath": "scheduledFor", "mode": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "emailQueue",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "mode": "ASCENDING" },
+        { "fieldPath": "updatedAt", "mode": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "search_pipeline_runs",
       "queryScope": "COLLECTION",
       "fields": [

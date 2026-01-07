@@ -55,6 +55,15 @@ interface StageResultSummary {
 
 const TEST_RUNNER_UID = process.env.PUBLIC_TEST_SEARCH_UID ?? 'search-test-runner';
 
+function allowTestAccess(): boolean {
+	return Boolean(
+		process.env.E2E_TESTING === 'true' ||
+			process.env.FIRESTORE_EMULATOR_HOST ||
+			process.env.FIREBASE_AUTH_EMULATOR_HOST ||
+			process.env.FUNCTIONS_EMULATOR === 'true'
+	);
+}
+
 function parseRequestBody(raw: unknown): TestSearchRequest {
 	if (raw == null) return {};
 	if (typeof raw !== 'object') {
@@ -109,6 +118,13 @@ function summarizeResponse(payload: SearchPipelineResponse | null): StageResultS
 
 export const POST = handleApiRoute(async (event) => {
 	assertSameOrigin(event);
+	if (!allowTestAccess()) {
+		throw new ApiProblem({
+			status: 403,
+			code: 'TEST_SEARCH_DISABLED',
+			message: 'Test search is only available in emulator or E2E mode.'
+		});
+	}
 	let parsedBody: unknown;
 	try {
 		parsedBody = await event.request.json();

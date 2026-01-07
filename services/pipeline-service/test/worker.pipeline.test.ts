@@ -4,6 +4,22 @@ import { FakeFirestore } from './helpers/fake-firebase';
 
 type FitResult = { fit_score: number; fit_rationale: string; fit_summary: string };
 
+function parseStructuredLogCall(call: unknown[]): Record<string, any> | null {
+  const first = call[0];
+  if (typeof first !== 'string') return null;
+  try {
+    const parsed = JSON.parse(first);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, any>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function expectStructuredLogMessage(spy: ReturnType<typeof vi.spyOn>, message: string) {
+  const matched = spy.mock.calls.some((call) => parseStructuredLogCall(call as unknown[])?.message === message);
+  expect(matched).toBe(true);
+}
+
 function makeUrls(count: number, platform: 'instagram' | 'tiktok' = 'instagram'): string[] {
   return Array.from({ length: count }, (_, i) =>
     platform === 'instagram'
@@ -209,7 +225,7 @@ describe('pipeline worker (cache-first + early stop)', () => {
 
     llmAnalysis.analyzeProfileFitBatch.mockImplementation(async (profiles: any[]) => {
       const results: FitResult[] = profiles.map((p: any, i: number) => ({
-        fit_score: i < llmTopN ? 90 : 0,
+        fit_score: i < llmTopN ? 100 : 0,
         fit_rationale: `rationale ${p.profile_url}`,
         fit_summary: `summary ${p.profile_url}`,
       }));
@@ -601,7 +617,7 @@ describe('pipeline worker (cache-first + early stop)', () => {
 
     firestoreTracker.saveWeaviateCandidates.mockRejectedValueOnce(new Error('storage down'));
 
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const { handlePipelineExecution } = await import('../dist/handlers/worker.js');
     await handlePipelineExecution({
@@ -623,7 +639,7 @@ describe('pipeline worker (cache-first + early stop)', () => {
         expect.objectContaining({ id: 'id_3', profile_url: 'https://instagram.com/ig_2/' }),
       ])
     );
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/Failed to save candidates/), expect.any(Error));
+    expectStructuredLogMessage(warnSpy, 'weaviate_candidates_save_failed');
     expect(firestoreTracker.updateProgress).toHaveBeenCalledWith(
       'job_test_candidates_fallbacks',
       'weaviate_search',
@@ -788,10 +804,7 @@ describe('pipeline worker (cache-first + early stop)', () => {
       request_id: 'req_campaign_fetch_fail',
     });
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/Failed to fetch campaign details/),
-      expect.any(Error)
-    );
+    expectStructuredLogMessage(warnSpy, 'campaign_description_failed');
   });
 
   it('processes cached TikTok batches and warns when progressive updates fail', async () => {
@@ -833,7 +846,7 @@ describe('pipeline worker (cache-first + early stop)', () => {
       request_id: 'req_cached_tiktok',
     });
 
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/Failed to update progressive top-N/), expect.any(Error));
+    expectStructuredLogMessage(warnSpy, 'progressive_topn_failed');
   });
 
   it('handles BrightData trigger failures (no snapshot returned and thrown errors)', async () => {
@@ -953,8 +966,8 @@ describe('pipeline worker (cache-first + early stop)', () => {
       request_id: 'req_cache_finalize_warn',
     });
 
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/Failed to cache profiles/), expect.any(Error));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/Failed to finalize progressive results/), expect.any(Error));
+    expectStructuredLogMessage(warnSpy, 'brightdata_batch_cache_failed');
+    expectStructuredLogMessage(warnSpy, 'progressive_finalize_failed');
   });
 
   it('updates stage error state when a batch returns a non-array profile payload', async () => {
@@ -1049,7 +1062,7 @@ describe('pipeline worker (cache-first + early stop)', () => {
 
     llmAnalysis.analyzeProfileFitBatch.mockResolvedValue([{ fit_score: 0, fit_rationale: 'r', fit_summary: 's' }]);
 
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
     const { handlePipelineExecution } = await import('../dist/handlers/worker.js');
     await handlePipelineExecution({
@@ -1063,10 +1076,7 @@ describe('pipeline worker (cache-first + early stop)', () => {
       request_id: 'req_campaign_empty',
     });
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/exists but has no collected data/),
-      expect.objectContaining({ campaign_id: 'camp_empty' })
-    );
+    expectStructuredLogMessage(debugSpy, 'campaign_description_missing_collected');
     const [, campaignDescription] = llmAnalysis.analyzeProfileFitBatch.mock.calls[0] as any[];
     expect(campaignDescription).toBe('desc');
   });

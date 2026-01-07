@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import type { QueryDocumentSnapshot } from 'firebase-admin/firestore';
-import { campaignDocRef, chatCollectedDocRef, type ChatCollectedData } from './core';
+import { campaignCollectedDocRef, campaignDocRef, type CampaignCollectedData } from './core';
 import type { Logger } from './core';
 
 export type SerializedCampaign = {
@@ -83,20 +83,20 @@ export async function serializeCampaignRecord(
 
 	// Read collected data from new structure if uid and id are available
 	// Uses timeout to prevent hanging page loads when Firestore is slow
-	let collectedData: ChatCollectedData | null = null;
+	let collectedData: CampaignCollectedData | null = null;
 	if (uid && id) {
 		try {
-			const collectedRef = chatCollectedDocRef(uid, id);
+			const collectedRef = campaignCollectedDocRef(uid, id);
 			const collectedDoc = await withTimeout(
 				collectedRef.get(),
 				FIRESTORE_READ_TIMEOUT_MS,
 				null as any // Timeout returns null, handled below
 			);
 			if (collectedDoc && collectedDoc.exists) {
-				collectedData = collectedDoc.data() as ChatCollectedData;
+				collectedData = collectedDoc.data() as CampaignCollectedData;
 			}
 		} catch (error) {
-			console.warn('[campaigns] Failed to read chat/collected data', error);
+			console.warn('[campaigns] Failed to read campaign collected data', error);
 		}
 	}
 
@@ -157,10 +157,7 @@ export async function serializeCampaignSnapshot(doc: QueryDocumentSnapshot, uid?
 	return serializeCampaignRecord(doc.data() ?? {}, doc.id, uid);
 }
 
-/**
- * Create a new campaign document in Firestore.
- * The chatbot service will handle messages and sync collected data.
- */
+/** Create a new campaign document in Firestore. */
 export async function createCampaign(uid: string, logger?: Logger): Promise<string> {
 	const campaignId = randomUUID();
 	const now = Date.now();
@@ -176,8 +173,8 @@ export async function createCampaign(uid: string, logger?: Logger): Promise<stri
 		updatedAt: now
 	});
 
-	// Create initial collected data document (will be synced by chatbot service)
-	const collectedRef = chatCollectedDocRef(uid, campaignId);
+	// Create initial collected data document
+	const collectedRef = campaignCollectedDocRef(uid, campaignId);
 	await collectedRef.set({
 		website: null,
 		business_name: null,

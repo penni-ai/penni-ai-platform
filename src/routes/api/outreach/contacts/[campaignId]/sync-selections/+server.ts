@@ -1,4 +1,4 @@
-import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { clearSelectionsForContacted } from '$lib/server/outreach/clear-selections';
 
 /**
@@ -8,6 +8,7 @@ import { clearSelectionsForContacted } from '$lib/server/outreach/clear-selectio
  */
 export const POST = handleApiRoute(async (event) => {
 	const user = requireUser(event);
+	assertSameOrigin(event);
 	const campaignId = event.params.campaignId;
 	
 	if (!campaignId) {
@@ -50,4 +51,3 @@ export const POST = handleApiRoute(async (event) => {
 		});
 	}
 }, { component: 'outreach-contacts' });
-

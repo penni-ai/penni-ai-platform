@@ -1,4 +1,4 @@
-import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { campaignDocRef } from '$lib/server/core';
 import { serializeCampaignRecord } from '$lib/server/campaigns';
 import { createDraftsViaGmail, sendEmailsViaGmail, getGmailConnection } from '$lib/server/gmail';
@@ -17,6 +17,7 @@ import { checkAndReserveDailyCapacity, getNextMidnightUTC, releaseReservedCapaci
 import { addToEmailQueue } from '$lib/server/email-queue/queue-service';
 
 export const POST = handleApiRoute(async (event) => {
+	assertSameOrigin(event);
 	const user = requireUser(event);
 	
 	// Note: Outreach is available on all plans (including free) with usage limits enforced below

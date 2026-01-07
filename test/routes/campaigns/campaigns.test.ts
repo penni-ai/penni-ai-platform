@@ -23,8 +23,8 @@ describe('routes/api/campaigns', () => {
 			'users/u1/campaigns/c1': { updatedAt: 2 },
 			'users/u1/campaigns/c2': { updatedAt: 1 }
 		});
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		const serializeCampaignSnapshot = vi.fn(async (doc: any) => ({ id: doc.id }));
 		vi.doMock('$lib/server/campaigns', () => ({
@@ -45,8 +45,8 @@ describe('routes/api/campaigns', () => {
 			'users/u1/campaigns/c1': { updatedAt: 2 },
 			'users/u1/campaigns/c2': { updatedAt: 1 }
 		});
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		const serializeCampaignSnapshot = vi.fn(async (doc: any) => ({ id: doc.id }));
 		vi.doMock('$lib/server/campaigns', () => ({
@@ -64,8 +64,8 @@ describe('routes/api/campaigns', () => {
 	it('POST creates campaign and seeds default platforms', async () => {
 		vi.resetModules();
 		const firestore = new FakeFirestore({ 'users/u1': {} });
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		const createCampaign = vi.fn(async () => 'c_new');
 		vi.doMock('$lib/server/campaigns', () => ({
@@ -88,8 +88,8 @@ describe('routes/api/campaigns', () => {
 	it('POST returns 500 when createCampaign throws and rejects missing Origin', async () => {
 		vi.resetModules();
 		const firestore = new FakeFirestore({ 'users/u1': {} });
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		const createCampaign = vi.fn(async () => {
 			throw new Error('boom');
@@ -123,8 +123,8 @@ describe('routes/api/campaigns', () => {
 	it('GET /campaigns/:id returns serialized campaign when found', async () => {
 		vi.resetModules();
 		const firestore = new FakeFirestore({ 'users/u1/campaigns/c1': { title: 'T' } });
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		const serializeCampaignRecord = vi.fn(async (data: any, id: string) => ({ id, title: data.title }));
 		vi.doMock('$lib/server/campaigns', () => ({ serializeCampaignRecord }));
@@ -141,8 +141,8 @@ describe('routes/api/campaigns', () => {
 	it('GET/PUT/DELETE for campaign id validates and handles missing docs', async () => {
 		vi.resetModules();
 		const firestore = new FakeFirestore();
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		vi.doMock('$lib/server/campaigns', () => ({
 			serializeCampaignRecord: vi.fn(async () => ({ id: 'c1' }))
@@ -165,8 +165,8 @@ describe('routes/api/campaigns', () => {
 	it('PUT validates campaign id and rejects invalid JSON bodies', async () => {
 		vi.resetModules();
 		const firestore = new FakeFirestore({ 'users/u1/campaigns/c1': { title: 'Old', updatedAt: 1 } });
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		vi.doMock('$lib/server/campaigns', () => ({ serializeCampaignRecord: vi.fn(async () => ({ id: 'c1' })) }));
 		const route = await import('../../../src/routes/api/campaigns/[id]/+server');
@@ -193,8 +193,8 @@ describe('routes/api/campaigns', () => {
 			'users/u1/campaigns/c1': { title: 'Old', updatedAt: 1 },
 			'users/u1/campaigns/c1/collected/data': { website: 'x', updatedAt: 1 }
 		});
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		const serializeCampaignRecord = vi.fn(async (data: any) => ({ title: data.title, website: data.website }));
 		vi.doMock('$lib/server/campaigns', () => ({ serializeCampaignRecord }));
@@ -221,8 +221,8 @@ describe('routes/api/campaigns', () => {
 	it('DELETE removes campaign document', async () => {
 		vi.resetModules();
 		const firestore = new FakeFirestore({ 'users/u1/campaigns/c1': { title: 'Old' } });
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		const { DELETE } = await import('../../../src/routes/api/campaigns/[id]/+server');
 		const res = await DELETE(makeEvent({ url: 'http://localhost/api/campaigns/c1', uid: 'u1', method: 'DELETE', params: { id: 'c1' } }));
@@ -234,8 +234,8 @@ describe('routes/api/campaigns', () => {
 	it('DELETE validates campaign id', async () => {
 		vi.resetModules();
 		const firestore = new FakeFirestore();
-		const { adminDb } = createFirebaseAdminMock({ firestore });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
 		const { DELETE } = await import('../../../src/routes/api/campaigns/[id]/+server');
 		const res = await DELETE(makeEvent({ url: 'http://localhost/api/campaigns/c1', uid: 'u1', method: 'DELETE', params: {} }));

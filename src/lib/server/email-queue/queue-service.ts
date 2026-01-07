@@ -202,6 +202,61 @@ export async function cancelQueuedEmail(uid: string, queueId: string): Promise<v
 }
 
 /**
+ * Cancel all queued emails for a given Gmail connection.
+ *
+ * Used when a user disconnects a Gmail account to prevent retaining or sending queued content
+ * for that inbox.
+ */
+export async function cancelQueuedEmailsForConnection(
+	uid: string,
+	connectionId: string,
+	options?: { scrubContent?: boolean; reason?: string }
+): Promise<number> {
+	let cancelled = 0;
+	const reason = options?.reason || 'Cancelled due to Gmail disconnect';
+	const scrubContent = options?.scrubContent === true;
+
+	// Cancel only items that are still queued; if something is already processing/sent, leave it as-is.
+	while (true) {
+		const snapshot = await emailQueueCollectionRef(uid)
+			.where('senderConnectionId', '==', connectionId)
+			.where('status', '==', 'queued')
+			.orderBy('createdAt', 'asc')
+			.limit(500)
+			.get();
+
+		if (snapshot.empty) break;
+
+		const batch = firestore.batch();
+		const now = Date.now();
+		for (const doc of snapshot.docs) {
+			cancelled++;
+			const update: Record<string, unknown> = {
+				status: 'cancelled' as EmailQueueStatus,
+				updatedAt: now,
+				lastError: reason,
+				lastAttemptAt: now
+			};
+
+			if (scrubContent) {
+				update.to = '';
+				update.subject = '';
+				update.htmlBody = '';
+				update.senderEmail = '';
+				update.contentScrubbed = true;
+			}
+
+			batch.update(doc.ref, update);
+		}
+		await batch.commit();
+
+		if (snapshot.size < 500) break;
+	}
+
+	return cancelled;
+}
+
+/**
  * Process a single queued email - attempt to send it
  *
  * Uses a transaction to atomically claim the email (prevent race conditions

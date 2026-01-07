@@ -36,7 +36,7 @@
 				We collect information that you provide directly to us, including:
 			</p>
 			<ul>
-				<li>Account information (name, email address, password)</li>
+				<li>Account information (name, email address; authentication handled by Firebase Authentication)</li>
 				<li>Profile information (company name, website, brand details)</li>
 				<li>Billing information (payment method details, billing address)</li>
 				<li>Campaign information (campaign details, target audience preferences)</li>
@@ -52,6 +52,22 @@
 				<li>OAuth tokens for authorized access</li>
 				<li>Email draft and sending permissions</li>
 			</ul>
+
+			<h3>Google API Data Use (Gmail)</h3>
+			<p>
+				If you connect a Gmail account, we use Google APIs to help you draft and send outreach emails you create in Penny.
+				We do not request Google API scopes to read your inbox or view existing email messages.
+			</p>
+			<ul>
+				<li>We store Gmail authorization tokens to keep your account connected; refresh tokens are stored encrypted.</li>
+				<li>We use Gmail only to create drafts and/or send messages you initiate.</li>
+				<li>You can disconnect Gmail at any time, which revokes access and stops queued sends.</li>
+			</ul>
+			<p>
+				Penny’s use and transfer to any other app of information received from Google APIs will adhere to the
+				Google API Services User Data Policy, including the Limited Use requirements:
+				<a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noreferrer">https://developers.google.com/terms/api-services-user-data-policy</a>
+			</p>
 
 			<h3>Usage Information</h3>
 			<p>
@@ -139,7 +155,7 @@
 				<li><strong>Restriction:</strong> Request restriction of processing in certain circumstances</li>
 			</ul>
 			<p>
-				To exercise these rights, please contact us at <a href="mailto:admin@penni-ai.com">admin@penni-ai.com</a>
+				To exercise these rights, contact us at <a href="mailto:admin@penni-ai.com">admin@penni-ai.com</a> or submit a deletion request from your Account Settings.
 			</p>
 		</section>
 

@@ -14,8 +14,20 @@ function makeEvent(body: unknown) {
 }
 
 describe('routes/api/public/test-search', () => {
+	it('blocks access outside emulator/E2E mode', async () => {
+		vi.resetModules();
+		vi.stubEnv('E2E_TESTING', '');
+		vi.doMock('$lib/server/firebase', () => ({ invokeSearchPipeline: vi.fn() }));
+
+		const { POST } = await import('../../../src/routes/api/public/test-search/+server');
+		const res = await POST(makeEvent({ search: { query: 'coffee' } }));
+		expect(res.status).toBe(403);
+		expect((await res.json()).error.code).toBe('TEST_SEARCH_DISABLED');
+	});
+
 	it('rejects invalid JSON and invalid payload', async () => {
 		vi.resetModules();
+		vi.stubEnv('E2E_TESTING', 'true');
 		vi.doMock('$lib/server/firebase', () => ({ invokeSearchPipeline: vi.fn() }));
 
 		const { POST } = await import('../../../src/routes/api/public/test-search/+server');
@@ -39,6 +51,7 @@ describe('routes/api/public/test-search', () => {
 
 	it('validates search.query', async () => {
 		vi.resetModules();
+		vi.stubEnv('E2E_TESTING', 'true');
 		vi.doMock('$lib/server/firebase', () => ({ invokeSearchPipeline: vi.fn() }));
 
 		const { POST } = await import('../../../src/routes/api/public/test-search/+server');
@@ -49,6 +62,7 @@ describe('routes/api/public/test-search', () => {
 
 	it('returns stage results and includes raw when requested', async () => {
 		vi.resetModules();
+		vi.stubEnv('E2E_TESTING', 'true');
 		const invokeSearchPipeline = vi.fn(async () => {
 			return new Response(
 				JSON.stringify({
@@ -71,6 +85,7 @@ describe('routes/api/public/test-search', () => {
 
 	it('reports function errors and stops', async () => {
 		vi.resetModules();
+		vi.stubEnv('E2E_TESTING', 'true');
 		const invokeSearchPipeline = vi.fn(async () => {
 			return new Response(JSON.stringify({ error: { message: 'bad' } }), {
 				status: 500,
@@ -89,6 +104,7 @@ describe('routes/api/public/test-search', () => {
 
 	it('handles requested stages, JSON parsing failures, request errors, and generic function errors', async () => {
 		vi.resetModules();
+		vi.stubEnv('E2E_TESTING', 'true');
 
 		const invokeSearchPipeline = vi
 			.fn()

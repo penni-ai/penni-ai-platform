@@ -83,7 +83,7 @@ describe('server/campaigns', () => {
 
 		vi.doMock('../../src/lib/server/core', () => ({
 			campaignDocRef: vi.fn(() => ({ set: vi.fn(async () => {}) })),
-			chatCollectedDocRef: vi.fn(() => ({
+			campaignCollectedDocRef: vi.fn(() => ({
 				get: vi.fn(async () => {
 					throw new Error('read failed');
 				})

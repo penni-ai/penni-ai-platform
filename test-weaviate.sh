@@ -46,6 +46,8 @@ echo "$RESPONSE" | jq '{
 }'
 
 echo ""
-echo "📊 Full response saved to response.json"
-echo "$RESPONSE" | jq '.' > response.json
-
+OUT_DIR="${OUT_DIR:-test-results}"
+mkdir -p "$OUT_DIR"
+OUT_FILE="${OUT_DIR}/response.$(date +%Y%m%dT%H%M%S).json"
+echo "📊 Full response saved to ${OUT_FILE}"
+echo "$RESPONSE" | jq '.' > "$OUT_FILE"

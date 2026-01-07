@@ -53,3 +53,12 @@ firebase-debug.log
 firestore-debug.log
 firebase-export-*/
 firestore-export/
+
+# Local data artifacts (never commit)
+profiles.json
+Pipeline Job Profiles.json
+pipeline_profiles_export.csv
+output.csv
+response.json
+hybrid-response.json
+firepit-log.txt

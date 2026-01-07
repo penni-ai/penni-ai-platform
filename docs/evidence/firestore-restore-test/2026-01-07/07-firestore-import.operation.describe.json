@@ -1,0 +1,25 @@
+{
+  "done": true,
+  "metadata": {
+    "@type": "type.googleapis.com/google.firestore.admin.v1.ImportDocumentsMetadata",
+    "collectionIds": [
+      "dr_restore_test"
+    ],
+    "endTime": "2026-01-07T09:47:38.239691Z",
+    "inputUriPrefix": "gs://penni-ai-platform-firestore-exports/exports/20260107-094456",
+    "operationState": "SUCCESSFUL",
+    "progressBytes": {
+      "completedWork": "266",
+      "estimatedWork": "237"
+    },
+    "progressDocuments": {
+      "completedWork": "1",
+      "estimatedWork": "1"
+    },
+    "startTime": "2026-01-07T09:47:36.106576Z"
+  },
+  "name": "projects/penni-ai-platform/databases/restore-test-20260107-094456/operations/AiA4Y2EyNGQwNDE3MTktODdiYi01ZDc0LTU2YjMtNzJlNTJlMzQkGnNlbmlsZXBpcAkKMxI",
+  "response": {
+    "@type": "type.googleapis.com/google.protobuf.Empty"
+  }
+}

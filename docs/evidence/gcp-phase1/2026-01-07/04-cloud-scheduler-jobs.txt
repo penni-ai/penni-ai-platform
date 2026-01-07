@@ -1,0 +1,3 @@
+ID                       STATE    SCHEDULE      URI                                                                        SERVICE_ACCOUNT_EMAIL
+email-queue-processor    ENABLED  */15 * * * *  https://pipeline-service-szs2cmou6q-uc.a.run.app/cron/process-email-queue  penni-ai-platform@appspot.gserviceaccount.com
+pipeline-service-health  ENABLED  */5 * * * *   https://pipeline-service-szs2cmou6q-uc.a.run.app/health                    penni-ai-platform@appspot.gserviceaccount.com

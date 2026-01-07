@@ -1,0 +1,2 @@
+NAME                                                                 TYPE   DISPLAY_NAME
+projects/penni-ai-platform/notificationChannels/3780714816935040673  email  Penny Platform Alerts (Email)

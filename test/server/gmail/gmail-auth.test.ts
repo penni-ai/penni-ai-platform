@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import crypto from 'crypto';
 
 import { createFirebaseAdminMock, FakeFirestore } from '../../helpers/fake-firebase';
 
@@ -10,6 +11,19 @@ function gmailEnv(overrides?: Partial<Record<string, string>>) {
 		GMAIL_OAUTH_REDIRECT_URI: 'http://localhost/callback',
 		GMAIL_TOKEN_ENCRYPTION_KEY: key,
 		...overrides
+	};
+}
+
+function encryptToken(plaintext: string, base64Key: string) {
+	const key = Buffer.from(base64Key, 'base64');
+	const iv = crypto.randomBytes(12);
+	const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+	const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+	const tag = cipher.getAuthTag();
+	return {
+		ciphertext: encrypted.toString('base64'),
+		iv: iv.toString('base64'),
+		tag: tag.toString('base64')
 	};
 }
 
@@ -265,6 +279,46 @@ describe('server/gmail/gmail-auth', () => {
 
 		const { getGmailConnection } = await import('../../../src/lib/server/gmail/gmail-auth');
 		await expect(getGmailConnection('u1', 'conn1')).rejects.toThrow(/refresh token is missing/i);
+	});
+
+	it('decrypts refresh tokens encrypted with the previous key during rotation', async () => {
+		vi.resetModules();
+
+		const newKey = Buffer.alloc(32, 1).toString('base64');
+		const oldKey = Buffer.alloc(32, 2).toString('base64');
+		const enc = encryptToken('rt_old', oldKey);
+
+		const firestore = new FakeFirestore({
+			'users/u1/gmailConnections/conn1': {
+				email: 'a@test.com',
+				access_token: 'tok',
+				expires_at: Date.now() + 9999,
+				connected_at: 1,
+				primary: true,
+				accountType: 'send',
+				refresh_token_encrypted: enc.ciphertext,
+				refresh_token_iv: enc.iv,
+				refresh_token_tag: enc.tag
+			}
+		});
+		const { adminDb } = createFirebaseAdminMock({ firestore });
+		vi.doMock('$lib/firebase/admin', () => ({ adminDb }));
+
+		vi.doMock('$env/dynamic/private', () => ({
+			env: gmailEnv({
+				GMAIL_TOKEN_ENCRYPTION_KEY: newKey,
+				GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS: oldKey
+			})
+		}));
+		vi.doMock('google-auth-library', () => ({
+			OAuth2Client: class OAuth2ClientMock {
+				setCredentials() {}
+			}
+		}));
+
+		const { getGmailConnection } = await import('../../../src/lib/server/gmail/gmail-auth');
+		const conn = await getGmailConnection('u1', 'conn1');
+		expect(conn.refresh_token).toBe('rt_old');
 	});
 
 	it('storeGmailTokens derives a unique connection ID when there is a collision', async () => {

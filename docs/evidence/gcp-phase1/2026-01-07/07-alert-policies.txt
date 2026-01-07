@@ -1,0 +1,6 @@
+NAME                                                           DISPLAY_NAME                                       ENABLED
+projects/penni-ai-platform/alertPolicies/11070908296761500371  Cloud Scheduler: email queue failures              True
+projects/penni-ai-platform/alertPolicies/14731461704648322344  Cloud Run: app-backend 5xx                         True
+projects/penni-ai-platform/alertPolicies/15870438396854436110  Cloud Scheduler: pipeline-service health failures  True
+projects/penni-ai-platform/alertPolicies/3787551981571498854   IAM: SetIamPolicy changes                          True
+projects/penni-ai-platform/alertPolicies/9129444757301804728   Cloud Run: pipeline-service 5xx                    True

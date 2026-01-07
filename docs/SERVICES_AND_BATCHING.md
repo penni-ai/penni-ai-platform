@@ -34,7 +34,6 @@ This document summarizes the services used in Penny Platform, why each service e
 
 - Cloud Logging/Monitoring - logs and metrics for Cloud Run and pipeline execution.
 - Cloud Build - builds and deploys pipeline-service (and App Hosting deployments).
-- Chatbot service (Cloud Run) - separate service used by the main app (configured via `CHATBOT_SERVICE_URL`).
 
 ## Pipeline batching and data subdivision
 

@@ -5,6 +5,30 @@ import { FakeFirestore } from './helpers/fake-firebase';
 
 let db: FakeFirestore;
 
+function parseStructuredLogCall(call: unknown[]): Record<string, any> | null {
+	const first = call[0];
+	if (typeof first !== 'string') return null;
+	try {
+		const parsed = JSON.parse(first);
+		return parsed && typeof parsed === 'object' ? (parsed as Record<string, any>) : null;
+	} catch {
+		return null;
+	}
+}
+
+function expectStructuredLogMessage(spy: ReturnType<typeof vi.spyOn>, message: string) {
+	const matched = spy.mock.calls.some((call) => parseStructuredLogCall(call as unknown[])?.message === message);
+	expect(matched).toBe(true);
+}
+
+function expectStructuredLogField(spy: ReturnType<typeof vi.spyOn>, message: string, key: string, value: unknown) {
+	const matched = spy.mock.calls.some((call) => {
+		const parsed = parseStructuredLogCall(call as unknown[]);
+		return parsed?.message === message && parsed?.[key] === value;
+	});
+	expect(matched).toBe(true);
+}
+
 const gmailSend = vi.fn(async () => ({}));
 const refreshAccessToken = vi.fn(async () => ({
 	credentials: { access_token: 'access_refreshed', expiry_date: Date.now() + 3600 * 1000 }
@@ -58,8 +82,9 @@ describe('email-queue-cron (unit)', () => {
 
 		// 32-byte base64 key.
 		process.env.GMAIL_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
-		process.env.GOOGLE_CLIENT_ID = 'cid';
-		process.env.GOOGLE_CLIENT_SECRET = 'secret';
+		delete process.env.GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS;
+		process.env.GMAIL_OAUTH_CLIENT_ID = 'cid';
+		process.env.GMAIL_OAUTH_CLIENT_SECRET = 'secret';
 
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date('2025-01-15T12:00:00.000Z'));
@@ -85,6 +110,20 @@ describe('email-queue-cron (unit)', () => {
 		);
 	});
 
+	it('supports decrypting with previous key during rotation', async () => {
+		vi.resetModules();
+		const newKey = Buffer.alloc(32, 1).toString('base64');
+		const oldKey = Buffer.alloc(32, 2).toString('base64');
+		process.env.GMAIL_TOKEN_ENCRYPTION_KEY = newKey;
+		process.env.GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS = oldKey;
+
+		const { __test__ } = await import('../dist/handlers/email-queue-cron.js');
+		const enc = encryptRefreshToken('rt_prev', oldKey);
+		expect(__test__.decryptRefreshToken(enc.refresh_token_encrypted, enc.refresh_token_iv, enc.refresh_token_tag)).toBe(
+			'rt_prev'
+		);
+	});
+
 	it('throws on missing/invalid encryption key', async () => {
 		vi.resetModules();
 		process.env.GMAIL_TOKEN_ENCRYPTION_KEY = '';
@@ -96,6 +135,34 @@ describe('email-queue-cron (unit)', () => {
 		process.env.GMAIL_TOKEN_ENCRYPTION_KEY = Buffer.alloc(16, 1).toString('base64');
 		const { __test__: __test2 } = await import('../dist/handlers/email-queue-cron.js');
 		expect(() => __test2.decryptRefreshToken('a', 'b', 'c')).toThrow(/32-byte/);
+	});
+
+	it('cleans up processed queue items older than retention window', async () => {
+		const { __test__ } = await import('../dist/handlers/email-queue-cron.js');
+
+		const now = Date.now();
+		const thirtyOneDaysAgo = now - 31 * 24 * 60 * 60 * 1000;
+
+		await db.collection('users').doc('user_1').collection('emailQueue').doc('old').set({
+			id: 'old',
+			status: 'sent',
+			updatedAt: thirtyOneDaysAgo
+		});
+
+		await db.collection('users').doc('user_1').collection('emailQueue').doc('fresh').set({
+			id: 'fresh',
+			status: 'sent',
+			updatedAt: now
+		});
+
+		const deleted = await __test__.cleanupOldQueueItemsGlobal(db as any, 30);
+		expect(deleted).toBe(1);
+
+		const oldSnap = await db.collection('users').doc('user_1').collection('emailQueue').doc('old').get();
+		expect(oldSnap.exists).toBe(false);
+
+		const freshSnap = await db.collection('users').doc('user_1').collection('emailQueue').doc('fresh').get();
+		expect(freshSnap.exists).toBe(true);
 	});
 
 	it('tracks daily usage via incrementDailyUsage + getDailyInboxUsage', async () => {
@@ -370,7 +437,7 @@ describe('email-queue-cron (unit)', () => {
 	});
 
 	it('refreshes access token when expired and persists new token', async () => {
-		const { processEmailQueueBatch } = await import('../dist/handlers/email-queue-cron.js');
+		const { processEmailQueueBatch, __test__ } = await import('../dist/handlers/email-queue-cron.js');
 
 		const now = Date.now();
 		const key = process.env.GMAIL_TOKEN_ENCRYPTION_KEY!;
@@ -415,7 +482,11 @@ describe('email-queue-cron (unit)', () => {
 
 		const connSnap = await db.collection('users').doc('user_1').collection('gmailConnections').doc('conn_1').get();
 		const conn = connSnap.data() as any;
-		expect(conn.access_token).toBe('access_refreshed');
+		expect(conn.access_token).toBeUndefined();
+		expect(conn.access_token_encrypted).toBeTruthy();
+		expect(
+			__test__.decryptRefreshToken(conn.access_token_encrypted, conn.access_token_iv, conn.access_token_tag)
+		).toBe('access_refreshed');
 		expect(conn.expires_at).toBeTypeOf('number');
 	});
 
@@ -922,7 +993,8 @@ describe('email-queue-cron (unit)', () => {
 
 		const result = await processEmailQueueBatch();
 		expect(result.totalProcessed).toBe(0);
-		expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/Error processing user user_1/), expect.any(Error));
+		expectStructuredLogMessage(errorSpy, 'email_queue_user_failed');
+		expectStructuredLogField(errorSpy, 'email_queue_user_failed', 'uid', 'user_1');
 
 		(db as any)._listDocsInCollectionPath = originalList;
 	});

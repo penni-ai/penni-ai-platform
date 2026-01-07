@@ -43,7 +43,6 @@
 		       !path.startsWith('/campaign') &&
 		       !path.startsWith('/my-account') &&
 		       !path.startsWith('/inbox') &&
-		       !path.startsWith('/chatbot') &&
 		       !path.startsWith('/admin') &&
 		       !path.startsWith('/sign-in') &&
 		       !path.startsWith('/sign-up') &&

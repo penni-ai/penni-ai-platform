@@ -1,4 +1,4 @@
-import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { incrementOutreachUsage } from '$lib/server/usage';
 import {
 	contactsCollectionRef,
@@ -16,6 +16,7 @@ import { FieldValue } from 'firebase-admin/firestore';
  */
 export const POST = handleApiRoute(async (event) => {
 	const user = requireUser(event);
+	assertSameOrigin(event);
 	
 	let body: {
 		platform: 'instagram' | 'tiktok';

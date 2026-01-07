@@ -1,5 +1,5 @@
 import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
-import { campaignDocRef, chatCollectedDocRef } from '$lib/server/core';
+import { campaignDocRef } from '$lib/server/core';
 import { serializeCampaignRecord } from '$lib/server/campaigns';
 import { openaiClient, DEFAULT_MODEL } from '$lib/server/openai';
 import { env } from '$env/dynamic/private';

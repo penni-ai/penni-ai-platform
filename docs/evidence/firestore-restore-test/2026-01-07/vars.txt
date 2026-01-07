@@ -1,0 +1,8 @@
+timestamp_utc=2026-01-07T09:44:56Z
+project_id=penni-ai-platform
+project_number=562451436384
+location_id=nam5
+destination_database=restore-test-20260107-094456
+collection_id=dr_restore_test
+doc_id=run_20260107-094456
+export_prefix=gs://penni-ai-platform-firestore-exports/exports/20260107-094456

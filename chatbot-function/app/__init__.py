@@ -1,2 +1,0 @@
-"""Penni Chatbot Application."""
-

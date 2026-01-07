@@ -6,7 +6,7 @@ Migrated Svelte app from Cloud Functions pipeline to Cloud Run pipeline service.
 ## Changes Made
 
 ### 1. API Route Updates (`src/routes/api/pipeline/[pipelineId]/+server.ts`)
-- ✅ Added `remaining_profiles_storage_url`, `remaining_profiles_storage_path`, and `remaining_profiles_count` to Firestore interface
+- ✅ Added `remaining_profiles_storage_path` and `remaining_profiles_count` to Firestore interface
 - ✅ Added logic to load remaining profiles from Storage
 - ✅ Updated API response to include remaining profiles data
 
@@ -18,9 +18,12 @@ Migrated Svelte app from Cloud Functions pipeline to Cloud Run pipeline service.
 - ✅ Verified all fields match between new pipeline service and API expectations:
   - `job_id`, `status`, `current_stage`, `completed_stages`, `overall_progress`
   - `query_expansion`, `weaviate_search`, `brightdata_collection`, `llm_analysis` stages
-  - `profiles_storage_url`, `profiles_storage_path`, `profiles_count`
-  - `remaining_profiles_*` fields (new)
+  - `profiles_storage_path`, `profiles_count`
+  - `remaining_profiles_*` fields
   - `pipeline_stats`, `uid`, `campaign_id`
+
+Note:
+- Storage **paths** are the source-of-truth (e.g. `pipeline_jobs/<jobId>/profiles.json`). URL fields are deprecated and should not be used.
 
 ## Firestore Document Structure
 
@@ -41,12 +44,13 @@ The new pipeline service creates documents with this structure (matches API expe
   llm_analysis?: { status, profiles_analyzed, completed_at, error };
   
   // Results
-  profiles_storage_url?: string;
   profiles_storage_path?: string;
   profiles_count?: number;
-  remaining_profiles_storage_url?: string;  // NEW
-  remaining_profiles_storage_path?: string;  // NEW
-  remaining_profiles_count?: number;         // NEW
+  candidates_storage_path?: string;
+  remaining_profiles_storage_path?: string;
+  remaining_profiles_count?: number;
+  progressive_profiles_storage_path?: string;
+  progressive_profiles_count?: number;
   
   // Metadata
   uid?: string | null;

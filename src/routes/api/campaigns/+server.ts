@@ -1,5 +1,5 @@
 import { createCampaign } from '$lib/server/campaigns';
-import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser, campaignDocRef, chatCollectedDocRef } from '$lib/server/core';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser, campaignCollectedDocRef, campaignDocRef } from '$lib/server/core';
 import { serializeCampaignSnapshot } from '$lib/server/campaigns';
 import { userDocRef } from '$lib/server/core';
 
@@ -38,7 +38,7 @@ export const POST = handleApiRoute(async (event) => {
 		const campaignId = await createCampaign(user.uid, logger);
 		// Seed default platforms on new campaigns
 		await campaignDocRef(user.uid, campaignId).set({ platform: ['instagram', 'tiktok'] }, { merge: true });
-		await chatCollectedDocRef(user.uid, campaignId).set({ platform: ['instagram', 'tiktok'] }, { merge: true });
+		await campaignCollectedDocRef(user.uid, campaignId).set({ platform: ['instagram', 'tiktok'] }, { merge: true });
 		logger.info('Campaign created', { campaignId });
 		return apiOk({ campaignId });
 	} catch (error) {

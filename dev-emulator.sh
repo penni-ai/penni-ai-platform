@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Consolidated script to run Firebase emulator + chatbot function together for local development
+# Consolidated script to run Firebase emulator + pipeline service for local development
 
 set -e
 
@@ -44,27 +44,12 @@ kill_port 6200  # Firebase Functions
 kill_port 6201  # Firestore Emulator
 kill_port 6202  # Emulator UI
 kill_port 9100  # Auth Emulator
-kill_port 8080  # Chatbot Function
 kill_port 8081  # Pipeline Service
 echo ""
 
 # Check if Firebase CLI is installed
 if ! command -v firebase &> /dev/null; then
     echo -e "${RED}Error: Firebase CLI not found. Install with: npm install -g firebase-tools${NC}"
-    exit 1
-fi
-
-# Check if chatbot venv exists and has functions-framework
-CHATBOT_VENV="$ROOT_DIR/chatbot-function/venv"
-if [ ! -d "$CHATBOT_VENV" ]; then
-    echo -e "${RED}Error: Chatbot venv not found at $CHATBOT_VENV${NC}"
-    echo -e "${RED}Create it with: cd chatbot-function && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt${NC}"
-    exit 1
-fi
-
-if [ ! -f "$CHATBOT_VENV/bin/functions-framework" ]; then
-    echo -e "${RED}Error: functions-framework not found in venv. Install dependencies with:${NC}"
-    echo -e "${RED}cd chatbot-function && source venv/bin/activate && pip install -r requirements.txt${NC}"
     exit 1
 fi
 
@@ -109,39 +94,6 @@ sleep 5
 # Check if emulator started successfully
 if ! kill -0 $FIREBASE_PID 2>/dev/null; then
     echo -e "${RED}Error: Firebase emulator failed to start. Check /tmp/firebase-emulator.log${NC}"
-    exit 1
-fi
-
-# Start chatbot function in background with emulator environment variables
-echo -e "${GREEN}Starting chatbot function (port 8080)...${NC}"
-cd "$ROOT_DIR/chatbot-function"
-
-# Load .env if it exists
-if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | xargs)
-fi
-
-# Set emulator environment variables for chatbot function
-export FIRESTORE_EMULATOR_HOST="127.0.0.1:6201"
-export FIREBASE_AUTH_EMULATOR_HOST="127.0.0.1:9100"
-export FIREBASE_FUNCTIONS_EMULATOR_ORIGIN="http://127.0.0.1:6200"
-
-# Ensure GOOGLE_CLOUD_PROJECT is set
-if [ -z "$GOOGLE_CLOUD_PROJECT" ]; then
-    echo -e "${YELLOW}Warning: GOOGLE_CLOUD_PROJECT not set. Using default: demo-test${NC}"
-    export GOOGLE_CLOUD_PROJECT="demo-test"
-fi
-
-"$CHATBOT_VENV/bin/functions-framework" --target=chatbot --port=8080 --debug > /tmp/chatbot-function.log 2>&1 &
-CHATBOT_PID=$!
-
-# Wait a moment for chatbot to start
-sleep 2
-
-# Check if chatbot started successfully
-if ! kill -0 $CHATBOT_PID 2>/dev/null; then
-    echo -e "${RED}Error: Chatbot function failed to start. Check /tmp/chatbot-function.log${NC}"
-    kill $FIREBASE_PID 2>/dev/null || true
     exit 1
 fi
 
@@ -237,10 +189,8 @@ echo -e "${GREEN}✓ Development environment started!${NC}"
 echo ""
 echo "Services running:"
 echo "  - Svelte App (App Hosting): http://127.0.0.1:5002"
-echo "  - Firebase Functions: http://localhost:6200"
 echo "  - Firestore Emulator: http://localhost:6201"
 echo "  - Auth Emulator: http://localhost:9100"
-echo "  - Chatbot Function: http://localhost:8080"
 if [ -n "${PIPELINE_CONTAINER:-}" ]; then
     echo "  - Pipeline Service (Docker): http://localhost:8081"
 fi
@@ -251,7 +201,6 @@ echo "  - Emulator UI: http://localhost:6202"
 echo ""
 echo "Logs:"
 echo "  - Firebase emulator: /tmp/firebase-emulator.log"
-echo "  - Chatbot function: /tmp/chatbot-function.log"
 if [ -n "${PIPELINE_CONTAINER:-}" ]; then
     echo "  - Pipeline service (Docker): docker logs -f pipeline-service"
 fi

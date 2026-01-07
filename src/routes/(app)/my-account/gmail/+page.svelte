@@ -182,6 +182,10 @@ function reconnectGmail(connectionId: string) {
 	<header class="page-header">
 		<h1 class="page-title">Gmail Connections</h1>
 		<p class="page-subtitle">Connect Gmail accounts to send outreach emails on your behalf</p>
+		<p class="page-note">
+			By connecting Gmail, you allow Penny to create drafts and/or send messages you initiate. Penny does not request Google API scopes to read your inbox.
+			Learn more in our <a href="/privacy">Privacy Policy</a>.
+		</p>
 	</header>
 
 	<!-- Alerts -->
@@ -350,8 +354,8 @@ function reconnectGmail(connectionId: string) {
 						<div class="info-item">
 							<div class="info-number">3</div>
 							<div class="info-text">
-								<strong>Track responses</strong>
-								<span>View replies and manage conversations in your inbox.</span>
+								<strong>Replies stay in Gmail</strong>
+								<span>Replies are available in your Gmail inbox. Penny does not request scopes to read your inbox.</span>
 							</div>
 						</div>
 					</div>
@@ -506,6 +510,22 @@ function reconnectGmail(connectionId: string) {
 		font-size: 1rem;
 		color: var(--ink-muted);
 		margin: 0;
+	}
+
+	.page-note {
+		margin: 0.75rem 0 0;
+		font-size: 0.9rem;
+		color: var(--ink-light);
+		line-height: 1.5;
+	}
+
+	.page-note a {
+		color: var(--coral);
+		text-decoration: none;
+	}
+
+	.page-note a:hover {
+		text-decoration: underline;
 	}
 
 	/* Alerts */

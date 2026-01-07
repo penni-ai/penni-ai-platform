@@ -1,11 +1,51 @@
 import { google } from 'googleapis';
 import { getValidGmailTokens, createOAuth2Client } from './gmail-auth';
+import { createLogger } from '$lib/server/core';
+
+const gmailSenderLogger = createLogger({ component: 'gmail_sender' });
 
 export interface SendEmailOptions {
 	to: string;
 	subject: string;
 	htmlBody: string;
 	from?: string; // Optional: will use authenticated user's email if not provided
+}
+
+function stripCrlf(value: string): string {
+	return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+function requireSingleEmailAddress(value: string, field: string): string {
+	const normalized = stripCrlf(value);
+	if (!normalized) {
+		throw new Error(`${field} is required.`);
+	}
+
+	// Disallow common header/address separators and unsafe characters to avoid multi-recipient injection.
+	if (/[<>,;]/.test(normalized)) {
+		throw new Error(`${field} must be a single email address.`);
+	}
+
+	// Very conservative check: single token containing "@", no whitespace.
+	if (/\s/.test(normalized) || !normalized.includes('@')) {
+		throw new Error(`${field} must be a valid email address.`);
+	}
+
+	return normalized;
+}
+
+function sanitizeSubject(value: string): string {
+	const normalized = stripCrlf(value);
+	if (!normalized) {
+		throw new Error('Subject is required.');
+	}
+	return normalized.slice(0, 255);
+}
+
+function getEmailDomain(email: string): string | null {
+	const at = email.lastIndexOf('@');
+	if (at <= 0 || at >= email.length - 1) return null;
+	return email.slice(at + 1).toLowerCase();
 }
 
 /**
@@ -36,12 +76,16 @@ export async function sendEmailViaGmail(
 	if (!fromEmail) {
 		fromEmail = connection.email;
 	}
+
+	const toEmail = requireSingleEmailAddress(to, 'To');
+	const safeFrom = requireSingleEmailAddress(fromEmail, 'From');
+	const safeSubject = sanitizeSubject(subject);
 	
 	// Create MIME message
 	const message = [
-		`To: ${to}`,
-		`From: ${fromEmail}`,
-		`Subject: ${subject}`,
+		`To: ${toEmail}`,
+		`From: ${safeFrom}`,
+		`Subject: ${safeSubject}`,
 		'Content-Type: text/html; charset=utf-8',
 		'',
 		htmlBody
@@ -86,6 +130,7 @@ export async function createDraftViaGmail(
 	connectionId?: string | null
 ): Promise<string> {
 	const { to, subject, htmlBody, from } = options;
+	const logger = gmailSenderLogger.child({ uid, connectionId: connectionId ?? null });
 	
 	// Get valid tokens (refresh if needed)
 	const connection = await getValidGmailTokens(uid, connectionId ?? null);
@@ -105,12 +150,18 @@ export async function createDraftViaGmail(
 	if (!fromEmail) {
 		fromEmail = connection.email;
 	}
+
+	const toEmail = requireSingleEmailAddress(to, 'To');
+	const safeFrom = requireSingleEmailAddress(fromEmail, 'From');
+	const safeSubject = sanitizeSubject(subject);
+	const toDomain = getEmailDomain(toEmail);
+	const fromDomain = getEmailDomain(safeFrom);
 	
 	// Create MIME message
 	const message = [
-		`To: ${to}`,
-		`From: ${fromEmail}`,
-		`Subject: ${subject}`,
+		`To: ${toEmail}`,
+		`From: ${safeFrom}`,
+		`Subject: ${safeSubject}`,
 		'Content-Type: text/html; charset=utf-8',
 		'',
 		htmlBody
@@ -132,32 +183,48 @@ export async function createDraftViaGmail(
 					raw: encodedMessage
 				}
 			}
-		});
-		
-		const draftId = draft.data.id;
-		if (!draftId) {
-			console.error('Gmail API returned draft without ID:', draft.data);
-			throw new Error('Gmail API returned draft without ID');
+			});
+			
+			const draftId = draft.data.id;
+			if (!draftId) {
+				logger.warn('gmail_draft_missing_id', {
+					to_domain: toDomain,
+					from_domain: fromDomain
+				});
+				throw new Error('Gmail API returned draft without ID');
+			}
+			
+			return draftId;
+		} catch (error: any) {
+			// Handle specific Gmail API errors
+			const status = typeof error?.response?.status === 'number' ? error.response.status : null;
+			const googleStatus = error?.response?.data?.error?.status ?? null;
+
+			if (error.response?.status === 429) {
+				throw new Error('Gmail rate limit exceeded. Please try again later.');
+			}
+			if (error.response?.status === 403) {
+				throw new Error('Gmail API access denied. Please reconnect your Gmail account.');
+			}
+			if (error.response?.status === 400) {
+				logger.warn('gmail_draft_bad_request', {
+					status,
+					google_status: googleStatus,
+					to_domain: toDomain,
+					from_domain: fromDomain
+				});
+				throw new Error('Invalid email format or parameters.');
+			}
+			logger.error('gmail_draft_create_failed', {
+				status,
+				google_status: googleStatus,
+				to_domain: toDomain,
+				from_domain: fromDomain,
+				error_message: typeof error?.message === 'string' ? error.message : null
+			});
+			throw new Error(`Failed to create draft via Gmail: ${error.message}`);
 		}
-		
-		return draftId;
-	} catch (error: any) {
-		// Handle specific Gmail API errors
-		if (error.response?.status === 429) {
-			throw new Error('Gmail rate limit exceeded. Please try again later.');
-		}
-		if (error.response?.status === 403) {
-			throw new Error('Gmail API access denied. Please reconnect your Gmail account.');
-		}
-		if (error.response?.status === 400) {
-			const errorDetails = error.response?.data?.error?.message || error.message;
-			console.error('Gmail API 400 error:', errorDetails, 'Request:', { to, subject, fromEmail });
-			throw new Error(`Invalid email format or parameters: ${errorDetails}`);
-		}
-		console.error('Failed to create draft via Gmail:', error.message, error.response?.data);
-		throw new Error(`Failed to create draft via Gmail: ${error.message}`);
 	}
-}
 
 /**
  * Create multiple draft emails via Gmail API (with rate limiting)

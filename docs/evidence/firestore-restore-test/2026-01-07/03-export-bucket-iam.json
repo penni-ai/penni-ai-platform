@@ -1,0 +1,37 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "projectEditor:penni-ai-platform",
+        "projectOwner:penni-ai-platform"
+      ],
+      "role": "roles/storage.legacyBucketOwner"
+    },
+    {
+      "members": [
+        "projectViewer:penni-ai-platform"
+      ],
+      "role": "roles/storage.legacyBucketReader"
+    },
+    {
+      "members": [
+        "projectEditor:penni-ai-platform",
+        "projectOwner:penni-ai-platform"
+      ],
+      "role": "roles/storage.legacyObjectOwner"
+    },
+    {
+      "members": [
+        "projectViewer:penni-ai-platform"
+      ],
+      "role": "roles/storage.legacyObjectReader"
+    },
+    {
+      "members": [
+        "serviceAccount:service-562451436384@gcp-sa-firestore.iam.gserviceaccount.com"
+      ],
+      "role": "roles/storage.objectAdmin"
+    }
+  ],
+  "etag": "CAM="
+}

@@ -18,8 +18,11 @@ const logger = createLogger({ component: 'email-queue-cron' });
 const DAILY_INBOX_LIMIT = 50;
 const PROCESSING_DELAY_MS = 200;
 const MAX_EMAILS_PER_INBOX_PER_RUN = 50;
-// Support both env var names for backwards compatibility
-const GMAIL_ENCRYPTION_KEY = process.env.GMAIL_TOKEN_ENCRYPTION_KEY || process.env.GMAIL_ENCRYPTION_KEY || '';
+const DEFAULT_QUEUE_RETENTION_DAYS = 30;
+const GMAIL_TOKEN_ENCRYPTION_KEY_B64 = process.env.GMAIL_TOKEN_ENCRYPTION_KEY || '';
+const GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS_B64 = process.env.GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS || '';
+const GMAIL_OAUTH_CLIENT_ID = process.env.GMAIL_OAUTH_CLIENT_ID || '';
+const GMAIL_OAUTH_CLIENT_SECRET = process.env.GMAIL_OAUTH_CLIENT_SECRET || '';
 
 // Types
 interface QueuedEmail {
@@ -48,13 +51,17 @@ interface QueuedEmail {
 interface GmailConnection {
 	id: string;
 	email: string;
-	access_token: string;
+	access_token?: string; // Legacy plaintext storage
+	access_token_encrypted?: string;
+	access_token_iv?: string;
+	access_token_tag?: string;
 	refresh_token_encrypted?: string;
 	refresh_token_iv?: string;
 	refresh_token_tag?: string;
 	expires_at: number;
 	connected_at: number;
 	primary: boolean;
+	last_refreshed_at?: number;
 }
 
 interface ProcessingResult {
@@ -92,32 +99,139 @@ function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function stripCrlf(value: string): string {
+	return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+function requireSingleEmailAddress(value: string, field: string): string {
+	const normalized = stripCrlf(value);
+	if (!normalized) {
+		throw new Error(`${field} is required.`);
+	}
+
+	// Disallow common header/address separators and unsafe characters to avoid multi-recipient injection.
+	if (/[<>,;]/.test(normalized)) {
+		throw new Error(`${field} must be a single email address.`);
+	}
+
+	// Very conservative check: single token containing "@", no whitespace.
+	if (/\s/.test(normalized) || !normalized.includes('@')) {
+		throw new Error(`${field} must be a valid email address.`);
+	}
+
+	return normalized;
+}
+
+function sanitizeSubject(value: string): string {
+	const normalized = stripCrlf(value);
+	if (!normalized) {
+		throw new Error('Subject is required.');
+	}
+	return normalized.slice(0, 255);
+}
+
 /**
  * Decrypt refresh token using AES-256-GCM
  * Note: Tokens are stored in base64 format by the main app (gmail-auth.ts)
  */
+function getEncryptionKeyCandidates(): Buffer[] {
+	if (!GMAIL_TOKEN_ENCRYPTION_KEY_B64) {
+		throw new Error('GMAIL_TOKEN_ENCRYPTION_KEY not configured');
+	}
+
+	const keys: Buffer[] = [Buffer.from(GMAIL_TOKEN_ENCRYPTION_KEY_B64, 'base64')];
+	if (GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS_B64) {
+		keys.push(Buffer.from(GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS_B64, 'base64'));
+	}
+
+	if (keys[0].length !== 32) {
+		throw new Error('GMAIL_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key');
+	}
+
+	if (keys[1] && keys[1].length !== 32) {
+		throw new Error('GMAIL_TOKEN_ENCRYPTION_KEY_PREVIOUS must be a base64-encoded 32-byte key');
+	}
+
+	return keys;
+}
+
+function decryptToken(encrypted: string, iv: string, tag: string): string {
+	const keys = getEncryptionKeyCandidates();
+	const ivBytes = Buffer.from(iv, 'base64');
+	const tagBytes = Buffer.from(tag, 'base64');
+	const encryptedBytes = Buffer.from(encrypted, 'base64');
+
+	for (const key of keys) {
+		try {
+			const decipher = crypto.createDecipheriv('aes-256-gcm', key, ivBytes);
+			decipher.setAuthTag(tagBytes);
+			const decrypted = Buffer.concat([decipher.update(encryptedBytes), decipher.final()]);
+			return decrypted.toString('utf8');
+		} catch {
+			// Try the next candidate key (supports key rotation).
+		}
+	}
+
+	throw new Error('Failed to decrypt token. Key rotation may be required.');
+}
+
+function encryptToken(value: string) {
+	const [encryptionKey] = getEncryptionKeyCandidates();
+
+	const iv = crypto.randomBytes(12);
+	const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey, iv);
+	const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+	const tag = cipher.getAuthTag();
+	return {
+		ciphertext: encrypted.toString('base64'),
+		iv: iv.toString('base64'),
+		tag: tag.toString('base64')
+	};
+}
+
 function decryptRefreshToken(encrypted: string, iv: string, tag: string): string {
-	if (!GMAIL_ENCRYPTION_KEY) {
-		throw new Error('GMAIL_ENCRYPTION_KEY not configured');
+	return decryptToken(encrypted, iv, tag);
+}
+
+function extractAccessToken(conn: GmailConnection): string | null {
+	if (conn.access_token) {
+		return conn.access_token;
+	}
+	if (conn.access_token_encrypted && conn.access_token_iv && conn.access_token_tag) {
+		return decryptToken(conn.access_token_encrypted, conn.access_token_iv, conn.access_token_tag);
+	}
+	return null;
+}
+
+function getQueueRetentionDays(): number {
+	const raw = process.env.EMAIL_QUEUE_RETENTION_DAYS;
+	if (!raw) return DEFAULT_QUEUE_RETENTION_DAYS;
+	const parsed = Number.parseInt(raw, 10);
+	if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_QUEUE_RETENTION_DAYS;
+	return Math.min(365, parsed);
+}
+
+async function cleanupOldQueueItemsGlobal(
+	db: FirebaseFirestore.Firestore,
+	olderThanDays: number
+): Promise<number> {
+	const cutoffTime = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
+
+	const snapshot = await db
+		.collectionGroup('emailQueue')
+		.where('status', 'in', ['sent', 'failed', 'cancelled'])
+		.where('updatedAt', '<', cutoffTime)
+		.limit(500)
+		.get();
+
+	if (snapshot.empty) {
+		return 0;
 	}
 
-	// The encryption key should be base64-encoded (matching gmail-auth.ts)
-	const encryptionKey = Buffer.from(GMAIL_ENCRYPTION_KEY, 'base64');
-	if (encryptionKey.length !== 32) {
-		throw new Error('GMAIL_ENCRYPTION_KEY must be a base64-encoded 32-byte key');
-	}
-
-	const decipher = crypto.createDecipheriv(
-		'aes-256-gcm',
-		encryptionKey,
-		Buffer.from(iv, 'base64')
-	);
-	decipher.setAuthTag(Buffer.from(tag, 'base64'));
-
-	let decrypted = decipher.update(Buffer.from(encrypted, 'base64'));
-	decrypted = Buffer.concat([decrypted, decipher.final()]);
-
-	return decrypted.toString('utf8');
+	const batch = db.batch();
+	snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+	await batch.commit();
+	return snapshot.size;
 }
 
 /**
@@ -229,7 +343,7 @@ async function getGmailConnection(
 	db: FirebaseFirestore.Firestore,
 	uid: string,
 	connectionId: string
-): Promise<GmailConnection & { refresh_token: string }> {
+): Promise<GmailConnection & { refresh_token: string; access_token: string }> {
 	const connRef = db
 		.collection('users')
 		.doc(uid)
@@ -243,6 +357,7 @@ async function getGmailConnection(
 	}
 
 	const conn = connDoc.data() as GmailConnection;
+	const accessToken = extractAccessToken(conn) ?? '';
 
 	// Decrypt refresh token
 	if (!conn.refresh_token_encrypted || !conn.refresh_token_iv || !conn.refresh_token_tag) {
@@ -258,7 +373,8 @@ async function getGmailConnection(
 	return {
 		...conn,
 		id: connDoc.id,
-		refresh_token
+		refresh_token,
+		access_token: accessToken
 	};
 }
 
@@ -268,20 +384,21 @@ async function getGmailConnection(
 async function refreshAccessTokenIfNeeded(
 	db: FirebaseFirestore.Firestore,
 	uid: string,
-	connection: GmailConnection & { refresh_token: string }
+	connection: GmailConnection & { refresh_token: string; access_token: string }
 ): Promise<string> {
 	const now = Date.now();
 	const buffer = 5 * 60 * 1000; // 5 minutes
 
-	if (now < connection.expires_at - buffer) {
+	if (connection.access_token && now < connection.expires_at - buffer) {
 		return connection.access_token;
 	}
 
 	// Refresh the token
-	const oauth2Client = new google.auth.OAuth2(
-		process.env.GOOGLE_CLIENT_ID,
-		process.env.GOOGLE_CLIENT_SECRET
-	);
+	if (!GMAIL_OAUTH_CLIENT_ID || !GMAIL_OAUTH_CLIENT_SECRET) {
+		throw new Error('Missing Gmail OAuth client credentials (GMAIL_OAUTH_CLIENT_ID/GMAIL_OAUTH_CLIENT_SECRET).');
+	}
+
+	const oauth2Client = new google.auth.OAuth2(GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET);
 
 	oauth2Client.setCredentials({
 		refresh_token: connection.refresh_token
@@ -300,8 +417,12 @@ async function refreshAccessTokenIfNeeded(
 		.collection('gmailConnections')
 		.doc(connection.id);
 
+	const encryptedAccess = encryptToken(credentials.access_token);
 	await connRef.update({
-		access_token: credentials.access_token,
+		access_token_encrypted: encryptedAccess.ciphertext,
+		access_token_iv: encryptedAccess.iv,
+		access_token_tag: encryptedAccess.tag,
+		access_token: FieldValue.delete(),
 		expires_at: credentials.expiry_date || now + 3600 * 1000,
 		last_refreshed_at: now
 	});
@@ -321,11 +442,15 @@ async function sendEmailViaGmail(
 
 	const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
+	const toEmail = requireSingleEmailAddress(email.to, 'To');
+	const fromEmail = requireSingleEmailAddress(email.from, 'From');
+	const subject = sanitizeSubject(email.subject);
+
 	// Create MIME message
 	const message = [
-		`To: ${email.to}`,
-		`From: ${email.from}`,
-		`Subject: ${email.subject}`,
+		`To: ${toEmail}`,
+		`From: ${fromEmail}`,
+		`Subject: ${subject}`,
 		'Content-Type: text/html; charset=utf-8',
 		'',
 		email.htmlBody
@@ -718,6 +843,16 @@ export async function processEmailQueueBatch(): Promise<BatchProcessingResult> {
 		logger.error('email_queue_batch_failed', { error });
 	}
 
+	try {
+		const retentionDays = getQueueRetentionDays();
+		const deleted = await cleanupOldQueueItemsGlobal(db, retentionDays);
+		if (deleted > 0) {
+			logger.info('email_queue_cleanup_deleted', { deleted, retention_days: retentionDays });
+		}
+	} catch (error) {
+		logger.warn('email_queue_cleanup_failed', { error_message: error instanceof Error ? error.message : String(error) });
+	}
+
 	const duration = Date.now() - startTime;
 
 	logger.info('email_queue_batch_complete', {
@@ -743,5 +878,7 @@ export const __test__ = {
 	getDailyInboxUsage,
 	incrementDailyUsage,
 	incrementMonthlyUsage,
+	getQueueRetentionDays,
+	cleanupOldQueueItemsGlobal,
 	isRetryableError
 };

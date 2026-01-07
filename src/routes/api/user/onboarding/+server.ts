@@ -1,7 +1,8 @@
-import { ApiProblem, handleApiRoute, requireUser, userDocRef } from '$lib/server/core';
+import { ApiProblem, assertSameOrigin, handleApiRoute, requireUser, userDocRef } from '$lib/server/core';
 
 export const POST = handleApiRoute(async (event) => {
 	const user = requireUser(event);
+	assertSameOrigin(event);
 
 	let body: unknown;
 	try {

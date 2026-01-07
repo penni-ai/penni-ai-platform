@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Unified deployment script for Penny Platform services
-# Deploys chatbot function and pipeline service to Google Cloud
+# Deploys the pipeline service to Google Cloud
 
 set -euo pipefail
 
@@ -17,23 +17,11 @@ NC='\033[0m' # No Color
 # Configuration variables (can be overridden by environment)
 PROJECT_ID=${PROJECT_ID:-${GOOGLE_CLOUD_PROJECT:-penni-ai-platform}}
 REGION=${REGION:-${GOOGLE_CLOUD_REGION:-us-central1}}
-CHATBOT_FUNCTION_NAME=${CHATBOT_FUNCTION_NAME:-penni-chatbot-function}
 PIPELINE_SERVICE_NAME=${PIPELINE_SERVICE_NAME:-pipeline-service}
 
 # Parse command line arguments
-DEPLOY_CHATBOT=true
-DEPLOY_PIPELINE=true
-
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --chatbot-only)
-            DEPLOY_PIPELINE=false
-            shift
-            ;;
-        --pipeline-only)
-            DEPLOY_CHATBOT=false
-            shift
-            ;;
         --project=*)
             PROJECT_ID="${1#*=}"
             shift
@@ -46,8 +34,6 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --chatbot-only      Deploy only the chatbot function"
-            echo "  --pipeline-only     Deploy only the pipeline service"
             echo "  --project=PROJECT   Set GCP project ID"
             echo "  --region=REGION     Set GCP region (default: us-central1)"
             echo "  --help              Show this help message"
@@ -79,13 +65,8 @@ echo ""
 echo "Project ID: $PROJECT_ID"
 echo "Region: $REGION"
 echo ""
-echo "Services to deploy:"
-if [[ "$DEPLOY_CHATBOT" == "true" ]]; then
-    echo "  ✓ Chatbot Function: $CHATBOT_FUNCTION_NAME"
-fi
-if [[ "$DEPLOY_PIPELINE" == "true" ]]; then
-    echo "  ✓ Pipeline Service: $PIPELINE_SERVICE_NAME"
-fi
+echo "Service to deploy:"
+echo "  ✓ Pipeline Service: $PIPELINE_SERVICE_NAME"
 echo ""
 
 # Set active GCP project
@@ -100,7 +81,7 @@ if ! command -v gcloud &> /dev/null; then
     MISSING_TOOLS+=("gcloud")
 fi
 
-if [[ "$DEPLOY_PIPELINE" == "true" ]] && ! command -v docker &> /dev/null; then
+if ! command -v docker &> /dev/null; then
     MISSING_TOOLS+=("docker")
 fi
 
@@ -112,65 +93,33 @@ fi
 echo -e "${GREEN}✓ All prerequisites met${NC}"
 echo ""
 
-# Deploy Chatbot Function
-if [[ "$DEPLOY_CHATBOT" == "true" ]]; then
-    echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}Deploying Chatbot Function${NC}"
-    echo -e "${BLUE}========================================${NC}"
-    echo ""
-    
-    CHATBOT_DIR="$ROOT_DIR/chatbot-function"
-    if [[ ! -d "$CHATBOT_DIR" ]]; then
-        echo -e "${RED}Error: Chatbot function directory not found at $CHATBOT_DIR${NC}"
-        exit 1
-    fi
-    
-    cd "$CHATBOT_DIR"
-    
-    # Check if deploy.sh exists and is executable
-    if [[ -f "deploy.sh" ]]; then
-        chmod +x deploy.sh
-        echo "Running chatbot deploy script..."
-        PROJECT_ID="$PROJECT_ID" REGION="$REGION" ./deploy.sh
-    else
-        echo -e "${RED}Error: deploy.sh not found in chatbot-function directory${NC}"
-        exit 1
-    fi
-    
-    echo ""
-    echo -e "${GREEN}✓ Chatbot function deployment complete${NC}"
-    echo ""
+# Deploy Pipeline Service
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}Deploying Pipeline Service${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+PIPELINE_DIR="$ROOT_DIR/services/pipeline-service"
+if [[ ! -d "$PIPELINE_DIR" ]]; then
+    echo -e "${RED}Error: Pipeline service directory not found at $PIPELINE_DIR${NC}"
+    exit 1
 fi
 
-# Deploy Pipeline Service
-if [[ "$DEPLOY_PIPELINE" == "true" ]]; then
-    echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}Deploying Pipeline Service${NC}"
-    echo -e "${BLUE}========================================${NC}"
-    echo ""
-    
-    PIPELINE_DIR="$ROOT_DIR/services/pipeline-service"
-    if [[ ! -d "$PIPELINE_DIR" ]]; then
-        echo -e "${RED}Error: Pipeline service directory not found at $PIPELINE_DIR${NC}"
-        exit 1
-    fi
-    
-    cd "$PIPELINE_DIR"
-    
-    # Check if deploy.sh exists and is executable
-    if [[ -f "deploy.sh" ]]; then
-        chmod +x deploy.sh
-        echo "Running pipeline service deploy script..."
-        PROJECT_ID="$PROJECT_ID" REGION="$REGION" ./deploy.sh
-    else
-        echo -e "${RED}Error: deploy.sh not found in pipeline-service directory${NC}"
-        exit 1
-    fi
-    
-    echo ""
-    echo -e "${GREEN}✓ Pipeline service deployment complete${NC}"
-    echo ""
+cd "$PIPELINE_DIR"
+
+# Check if deploy.sh exists and is executable
+if [[ -f "deploy.sh" ]]; then
+    chmod +x deploy.sh
+    echo "Running pipeline service deploy script..."
+    PROJECT_ID="$PROJECT_ID" REGION="$REGION" ./deploy.sh
+else
+    echo -e "${RED}Error: deploy.sh not found in pipeline-service directory${NC}"
+    exit 1
 fi
+
+echo ""
+echo -e "${GREEN}✓ Pipeline service deployment complete${NC}"
+echo ""
 
 # Summary
 echo -e "${BLUE}========================================${NC}"
@@ -178,36 +127,18 @@ echo -e "${GREEN}Deployment Summary${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-if [[ "$DEPLOY_CHATBOT" == "true" ]]; then
-    echo -e "${GREEN}Chatbot Function:${NC}"
-    CHATBOT_URL=$(gcloud functions describe "$CHATBOT_FUNCTION_NAME" \
-        --gen2 \
-        --region="$REGION" \
-        --format='value(serviceConfig.uri)' 2>/dev/null || echo "Not found")
-    if [[ -n "$CHATBOT_URL" && "$CHATBOT_URL" != "Not found" ]]; then
-        echo "  URL: $CHATBOT_URL"
-    else
-        echo -e "  ${YELLOW}⚠ Could not retrieve URL${NC}"
-    fi
-    echo ""
+echo -e "${GREEN}Pipeline Service:${NC}"
+PIPELINE_URL=$(gcloud run services describe "$PIPELINE_SERVICE_NAME" \
+    --region="$REGION" \
+    --format='value(status.url)' 2>/dev/null || echo "Not found")
+if [[ -n "$PIPELINE_URL" && "$PIPELINE_URL" != "Not found" ]]; then
+    echo "  URL: $PIPELINE_URL"
+    echo "  Health: $PIPELINE_URL/health"
+else
+    echo -e "  ${YELLOW}⚠ Could not retrieve URL${NC}"
 fi
-
-if [[ "$DEPLOY_PIPELINE" == "true" ]]; then
-    echo -e "${GREEN}Pipeline Service:${NC}"
-    PIPELINE_URL=$(gcloud run services describe "$PIPELINE_SERVICE_NAME" \
-        --region="$REGION" \
-        --format='value(status.url)' 2>/dev/null || echo "Not found")
-    if [[ -n "$PIPELINE_URL" && "$PIPELINE_URL" != "Not found" ]]; then
-        echo "  URL: $PIPELINE_URL"
-        echo "  Health: $PIPELINE_URL/health"
-    else
-        echo -e "  ${YELLOW}⚠ Could not retrieve URL${NC}"
-    fi
-    echo ""
-fi
+echo ""
 
 echo -e "${GREEN}All deployments completed successfully!${NC}"
 echo ""
-echo "Note: Both services run on Google Cloud's managed infrastructure."
-echo "      No port conflicts occur as they use different service endpoints."
-
+echo "Note: Services run on Google Cloud's managed infrastructure."

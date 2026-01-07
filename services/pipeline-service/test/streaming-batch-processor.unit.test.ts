@@ -2,6 +2,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type AxiosResponse = { data: any };
 
+function parseStructuredLogCall(call: unknown[]): Record<string, any> | null {
+	const first = call[0];
+	if (typeof first !== 'string') return null;
+	try {
+		const parsed = JSON.parse(first);
+		return parsed && typeof parsed === 'object' ? (parsed as Record<string, any>) : null;
+	} catch {
+		return null;
+	}
+}
+
+function expectStructuredLogMessage(spy: ReturnType<typeof vi.spyOn>, message: string) {
+	const matched = spy.mock.calls.some((call) => parseStructuredLogCall(call as unknown[])?.message === message);
+	expect(matched).toBe(true);
+}
+
 const triggerCollection = vi.fn(async () => [{ snapshot_id: 'snap_1', platform: 'instagram' as const }]);
 
 const getCachedProfilesBatch = vi.fn(async () => new Map<string, any>());
@@ -76,7 +92,7 @@ describe('streaming-batch-processor (unit)', () => {
 
 		expect(result.completedBatches).toBeGreaterThanOrEqual(1);
 		expect(setCachedProfilesBatch).toHaveBeenCalled();
-		expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/Failed to cache profiles/), expect.any(Error));
+		expectStructuredLogMessage(warnSpy, 'streaming_batch_cache_failed');
 	});
 
 	it('returns early when all urls are cached (calls callback per platform)', async () => {
@@ -244,7 +260,8 @@ describe('streaming-batch-processor (unit)', () => {
 		);
 
 		expect(result.failedBatches).toBe(1);
-		expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/Failed to process batch/), expect.any(Error));
+		expectStructuredLogMessage(errorSpy, 'streaming_batch_processing_failed');
+		expectStructuredLogMessage(errorSpy, 'streaming_batch_process_failed');
 	});
 
 	it('fails fast when no batches can be triggered', async () => {
@@ -435,7 +452,8 @@ describe('streaming-batch-processor (unit)', () => {
 			const result = await promise;
 
 			expect(result.failedBatches).toBe(1);
-			expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/Error checking snapshot/), expect.any(Error));
+			expectStructuredLogMessage(errorSpy, 'streaming_snapshot_check_failed');
+			expectStructuredLogMessage(errorSpy, 'streaming_batches_timeout');
 		} finally {
 			vi.useRealTimers();
 		}

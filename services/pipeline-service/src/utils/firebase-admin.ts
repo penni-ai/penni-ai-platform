@@ -86,48 +86,32 @@ let hasLoggedConfig = false;
 let hasLoggedApiKeys = false;
 
 /**
- * Safely log first few characters of an API key for verification
- */
-function maskApiKey(key: string | undefined, prefixLength = 6): string {
-  if (!key) return 'NOT SET';
-  const trimmed = key.trim();
-  if (trimmed.length <= prefixLength) return 'SET (too short to mask)';
-  return `${trimmed.substring(0, prefixLength)}...${trimmed.substring(trimmed.length - 4)} (length: ${trimmed.length})`;
-}
-
-/**
  * Validate and log API key configuration status
  */
 function logApiKeyStatus(): void {
   if (hasLoggedApiKeys) return;
   hasLoggedApiKeys = true;
 
-  const apiKeys = {
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    DEEPINFRA_API_KEY: process.env.DEEPINFRA_API_KEY,
-    BRIGHTDATA_API_KEY: process.env.BRIGHTDATA_API_KEY,
-    WEAVIATE_API_KEY: process.env.WEAVIATE_API_KEY,
-    WEAVIATE_URL: process.env.WEAVIATE_URL,
-  };
+  const weaviateUrl = process.env.WEAVIATE_URL?.trim() || null;
+  const weaviateHost = weaviateUrl ? (() => {
+    const match = weaviateUrl.match(/^https?:\/\/([^/]+)/);
+    return match?.[1] ?? null;
+  })() : null;
 
-  const status: Record<string, string> = {};
+  const status: Record<string, unknown> = {
+    openai_configured: Boolean(process.env.OPENAI_API_KEY),
+    deepinfra_configured: Boolean(process.env.DEEPINFRA_API_KEY),
+    brightdata_configured: Boolean(process.env.BRIGHTDATA_API_KEY),
+    weaviate_api_configured: Boolean(process.env.WEAVIATE_API_KEY),
+    weaviate_url_host: weaviateHost,
+  };
   const missing: string[] = [];
 
-  for (const [key, value] of Object.entries(apiKeys)) {
-    if (value) {
-      if (key === 'WEAVIATE_URL') {
-        // URL is not a secret, show first part
-        const url = value.trim();
-        const match = url.match(/^https?:\/\/([^/]+)/);
-        status[key] = match ? `${match[1]}...` : url.substring(0, 30) + '...';
-      } else {
-        status[key] = maskApiKey(value);
-      }
-    } else {
-      status[key] = 'NOT SET';
-      missing.push(key);
-    }
-  }
+  if (!status.openai_configured) missing.push('OPENAI_API_KEY');
+  if (!status.deepinfra_configured) missing.push('DEEPINFRA_API_KEY');
+  if (!status.brightdata_configured) missing.push('BRIGHTDATA_API_KEY');
+  if (!status.weaviate_api_configured) missing.push('WEAVIATE_API_KEY');
+  if (!weaviateHost) missing.push('WEAVIATE_URL');
 
   logger.info('firebase_admin_api_key_status', status);
 

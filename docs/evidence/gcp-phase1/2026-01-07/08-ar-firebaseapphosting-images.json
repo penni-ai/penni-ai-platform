@@ -1,0 +1,9 @@
+{
+  "name": "projects/penni-ai-platform/locations/us-central1/repositories/firebaseapphosting-images",
+  "registryUri": "us-central1-docker.pkg.dev/penni-ai-platform/firebaseapphosting-images",
+  "vulnerabilityScanningConfig": {
+    "enablementConfig": "INHERITED",
+    "enablementState": "SCANNING_ACTIVE",
+    "lastEnableTime": "2025-11-03T21:16:03.127095737Z"
+  }
+}

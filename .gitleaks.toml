@@ -1,0 +1,15 @@
+title = "penny-platform gitleaks config"
+
+[allowlist]
+description = "Allow known-public keys and test artifacts"
+paths = [
+  '''apphosting\.yaml''',
+  '''apphosting\.emulator\.yaml''',
+]
+regexes = [
+  # Firebase web API keys are not secret, but gitleaks flags them.
+  '''AIza[0-9A-Za-z\-_]{35}''',
+  # Stripe publishable keys are not secret.
+  '''pk_(live|test)_[0-9a-zA-Z]{10,}''',
+]
+

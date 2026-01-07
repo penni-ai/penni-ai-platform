@@ -121,7 +121,6 @@ env:
   - variable: GMAIL_TOKEN_ENCRYPTION_KEY
     secret: GMAIL_TOKEN_ENCRYPTION_KEY
     availability:
-      - BUILD
       - RUNTIME
 
   - variable: GMAIL_OAUTH_CLIENT_SECRET
@@ -133,12 +132,6 @@ env:
     value: 562451436384-jg8cv8j37c3hove8m1nehkvst9uisp8v.apps.googleusercontent.com
     availability:
       - BUILD
-      - RUNTIME
-
-  # Chatbot service configuration
-  - variable: CHATBOT_SERVICE_URL
-    value: https://penni-chatbot-function-szs2cmou6q-uc.a.run.app
-    availability:
       - RUNTIME
 
   # Pipeline service configuration

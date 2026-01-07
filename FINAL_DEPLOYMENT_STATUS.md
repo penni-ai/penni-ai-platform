@@ -42,7 +42,7 @@
 - ✅ All pipeline functions deleted from Firebase
 
 **Remaining Functions**:
-- `penni-chatbot-function` - Kept (not pipeline-related)
+None.
 
 ### 3. Svelte App Changes
 **Status**: ✅ READY FOR DEPLOYMENT

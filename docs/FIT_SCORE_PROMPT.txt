@@ -1,0 +1,87 @@
+═══════════════════════════════════════════════════════════════
+CAMPAIGN DETAILS (What the business is looking for):
+═══════════════════════════════════════════════════════════════
+
+{{businessDescription}}
+
+═══════════════════════════════════════════════════════════════
+BUSINESS REQUIREMENTS (What the business is looking for):
+═══════════════════════════════════════════════════════════════
+
+IMPORTANT: The information above describes what the BUSINESS is looking for, NOT the influencer's actual profile.
+
+Key Requirements to Evaluate:
+1. INFLUENCER LOCATION (HIGHEST PRIORITY): The business requires influencers who are BASED IN or ACTIVELY OPERATE IN the specified location area. This is a CRITICAL requirement.
+   - Look for: "Influencer Location", "Looking for [location]", or location mentions in the business description
+   - The influencer MUST be based in or primarily operate in this location to be a good fit
+   - Location matching is the SINGLE MOST IMPORTANT factor in scoring
+
+2. TYPE OF INFLUENCER: The business is seeking specific types of influencers (e.g., "Foodies", "Lifestyle", "Fitness", etc.)
+   - Compare the influencer's actual content focus against these requirements
+
+3. PLATFORM: The business wants influencers on specific platforms (Instagram, TikTok, or both)
+
+4. FOLLOWER RANGE: The business has specific follower count requirements
+
+5. BUSINESS CONTEXT: Consider the business name, website, location, and description when evaluating fit
+
+═══════════════════════════════════════════════════════════════
+INFLUENCER PROFILE TO EVALUATE:
+═══════════════════════════════════════════════════════════════
+
+{{profileText}}
+
+═══════════════════════════════════════════════════════════════
+EVALUATION INSTRUCTIONS:
+═══════════════════════════════════════════════════════════════
+
+First, provide a 2-sentence summary about who this influencer is and what content they specialize in. Be specific and descriptive based on their bio, posts, and profile information.
+
+Then, evaluate this influencer's fit for the business requirements. Be critical, direct, and concise.
+
+CRITICAL SCORING GUIDELINES - LOCATION IS THE TOP PRIORITY:
+
+1. LOCATION MATCHING (MOST IMPORTANT - WEIGHT: 60% of score):
+   - Determine the influencer's ACTUAL location from their bio, posts, captions, hashtags, and profile information.
+   - Look for: city names, neighborhoods, regions, landmarks, local references, location tags, "Based in", "📍", area codes, or local businesses mentioned.
+   - Compare this information against the "Influencer Location" requirement in the business description.
+   - Scoring for LOCATION (out of 6 points):
+     * If the influencer is BASED IN or PRIMARILY OPERATES IN the required location/area: 6 points.
+     * If the location is NOT SPECIFIED or cannot be determined: 3 points.
+     * If the influencer is based in a COMPLETELY DIFFERENT area: 0 points (no location points).
+   - Location is the single most important factor in the entire score.
+
+
+2. CONTENT TYPE MATCHING, INDIVIDUALITY, AND BUSINESS PENALTY (WEIGHT: 20% of score):
+   - Evaluate if the influencer is an INDIVIDUAL content creator, not a business, shop, agency, or brand account. Only individuals making original content should count as a true influencer.
+   - Compare the influencer's primary content themes and style with the "Type of Influencer" requirements listed by the business.
+   - Review bio, post captions, hashtags, and overall content themes.
+   - Strong match to required type and is clearly an individual creator: 2 points.
+   - Partial match (some content overlap or uncertain individual status): 1 point.
+   - Mismatch (content does not match requirements): 0 points.
+   - If the profile appears to be a business, shop, agency, or brand (not an individual): Subtract 2 points from the total score (apply this penalty after adding the other components).
+
+3. BUSINESS-TO-INFLUENCER FIT, INCLUDING AUDIENCE AND BRAND ALIGNMENT (WEIGHT: 20% of score):
+   - Assess the match between the influencer and the key business requirements OUTSIDE of strict location or content type.
+   - This includes the following aspect:
+     * OVERALL BUSINESS FIT & RELEVANCE: How well do the influencer's style, values, content, and audience align with the business and campaign goals? Give up to 2 points.
+
+
+SCORING SUMMARY:
+- Score 9-10: Excellent fit - Location matches AND content/type aligns perfectly
+- Score 7-8: Good fit - Location matches, content/type mostly aligns
+- Score 5-6: Moderate fit - Location matches but content/type is off, OR content matches but location is not specified/cannot be determined
+- Score 3-4: Poor fit - Location mismatch/uncertain AND content/type mismatch
+- Score 1-2: Very poor fit - Multiple critical mismatches, or a business profile with penalties
+
+RATIONALE GUIDELINES:
+- Provide exactly 1 sentence of reasoning for each of the following: (1) Location matching, (2) Content type/individuality, and (3) Overall business fit & relevance.
+- Each sentence should be concise and specific to that criterion, clearly stating the merit or issue for that point.
+- Do not combine these into a single sentence; the rationale should be exactly 3 sentences, one for each scoring criterion.
+- If points were subtracted because the profile appears to be a business, clearly state this in the content type/individuality sentence.
+- Even if location cannot be determined or is unknown, still provide a sentence about location.
+- Be objective and to the point.
+
+Return ONLY a strict JSON object with the following schema, no extra text:
+
+{"score": <integer 1-10>, "rationale": <string>, "summary": <2-sentence string describing who the influencer is and what content they specialize in>}

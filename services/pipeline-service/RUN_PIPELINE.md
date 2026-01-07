@@ -163,8 +163,8 @@ The script will:
 ───────────────────────────────────────────────────────────────
 
 📊 Final Profiles: 30
-🔗 Candidates URL: https://storage.googleapis.com/...
-🔗 Profiles URL: https://storage.googleapis.com/...
+📁 Candidates Path: pipeline_jobs/<jobId>/candidates.json
+📁 Profiles Path: pipeline_jobs/<jobId>/profiles.json
 
 ═══════════════════════════════════════════════════════════════
 ```
@@ -208,4 +208,3 @@ gcloud run services describe pipeline-service --region=us-central1 --format='val
 - Maximum wait time is 1 hour by default (configurable)
 - Timing information is collected from Firestore stage metadata
 - The script will exit if the pipeline fails or times out
-

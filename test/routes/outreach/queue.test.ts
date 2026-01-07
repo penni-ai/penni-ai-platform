@@ -2,10 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 function makeEvent(options: { url: string; uid?: string; method: string; params?: Record<string, string> }) {
 	const url = new URL(options.url);
+	const headers: Record<string, string> = {};
+	if (options.method.toUpperCase() !== 'GET') {
+		headers.origin = url.origin;
+	}
 	return {
 		locals: { user: options.uid ? ({ uid: options.uid, email: 'u@test.com' } as any) : null, requestId: 'req_test' },
 		params: options.params ?? {},
-		request: new Request(url.toString(), { method: options.method }),
+		request: new Request(url.toString(), { method: options.method, headers }),
 		url
 	} as any;
 }

@@ -35,8 +35,7 @@ describe('server/core/firestore', () => {
 		);
 		expect((mod.emailQueueCollectionRef('u1') as any).path).toBe('users/u1/emailQueue');
 		expect((mod.emailQueueDocRef('u1', 'q1') as any).path).toBe('users/u1/emailQueue/q1');
-		expect((mod.chatCollectedDocRef('u1', 'c1') as any).path).toBe('users/u1/campaigns/c1/collected/data');
-		expect((mod.chatMessagesCollectionRef('u1', 'c1') as any).path).toBe('users/u1/campaigns/c1/chat');
+		expect((mod.campaignCollectedDocRef('u1', 'c1') as any).path).toBe('users/u1/campaigns/c1/collected/data');
 		expect((mod.outreachCollectionRef('u1', 'c1') as any).path).toBe('users/u1/campaigns/c1/outreach');
 		expect((mod.searchCollectionRef('u1', 'c1') as any).path).toBe('users/u1/campaigns/c1/search');
 		expect((mod.outreachContactsCollectionRef('u1', 'c1') as any).path).toBe('users/u1/campaigns/c1/outreach_contacts');
@@ -71,4 +70,3 @@ describe('server/core/firestore', () => {
 		infoSpy.mockRestore();
 	});
 });
-

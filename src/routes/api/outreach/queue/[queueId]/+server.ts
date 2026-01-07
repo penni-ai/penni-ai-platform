@@ -5,12 +5,13 @@
  * POST /api/outreach/queue/[queueId]/retry - Retry a failed email
  */
 
-import { ApiProblem, apiOk, handleApiRoute, requireUser } from '$lib/server/core';
+import { ApiProblem, apiOk, assertSameOrigin, handleApiRoute, requireUser } from '$lib/server/core';
 import { cancelQueuedEmail, retryFailedEmail } from '$lib/server/email-queue/queue-service';
 
 export const DELETE = handleApiRoute(
 	async (event) => {
 		const user = requireUser(event);
+		assertSameOrigin(event);
 		const queueId = event.params.queueId;
 
 		if (!queueId) {
@@ -56,6 +57,7 @@ export const DELETE = handleApiRoute(
 export const POST = handleApiRoute(
 	async (event) => {
 		const user = requireUser(event);
+		assertSameOrigin(event);
 		const queueId = event.params.queueId;
 
 		if (!queueId) {

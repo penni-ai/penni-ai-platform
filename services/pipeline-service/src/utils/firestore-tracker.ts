@@ -570,7 +570,7 @@ export async function storeRemainingProfiles(
   await file.save(buffer, {
     contentType: 'application/json',
     metadata: {
-      cacheControl: 'public, max-age=3600',
+      cacheControl: 'private, max-age=0, no-store',
       metadata: {
         jobId,
         profileCount: remainingProfiles.length.toString(),
@@ -599,6 +599,7 @@ export async function storeRemainingProfiles(
   // Update Firestore with remaining profiles metadata
   // Note: Frontend API loads from storage path directly, no signed URL needed
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
+    remaining_profiles_storage_url: FieldValue.delete(),
     remaining_profiles_storage_path: filePath,
     remaining_profiles_count: remainingProfiles.length,
     updated_at: Timestamp.now(),
@@ -660,6 +661,7 @@ export async function storePipelineResults(
 
   // Store metadata in Firestore (frontend API loads from storage path directly)
   const updates: any = {
+    profiles_storage_url: FieldValue.delete(),
     profiles_storage_path: storagePath,
     profiles_count: profiles.length,
     updated_at: Timestamp.now(),
@@ -749,7 +751,7 @@ async function saveProfilesToStorage(
   await file.save(buffer, {
     contentType: 'application/json',
     metadata: {
-      cacheControl: 'public, max-age=3600',
+      cacheControl: 'private, max-age=0, no-store',
       metadata: {
         jobId,
         profileCount: profiles.length.toString(),
@@ -800,7 +802,7 @@ export async function saveWeaviateCandidates(
   await file.save(buffer, {
     contentType: 'application/json',
     metadata: {
-      cacheControl: 'public, max-age=3600',
+      cacheControl: 'private, max-age=0, no-store',
       metadata: {
         jobId,
         candidateCount: candidates.length.toString(),
@@ -808,19 +810,17 @@ export async function saveWeaviateCandidates(
       },
     },
   });
-  
-  const publicUrl = `https://storage.googleapis.com/${STORAGE_BUCKET_NAME}/${filePath}`;
-  
-  // Update Firestore with candidates storage URL
+
+  // Update Firestore with candidates storage path
   const jobRef = db.collection(PIPELINE_COLLECTION).doc(jobId);
   await jobRef.update({
-    candidates_storage_url: publicUrl,
+    candidates_storage_url: FieldValue.delete(),
     candidates_storage_path: filePath,
     'weaviate_search.candidates_count': candidates.length,
     updated_at: Timestamp.now(),
   });
   
-  return publicUrl;
+  return filePath;
 }
 
 /**
@@ -841,7 +841,7 @@ async function saveBatchToStorage(
   await file.save(buffer, {
     contentType: 'application/json',
     metadata: {
-      cacheControl: 'public, max-age=3600',
+      cacheControl: 'private, max-age=0, no-store',
       metadata: {
         jobId,
         batchIndex: batchIndex.toString(),
@@ -850,9 +850,8 @@ async function saveBatchToStorage(
       },
     },
   });
-  
-  const publicUrl = `https://storage.googleapis.com/${STORAGE_BUCKET_NAME}/${filePath}`;
-  return publicUrl;
+
+  return filePath;
 }
 
 /**
@@ -1103,7 +1102,7 @@ export async function updateProgressiveTopN(
   await file.save(buffer, {
     contentType: 'application/json',
     metadata: {
-      cacheControl: 'no-cache', // Don't cache progressive results
+      cacheControl: 'private, max-age=0, no-store',
       metadata: {
         jobId,
         profileCount: progressiveTopN.length.toString(),
@@ -1117,6 +1116,7 @@ export async function updateProgressiveTopN(
   // Update Firestore with progressive profiles metadata
   // Note: Frontend API loads from storage path directly, no signed URL needed
   await db.collection(PIPELINE_COLLECTION).doc(jobId).update({
+    progressive_profiles_storage_url: FieldValue.delete(),
     progressive_profiles_storage_path: filePath,
     progressive_profiles_count: progressiveTopN.length,
     progressive_profiles_revision: FieldValue.increment(1),

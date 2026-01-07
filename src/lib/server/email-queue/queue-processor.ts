@@ -8,6 +8,9 @@
 import { firestore, emailQueueCollectionRef, gmailConnectionsCollectionRef } from '../core/firestore';
 import { getDailyInboxUsage, DAILY_INBOX_LIMIT } from '../usage/daily-inbox-usage';
 import { getReadyQueuedEmails, processQueuedEmail } from './queue-service';
+import { createLogger } from '$lib/server/core';
+
+const emailQueueLogger = createLogger({ component: 'email_queue_processor' });
 
 /**
  * Rate limit between processing emails (ms)
@@ -166,11 +169,11 @@ export async function processBatchQueue(): Promise<BatchProcessingResult> {
 	let totalSucceeded = 0;
 	let totalFailed = 0;
 
-	try {
-		// Find all users with queued emails
-		const userIds = await findUsersWithQueuedEmails();
+		try {
+			// Find all users with queued emails
+			const userIds = await findUsersWithQueuedEmails();
 
-		console.log(`[EmailQueue] Found ${userIds.length} users with queued emails`);
+			emailQueueLogger.info('email_queue_batch_start', { users_with_queue: userIds.length });
 
 		// Process each user's queue
 		for (const uid of userIds) {
@@ -184,19 +187,26 @@ export async function processBatchQueue(): Promise<BatchProcessingResult> {
 					totalSucceeded += result.succeeded;
 					totalFailed += result.failed;
 				}
-			} catch (error) {
-				console.error(`[EmailQueue] Error processing user ${uid}:`, error);
+				} catch (error) {
+					emailQueueLogger.error('email_queue_user_processing_failed', {
+						error_message: error instanceof Error ? error.message : String(error)
+					});
+				}
 			}
+		} catch (error) {
+			emailQueueLogger.error('email_queue_batch_failed', {
+				error_message: error instanceof Error ? error.message : String(error)
+			});
 		}
-	} catch (error) {
-		console.error('[EmailQueue] Batch processing error:', error);
-	}
 
 	const duration = Date.now() - startTime;
 
-	console.log(
-		`[EmailQueue] Batch complete: ${totalProcessed} processed, ${totalSucceeded} succeeded, ${totalFailed} failed in ${duration}ms`
-	);
+		emailQueueLogger.info('email_queue_batch_complete', {
+			total_processed: totalProcessed,
+			total_succeeded: totalSucceeded,
+			total_failed: totalFailed,
+			duration_ms: duration
+		});
 
 	return {
 		totalProcessed,

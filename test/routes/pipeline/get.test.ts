@@ -55,7 +55,7 @@ describe('routes/api/pipeline/[pipelineId] GET', () => {
 		expect(body.error.code).toBe('PIPELINE_NOT_FOUND');
 	});
 
-	it('returns 403 when user does not own pipeline and no campaign fallback matches', async () => {
+	it('returns 404 when user does not own pipeline', async () => {
 		vi.resetModules();
 
 		const pipelineId = 'job_forbidden';
@@ -73,9 +73,9 @@ describe('routes/api/pipeline/[pipelineId] GET', () => {
 
 		const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
 		const res = await GET(makeEvent({ pipelineId, uid: 'u1' }));
-		expect(res.status).toBe(403);
+		expect(res.status).toBe(404);
 		const body = await res.json();
-		expect(body.error.code).toBe('PIPELINE_FORBIDDEN');
+		expect(body.error.code).toBe('PIPELINE_NOT_FOUND');
 	});
 
 	it('converts Timestamp-like fields via toMillis and handles toMillis errors', async () => {
@@ -108,7 +108,7 @@ describe('routes/api/pipeline/[pipelineId] GET', () => {
 		expect(body.end_time).toBeNull();
 	});
 
-	it('updates missing uid when campaign ownership proves user owns pipeline', async () => {
+	it('returns 404 when pipeline uid is missing', async () => {
 		vi.resetModules();
 
 		const pipelineId = 'job_fix_uid';
@@ -130,43 +130,10 @@ describe('routes/api/pipeline/[pipelineId] GET', () => {
 
 		const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
 		const res = await GET(makeEvent({ pipelineId, uid }));
-		expect(res.status).toBe(200);
+		expect(res.status).toBe(404);
 
 		const snap = await adminDb.collection('pipeline_jobs').doc(pipelineId).get();
-		expect(snap.get('uid')).toBe(uid);
-	});
-
-	it('returns 404 and logs when a campaign references the pipeline but recent job listing fails', async () => {
-		vi.resetModules();
-
-		const pipelineId = 'job_missing_with_campaign';
-		const uid = 'u1';
-		const firestore = new FakeFirestore({
-			[`users/${uid}/campaigns/c1`]: { pipeline_id: pipelineId, title: 't' }
-		});
-		const storage = new FakeStorage('test-bucket');
-		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore, storage });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
-
-		const originalCollection = firestore.collection.bind(firestore);
-		vi.spyOn(firestore, 'collection').mockImplementation((path: string) => {
-			const col = originalCollection(path) as any;
-			if (path === 'pipeline_jobs') {
-				return Object.assign(col, {
-					orderBy: () => {
-						throw new Error('boom');
-					}
-				});
-			}
-			return col;
-		});
-
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
-		const res = await GET(makeEvent({ pipelineId, uid }));
-		expect(res.status).toBe(404);
-		expect((await res.json()).error.code).toBe('PIPELINE_NOT_FOUND');
-		expect(warn).toHaveBeenCalled();
+		expect(snap.get('uid')).toBeNull();
 	});
 
 	it('returns preliminary candidates when only candidates are available', async () => {
@@ -383,191 +350,6 @@ describe('routes/api/pipeline/[pipelineId] GET', () => {
 		expect(body.stages.llm_analysis.profiles_analyzed).toBe(2);
 	});
 
-	it('covers uid mismatch branches for missing campaigns and campaign get errors', async () => {
-		vi.resetModules();
-
-		const uid = 'u1';
-		const pipelineId = 'job_uid_mismatch';
-		const campaignId = 'c_missing';
-
-		const firestore = new FakeFirestore({
-			[`pipeline_jobs/${pipelineId}`]: {
-				job_id: pipelineId,
-				status: 'running',
-				uid: 'other_user',
-				campaign_id: campaignId,
-				created_at: Date.now()
-			}
-		});
-		const storage = new FakeStorage('test-bucket');
-		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore, storage });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
-
-		const { FakeDocumentReference } = await import('../../../services/pipeline-service/test/helpers/fake-firebase');
-		const originalGet = FakeDocumentReference.prototype.get;
-		vi.spyOn(FakeDocumentReference.prototype, 'get').mockImplementation(function (this: any) {
-			if (this.path === `users/${uid}/campaigns/${campaignId}`) {
-				return Promise.reject(new Error('boom'));
-			}
-			return originalGet.call(this);
-		});
-
-		const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
-		const res = await GET(makeEvent({ pipelineId, uid }));
-		expect(res.status).toBe(403);
-		expect((await res.json()).error.code).toBe('PIPELINE_FORBIDDEN');
-	});
-
-	it('logs campaign ownership check errors but still returns forbidden', async () => {
-		vi.resetModules();
-
-		const pipelineId = 'job_campaign_get_throws';
-		const uid = 'u1';
-		const campaignId = 'c1';
-
-		const firestore = new FakeFirestore({
-			[`pipeline_jobs/${pipelineId}`]: {
-				job_id: pipelineId,
-				status: 'running',
-				uid: 'other_user',
-				campaign_id: campaignId,
-				created_at: Date.now()
-			}
-		});
-		const storage = new FakeStorage('test-bucket');
-		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore, storage });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
-
-		const originalGet = (firestore as any)._get.bind(firestore);
-		(firestore as any)._get = (path: string) => {
-			if (path === `users/${uid}/campaigns/${campaignId}`) {
-				throw new Error('boom');
-			}
-			return originalGet(path);
-		};
-
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
-		const res = await GET(makeEvent({ pipelineId, uid }));
-		expect(res.status).toBe(403);
-		expect((await res.json()).error.code).toBe('PIPELINE_FORBIDDEN');
-		expect(warn).toHaveBeenCalled();
-	});
-
-	it('logs correlation query errors and emits structural mismatch likely cause', async () => {
-		vi.resetModules();
-		vi.useFakeTimers();
-		vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
-
-		const pipelineId = 'job_forbidden_structural';
-		const uid = 'u1';
-		const firestore = new FakeFirestore({
-			[`pipeline_jobs/${pipelineId}`]: {
-				job_id: pipelineId,
-				status: 'running',
-				uid: 'other_user',
-				campaign_id: null,
-				created_at: Date.now() - 60_000
-			}
-		});
-		const storage = new FakeStorage('test-bucket');
-		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore, storage });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
-
-		let campaignListCalls = 0;
-		const originalList = (firestore as any)._listDocsInCollectionPath.bind(firestore);
-		(firestore as any)._listDocsInCollectionPath = (collectionPath: string) => {
-			if (collectionPath === `users/${uid}/campaigns`) {
-				campaignListCalls++;
-				if (campaignListCalls === 2) {
-					throw new Error('boom');
-				}
-			}
-			return originalList(collectionPath);
-		};
-
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
-		const res = await GET(makeEvent({ pipelineId, uid }));
-		expect(res.status).toBe(403);
-		expect((await res.json()).error.code).toBe('PIPELINE_FORBIDDEN');
-		expect(warn).toHaveBeenCalled();
-
-		vi.useRealTimers();
-	});
-
-	it('does not fail the request when pipeline uid backfill update fails', async () => {
-		vi.resetModules();
-
-		const pipelineId = 'job_uid_update_fails';
-		const uid = 'u1';
-		const campaignId = 'c1';
-
-		const firestore = new FakeFirestore({
-			[`pipeline_jobs/${pipelineId}`]: {
-				job_id: pipelineId,
-				status: 'running',
-				uid: null,
-				campaign_id: campaignId,
-				created_at: Date.now()
-			},
-			[`users/${uid}/campaigns/${campaignId}`]: { pipeline_id: pipelineId, title: 't' }
-		});
-		const storage = new FakeStorage('test-bucket');
-		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore, storage });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
-
-		const originalUpdate = (firestore as any)._update.bind(firestore);
-		(firestore as any)._update = (path: string, updates: Record<string, any>) => {
-			if (path === `pipeline_jobs/${pipelineId}`) {
-				throw new Error('boom');
-			}
-			return originalUpdate(path, updates);
-		};
-
-		const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
-		const res = await GET(makeEvent({ pipelineId, uid }));
-		expect(res.status).toBe(200);
-
-		const snap = await adminDb.collection('pipeline_jobs').doc(pipelineId).get();
-		expect(snap.get('uid')).toBeNull();
-	});
-
-	it('returns forbidden and includes correlation info when campaign appears between queries', async () => {
-		vi.resetModules();
-
-		const pipelineId = 'job_forbidden_with_correlation';
-		const uid = 'u1';
-		const firestore = new FakeFirestore({
-			[`pipeline_jobs/${pipelineId}`]: {
-				job_id: pipelineId,
-				status: 'running',
-				uid: 'other_user',
-				created_at: Date.now() - 60_000
-			},
-			[`users/${uid}/campaigns/c1`]: { pipeline_id: pipelineId, title: 't' }
-		});
-		const storage = new FakeStorage('test-bucket');
-		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore, storage });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
-
-		let calls = 0;
-		const originalList = (firestore as any)._listDocsInCollectionPath.bind(firestore);
-		(firestore as any)._listDocsInCollectionPath = (collectionPath: string) => {
-			if (collectionPath === `users/${uid}/campaigns`) {
-				calls++;
-				if (calls === 1) return [];
-			}
-			return originalList(collectionPath);
-		};
-
-		const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
-		const res = await GET(makeEvent({ pipelineId, uid }));
-		expect(res.status).toBe(403);
-		const body = await res.json();
-		expect(body.error.code).toBe('PIPELINE_FORBIDDEN');
-	});
-
 	it('ingests completed profiles into campaign index once', async () => {
 		vi.resetModules();
 
@@ -619,13 +401,13 @@ describe('routes/api/pipeline/[pipelineId] GET', () => {
 		expect(campaignProfile.get('best_fit_score')).toBe(99);
 	});
 
-	it('swallows ingestion errors and still returns a pipeline snapshot', async () => {
-		vi.resetModules();
+		it('swallows ingestion errors and still returns a pipeline snapshot', async () => {
+			vi.resetModules();
 
-		const pipelineId = 'job_ingest_warn';
-		const uid = 'u1';
-		const campaignId = 'c1';
-		const profilesPath = `pipeline_jobs/${pipelineId}/profiles.json`;
+			const pipelineId = 'job_ingest_warn';
+			const uid = 'u1';
+			const campaignId = 'c1';
+			const profilesPath = `pipeline_jobs/${pipelineId}/profiles.json`;
 
 		const firestore = new FakeFirestore({
 			[`pipeline_jobs/${pipelineId}`]: {
@@ -642,18 +424,21 @@ describe('routes/api/pipeline/[pipelineId] GET', () => {
 		const storage = new FakeStorage('test-bucket');
 		await writeJson(storage, profilesPath, [{ _id: 'p1', fit_score: 99 }]);
 
-		const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore, storage });
-		vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
+			const { adminDb, adminStorage } = createFirebaseAdminMock({ firestore, storage });
+			vi.doMock('$lib/firebase/admin', () => ({ adminDb, adminStorage }));
 
-		const core = await import('../../../src/lib/server/core');
-		vi.spyOn(core.firestore as any, 'batch').mockImplementation(() => {
-			throw new Error('boom');
+			// Spy before importing core/logger so the logger binds to the mocked console writer.
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+			const core = await import('../../../src/lib/server/core');
+			vi.spyOn(core.firestore as any, 'batch').mockImplementation(() => {
+				throw new Error('boom');
+			});
+
+			const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
+			const res = await GET(makeEvent({ pipelineId, uid }));
+			expect(res.status).toBe(200);
+			expect(warn).toHaveBeenCalled();
+			warn.mockRestore();
 		});
-
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		const { GET } = await import('../../../src/routes/api/pipeline/[pipelineId]/+server');
-		const res = await GET(makeEvent({ pipelineId, uid }));
-		expect(res.status).toBe(200);
-		expect(warn).toHaveBeenCalled();
 	});
-});

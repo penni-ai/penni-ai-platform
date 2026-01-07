@@ -196,10 +196,10 @@ describe('server/email-queue/queue-processor', () => {
 		expect(uids.sort()).toEqual(['u1', 'u2']);
 	});
 
-	it('processBatchQueue aggregates totals and continues on per-user errors', async () => {
-		vi.resetModules();
-		vi.spyOn(console, 'log').mockImplementation(() => {});
-		vi.spyOn(console, 'error').mockImplementation(() => {});
+		it('processBatchQueue aggregates totals and continues on per-user errors', async () => {
+			vi.resetModules();
+			vi.spyOn(console, 'info').mockImplementation(() => {});
+			vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		const now = Date.now();
 		const firestore = new FakeFirestore({
@@ -226,11 +226,11 @@ describe('server/email-queue/queue-processor', () => {
 		expect(result.results).toHaveLength(1);
 	});
 
-	it('processBatchQueue logs batch errors when queued user discovery fails', async () => {
-		vi.resetModules();
+		it('processBatchQueue logs batch errors when queued user discovery fails', async () => {
+			vi.resetModules();
 
-		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-		const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+			const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+			const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
 
 		const firestore = new FakeFirestore();
 		(firestore as any).collectionGroup = () => {
@@ -247,14 +247,23 @@ describe('server/email-queue/queue-processor', () => {
 			processQueuedEmail: vi.fn()
 		}));
 
-		const mod = await import('../../../src/lib/server/email-queue/queue-processor');
-		const result = await mod.processBatchQueue();
-		expect(result.totalProcessed).toBe(0);
-		expect(errorSpy).toHaveBeenCalledWith('[EmailQueue] Batch processing error:', expect.anything());
+			const mod = await import('../../../src/lib/server/email-queue/queue-processor');
+			const result = await mod.processBatchQueue();
+			expect(result.totalProcessed).toBe(0);
+			const entries = errorSpy.mock.calls
+				.map((call) => {
+					try {
+						return JSON.parse(String(call[0] ?? ''));
+					} catch {
+						return null;
+					}
+				})
+				.filter(Boolean) as any[];
+			expect(entries.some((entry) => entry.message === 'email_queue_batch_failed')).toBe(true);
 
-		errorSpy.mockRestore();
-		logSpy.mockRestore();
-	});
+			errorSpy.mockRestore();
+			infoSpy.mockRestore();
+		});
 
 	it('getPendingQueueCount and getGlobalQueueStats reflect queued state', async () => {
 		vi.resetModules();

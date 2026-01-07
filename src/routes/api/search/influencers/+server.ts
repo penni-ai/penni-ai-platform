@@ -561,7 +561,6 @@ export const POST = handleApiRoute(async (event) => {
 				job_id: pipelineId,
 				status: 'accepted',
 				profiles_count: 0, // Not available yet
-				profiles_storage_url: null,
 				pipeline_stats: null,
 				request_id: functionRequestId,
 				campaign_binding_status: campaignBindingStatus?.status || null,
@@ -580,7 +579,6 @@ export const POST = handleApiRoute(async (event) => {
 			job_id: pipelineId,
 			status: functionResult.status,
 			profiles_count: functionResult.profiles_count ?? 0,
-			profiles_storage_url: functionResult.profiles_storage_url,
 			pipeline_stats: functionResult.pipeline_stats,
 			request_id: functionRequestId,
 			campaign_binding_status: campaignBindingStatus?.status || null,

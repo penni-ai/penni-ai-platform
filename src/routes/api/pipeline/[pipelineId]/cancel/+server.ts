@@ -32,11 +32,12 @@ export const POST = handleApiRoute(async (event) => {
 
 	const jobData = jobSnap.data() as { uid?: string | null; status?: string | null };
 	const jobOwnerUid = typeof jobData.uid === 'string' ? jobData.uid : null;
-	if (jobOwnerUid && jobOwnerUid !== user.uid) {
+	if (!jobOwnerUid || jobOwnerUid !== user.uid) {
+		// Return 404 to avoid leaking pipeline existence across tenants.
 		throw new ApiProblem({
-			status: 403,
-			code: 'PIPELINE_FORBIDDEN',
-			message: 'You do not have access to this pipeline.'
+			status: 404,
+			code: 'PIPELINE_NOT_FOUND',
+			message: 'Pipeline not found.'
 		});
 	}
 
@@ -55,4 +56,3 @@ export const POST = handleApiRoute(async (event) => {
 	logger.info('Pipeline cancellation requested');
 	return apiOk({ status: 'cancelled', cancel_requested: true });
 });
-

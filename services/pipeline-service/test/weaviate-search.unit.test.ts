@@ -2,6 +2,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const hybrid = vi.fn();
 
+function parseStructuredLogCall(call: unknown[]): Record<string, any> | null {
+	const first = call[0];
+	if (typeof first !== 'string') return null;
+	try {
+		const parsed = JSON.parse(first);
+		return parsed && typeof parsed === 'object' ? (parsed as Record<string, any>) : null;
+	} catch {
+		return null;
+	}
+}
+
+function expectStructuredLogMessage(spy: ReturnType<typeof vi.spyOn>, message: string) {
+	const matched = spy.mock.calls.some((call) => parseStructuredLogCall(call as unknown[])?.message === message);
+	expect(matched).toBe(true);
+}
+
 const client: any = {
 	isReady: vi.fn(async () => true),
 	collections: {
@@ -314,7 +330,7 @@ describe('weaviate-search (unit)', () => {
 
 		hybrid.mockResolvedValueOnce({ objects: [] });
 
-		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
 		const timingTracker = {
 			getPipelineStartTime: vi.fn(() => Date.now() / 1000),
@@ -330,9 +346,9 @@ describe('weaviate-search (unit)', () => {
 
 		expect(timingTracker.startSubStage).toHaveBeenCalled();
 		expect(timingTracker.endSubStage).toHaveBeenCalled();
-		expect(errorSpy).toHaveBeenCalled();
+		expectStructuredLogMessage(warnSpy, 'weaviate_progress_update_failed');
 
-		errorSpy.mockRestore();
+		warnSpy.mockRestore();
 		vi.unstubAllGlobals();
 	});
 

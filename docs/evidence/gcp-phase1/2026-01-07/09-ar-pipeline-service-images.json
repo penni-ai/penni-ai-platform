@@ -1,0 +1,9 @@
+{
+  "name": "projects/penni-ai-platform/locations/us-central1/repositories/pipeline-service-images",
+  "registryUri": "us-central1-docker.pkg.dev/penni-ai-platform/pipeline-service-images",
+  "vulnerabilityScanningConfig": {
+    "enablementConfig": "INHERITED",
+    "enablementState": "SCANNING_ACTIVE",
+    "lastEnableTime": "2026-01-07T20:38:58.429603002Z"
+  }
+}

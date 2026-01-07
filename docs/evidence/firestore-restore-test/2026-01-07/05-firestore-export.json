@@ -1,0 +1,12 @@
+{
+  "metadata": {
+    "@type": "type.googleapis.com/google.firestore.admin.v1.ExportDocumentsMetadata",
+    "collectionIds": [
+      "dr_restore_test"
+    ],
+    "operationState": "PROCESSING",
+    "outputUriPrefix": "gs://penni-ai-platform-firestore-exports/exports/20260107-094456",
+    "startTime": "2026-01-07T09:46:34.249852Z"
+  },
+  "name": "projects/penni-ai-platform/databases/(default)/operations/ASBhZjk0MWE5NzRmOTgtNGE5YS1mMzg0LTk1ODYtMDUwZTE5NDYkGnNlbmlsZXBpcAkKMxI"
+}

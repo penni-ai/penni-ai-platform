@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { GoogleAuth, type IdTokenClient } from 'google-auth-library';
 
 import { adminAuth } from '$lib/firebase/admin';
-import { ApiProblem } from '../core';
+import { ApiProblem, createLogger } from '../core';
 import { env as publicEnv } from '$env/dynamic/public';
 import type { SearchPipelineRequest } from '$lib/types/search';
 
@@ -14,6 +14,7 @@ const FUNCTIONS_EMULATOR_ORIGIN = process.env.FIREBASE_FUNCTIONS_EMULATOR_ORIGIN
 const AUTH_EMULATOR_ORIGIN = resolveAuthEmulatorOrigin();
 const USING_AUTH_EMULATOR = Boolean(AUTH_EMULATOR_ORIGIN);
 const FIREBASERC_PROJECT_ID = resolveFirebasercProjectId();
+const logger = createLogger({ component: 'functions-client' });
 
 function getProjectId(): string {
 	const projectId = process.env.FIREBASE_PROJECT_ID ?? publicEnv.PUBLIC_FIREBASE_PROJECT_ID;
@@ -201,36 +202,24 @@ export async function getServiceAccountAccessToken(audience: string): Promise<st
         }
         return authorization.slice('Bearer '.length);
     } catch (error) {
-        // Log detailed error information for debugging
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const errorStack = error instanceof Error ? error.stack : undefined;
         const projectId = getProjectId();
-        
-        console.error('[getServiceAccountAccessToken] Failed to get ID token', {
+        logger.error('service_account_id_token_failed', {
             audience,
             projectId,
-            error: errorMessage,
-            stack: errorStack,
-            environment: {
-                GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set',
-                GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT || 'not set',
-                FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || 'not set'
+            error,
+            adc: {
+                google_application_credentials_configured: Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS),
+                google_cloud_project_configured: Boolean(process.env.GOOGLE_CLOUD_PROJECT),
+                firebase_project_id_configured: Boolean(process.env.FIREBASE_PROJECT_ID),
             },
-            hint: 'In App Hosting, Application Default Credentials should be automatically available. ' +
-                  'Ensure the service account (firebase-app-hosting-compute) has roles/iam.serviceAccountTokenCreator role.'
         });
-        
+
         throw new ApiProblem({
             status: 500,
             code: 'SERVICE_ACCOUNT_AUTH_FAILED',
-            message: 'Failed to authenticate with service account for Cloud Function call.',
+            message: 'Failed to authenticate with service account for internal service call.',
+            hint: 'Verify Application Default Credentials are available and the runtime service account can mint ID tokens for this audience.',
             cause: error,
-            details: {
-                error: errorMessage,
-                stack: errorStack,
-                audience,
-                projectId
-            }
         });
     }
 }

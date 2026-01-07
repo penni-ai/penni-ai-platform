@@ -1,9 +1,10 @@
 import { handleApiRoute } from '$lib/server/core';
 import { requireUser } from '$lib/server/core';
-import { apiOk, ApiProblem } from '$lib/server/core';
+import { apiOk, ApiProblem, assertSameOrigin } from '$lib/server/core';
 import { revokeGmailTokens } from '$lib/server/gmail';
 
 export const POST = handleApiRoute(async (event) => {
+	assertSameOrigin(event);
 	const user = requireUser(event);
 	let body: { connectionId?: string };
 	try {

@@ -1,0 +1,3 @@
+NAME                       URL                                                        SERVICE_ACCOUNT_NAME
+penni-ai-platform-backend  https://penni-ai-platform-backend-szs2cmou6q-uc.a.run.app  firebase-app-hosting-compute@penni-ai-platform.iam.gserviceaccount.com
+pipeline-service           https://pipeline-service-szs2cmou6q-uc.a.run.app           pipeline-service@penni-ai-platform.iam.gserviceaccount.com

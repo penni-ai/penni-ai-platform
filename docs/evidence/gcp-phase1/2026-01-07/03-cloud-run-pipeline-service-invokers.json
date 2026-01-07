@@ -1,0 +1,12 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "serviceAccount:firebase-app-hosting-compute@penni-ai-platform.iam.gserviceaccount.com",
+        "serviceAccount:penni-ai-platform@appspot.gserviceaccount.com",
+        "serviceAccount:pipeline-service@penni-ai-platform.iam.gserviceaccount.com"
+      ],
+      "role": "roles/run.invoker"
+    }
+  ]
+}

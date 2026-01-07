@@ -1,0 +1,19 @@
+{
+  "name": "projects/penni-ai-platform/databases/restore-test-20260107-094456/documents/dr_restore_test/run_20260107-094456",
+  "fields": {
+    "purpose": {
+      "stringValue": "soc2_dr_restore_test"
+    },
+    "containsCustomerData": {
+      "booleanValue": false
+    },
+    "runId": {
+      "stringValue": "run_20260107-094456"
+    },
+    "createdAt": {
+      "timestampValue": "2026-01-07T09:46:18Z"
+    }
+  },
+  "createTime": "2026-01-07T09:47:38.126458Z",
+  "updateTime": "2026-01-07T09:47:38.126458Z"
+}

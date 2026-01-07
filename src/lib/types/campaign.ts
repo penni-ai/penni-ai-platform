@@ -116,7 +116,6 @@ export type SearchParams = {
 export type SearchResult = {
 	job_id: string;
 	profiles_count: number;
-	profiles_storage_url: string | null;
 };
 
 export type FollowerRange = {

@@ -1,0 +1,118 @@
+[
+  {
+    "insertId": "qd9alcfhlebxs",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptStarted",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/pipeline-service-health",
+      "scheduledTime": "2026-01-07T22:18:26.791467Z",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/health"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:18:30.485909567Z",
+    "resource": {
+      "labels": {
+        "job_id": "pipeline-service-health",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:18:30.485909567Z"
+  },
+  {
+    "httpRequest": {
+      "status": 200
+    },
+    "insertId": "18emntqffykiip",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptFinished",
+      "debugInfo": "URL_CRAWLED. Original HTTP response code number = 200",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/pipeline-service-health",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/health"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:18:30.000458421Z",
+    "resource": {
+      "labels": {
+        "job_id": "pipeline-service-health",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:18:30.000458421Z"
+  },
+  {
+    "insertId": "1oj2ujgftip1bo",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptStarted",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/pipeline-service-health",
+      "scheduledTime": "2026-01-07T22:15:02.574512Z",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/health"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:15:06.490937328Z",
+    "resource": {
+      "labels": {
+        "job_id": "pipeline-service-health",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:15:06.490937328Z"
+  },
+  {
+    "httpRequest": {
+      "status": 200
+    },
+    "insertId": "1ytb5jyflweiwx",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptFinished",
+      "debugInfo": "URL_CRAWLED. Original HTTP response code number = 200",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/pipeline-service-health",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/health"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:15:05.913814710Z",
+    "resource": {
+      "labels": {
+        "job_id": "pipeline-service-health",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:15:05.913814710Z"
+  },
+  {
+    "insertId": "vwzl3kfqvwrjg",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptStarted",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/pipeline-service-health",
+      "scheduledTime": "2026-01-07T22:10:02.363719Z",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/health"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:10:10.262518118Z",
+    "resource": {
+      "labels": {
+        "job_id": "pipeline-service-health",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:10:10.262518118Z"
+  }
+]

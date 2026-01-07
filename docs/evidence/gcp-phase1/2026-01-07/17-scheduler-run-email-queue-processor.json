@@ -1,0 +1,121 @@
+[
+  {
+    "httpRequest": {
+      "status": 200
+    },
+    "insertId": "swzbrjfy8cxl6",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptFinished",
+      "debugInfo": "URL_CRAWLED. Original HTTP response code number = 200",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/email-queue-processor",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/cron/process-email-queue"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:18:35.910082819Z",
+    "resource": {
+      "labels": {
+        "job_id": "email-queue-processor",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:18:35.910082819Z"
+  },
+  {
+    "insertId": "1feod8frbs7m9",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptStarted",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/email-queue-processor",
+      "scheduledTime": "2026-01-07T22:15:02.975963Z",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/cron/process-email-queue"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:15:08.705871230Z",
+    "resource": {
+      "labels": {
+        "job_id": "email-queue-processor",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:15:08.705871230Z"
+  },
+  {
+    "httpRequest": {
+      "status": 200
+    },
+    "insertId": "lnj1zrfwwzkvv",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptFinished",
+      "debugInfo": "URL_CRAWLED. Original HTTP response code number = 200",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/email-queue-processor",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/cron/process-email-queue"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:15:08.580251345Z",
+    "resource": {
+      "labels": {
+        "job_id": "email-queue-processor",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:15:08.580251345Z"
+  },
+  {
+    "httpRequest": {
+      "status": 200
+    },
+    "insertId": "1anu6wqfyzisq2",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptFinished",
+      "debugInfo": "URL_CRAWLED. Original HTTP response code number = 200",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/email-queue-processor",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/cron/process-email-queue"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:00:08.309150411Z",
+    "resource": {
+      "labels": {
+        "job_id": "email-queue-processor",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:00:08.309150411Z"
+  },
+  {
+    "insertId": "1mvfjxlfrr0wp6",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.scheduler.logging.AttemptStarted",
+      "jobName": "projects/penni-ai-platform/locations/us-central1/jobs/email-queue-processor",
+      "scheduledTime": "2026-01-07T22:00:03.154293Z",
+      "targetType": "HTTP",
+      "url": "https://pipeline-service-szs2cmou6q-uc.a.run.app/cron/process-email-queue"
+    },
+    "logName": "projects/penni-ai-platform/logs/cloudscheduler.googleapis.com%2Fexecutions",
+    "receiveTimestamp": "2026-01-07T22:00:07.767328137Z",
+    "resource": {
+      "labels": {
+        "job_id": "email-queue-processor",
+        "location": "us-central1",
+        "project_id": "penni-ai-platform"
+      },
+      "type": "cloud_scheduler_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-01-07T22:00:07.767328137Z"
+  }
+]

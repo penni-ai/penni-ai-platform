@@ -23,6 +23,7 @@ Service account keys (verify none are user-managed):
 ```bash
 gcloud iam service-accounts keys list --iam-account="firebase-app-hosting-compute@${PROJECT_ID}.iam.gserviceaccount.com" --managed-by=user
 gcloud iam service-accounts keys list --iam-account="pipeline-service@${PROJECT_ID}.iam.gserviceaccount.com" --managed-by=user
+gcloud iam service-accounts keys list --iam-account="cloud-build-deployer@${PROJECT_ID}.iam.gserviceaccount.com" --managed-by=user
 ```
 
 ## Cloud Run (services + invokers)

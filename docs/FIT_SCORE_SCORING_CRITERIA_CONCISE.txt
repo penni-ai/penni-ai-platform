@@ -1,0 +1,53 @@
+FIT SCORE — CONCISE SCORING CRITERIA
+
+DEALBREAKERS / HARD FILTERS (applied before scoring)
+- Inactive account: if the influencer has no posts within the last 60 days, set `fit_score` to 0 (skip LLM scoring).
+
+STANDARD MODE
+1) Location matching (weight: 60%; 0–6 points)
+   - Required location/area match (based in or primarily operates there): 6
+   - Location not specified / cannot be determined: 3
+   - Completely different area: 0
+
+2) Content type + individuality + business penalty (weight: 20%; 0–2 points, then penalty)
+   - Strong match to required type + clearly an individual creator: 2
+   - Partial match / uncertain individual status: 1
+   - Mismatch: 0
+   - If the profile appears to be a business/shop/agency/brand (not an individual): subtract 2 from total
+
+3) Overall business fit & relevance (weight: 20%; 0–2 points)
+   - How well the influencer’s style/values/content/audience aligns with the business and campaign goals: up to 2
+
+Score interpretation (1–10)
+- 9–10: Excellent fit
+- 7–8: Good fit
+- 5–6: Moderate fit
+- 3–4: Poor fit
+- 1–2: Very poor fit
+
+
+STRICT LOCATION MATCHING MODE
+1) Location matching (weight: 70%; 0–7 points)
+   - EXACT required location/city: 7
+   - Nearby/adjacent (same metro region, ~within 50 miles): 4
+   - Not specified / cannot be determined: 1 (heavily penalized)
+   - Completely different area/city/country: 0
+   - Strict caps:
+     - Unknown location: total score should be no higher than 4
+     - Wrong location: total score should be no higher than 3
+
+2) Content type + individuality + business penalty (weight: 15%; 0–2 points, then penalty)
+   - Strong match to required type + clearly an individual creator: 2
+   - Partial match / uncertain individual status: 1
+   - Mismatch: 0
+   - If the profile appears to be a business/shop/agency/brand (not an individual): subtract 2 from total
+
+3) Overall business fit & relevance (weight: 15%; 0–1 point)
+   - How well the influencer’s style/values/content/audience aligns with the business and campaign goals: up to 1
+
+Score interpretation (1–10)
+- 9–10: Excellent fit (exact location + content/type aligns perfectly)
+- 7–8: Good fit (location matches; exact or nearby metro, content/type mostly aligns)
+- 5–6: Moderate fit (location matches exactly but content/type is off)
+- 3–4: Poor fit (nearby location but not exact, OR location unknown with perfect content match)
+- 1–2: Very poor fit (location unknown or wrong, regardless of content quality)

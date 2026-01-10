@@ -163,7 +163,6 @@ async function checkOpenAI(): Promise<HealthCheckResult> {
       status: 'ok',
       message: 'OpenAI API key is valid',
       details: {
-        keyPrefix: apiKey.substring(0, 7) + '...',
         modelCount: response.data.length,
       },
     };
@@ -331,7 +330,6 @@ async function checkDeepInfra(): Promise<HealthCheckResult> {
       status: 'ok',
       message: 'DeepInfra API key is configured',
       details: {
-        keyPrefix: apiKey.substring(0, 8) + '...',
         model: model,
       },
     };

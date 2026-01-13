@@ -202,9 +202,6 @@
 <svelte:head>
 	<title>Penni AI – Find & Connect with Perfect Influencers</title>
 	<meta name="description" content="AI-powered influencer marketing platform. Find perfectly matched creators, send personalized outreach, and grow your brand.">
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
-	<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
 </svelte:head>
 
 <div class="landing">

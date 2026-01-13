@@ -8,6 +8,16 @@ runConfig:
   # memoryMiB: 512
 
 env:
+  # Buildpack configuration (ensures SvelteKit build runs during App Hosting builds).
+  - variable: GOOGLE_NODE_RUN_SCRIPTS
+    value: gcp-build
+    availability:
+      - BUILD
+  - variable: NPM_CONFIG_PRODUCTION
+    value: "false"
+    availability:
+      - BUILD
+
   # Firebase client config exposed to the browser.
   - variable: PUBLIC_FIREBASE_API_KEY
     value: AIzaSyC1cwbO_aXWxtu1tMTOZUHHwhgP3_v-YsY

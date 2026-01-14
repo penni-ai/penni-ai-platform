@@ -16,7 +16,7 @@ const applied = [];
 if (updated.includes("res.setHeader('cache-control', 'public,max-age=31536000,immutable');")) {
 	updated = updated.replaceAll(
 		"res.setHeader('cache-control', 'public,max-age=31536000,immutable');",
-		"res.setHeader('cache-control', 'private,max-age=31536000,immutable');"
+		"res.setHeader('cache-control', 'no-cache, no-store, max-age=0, must-revalidate, private');"
 	);
 	applied.push('static-cache');
 }
@@ -31,7 +31,7 @@ if (!updated.includes("res.setHeader('X-Content-Type-Options', 'nosniff');")) {
 			"res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');",
 			"res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');",
 			"if (res.statusCode === 200) {",
-			"\tres.setHeader('cache-control', 'private,max-age=0,must-revalidate');",
+			"\tres.setHeader('cache-control', 'no-cache, no-store, max-age=0, must-revalidate, private');",
 			"\tres.setHeader('pragma', 'no-cache');",
 			"\tres.setHeader('expires', '0');",
 			'}',

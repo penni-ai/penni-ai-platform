@@ -85,14 +85,9 @@ const serve_client = sirv(client_dir, {
 		applySecurityHeaders(res);
 
 		if (res.statusCode === 200) {
-			res.setHeader('cache-control', 'private,max-age=0,must-revalidate');
+			res.setHeader('cache-control', 'no-cache, no-store, max-age=0, must-revalidate, private');
 			res.setHeader('pragma', 'no-cache');
 			res.setHeader('expires', '0');
-		}
-
-		// Only apply immutable caching to fingerprinted build assets.
-		if (pathname.startsWith(`/${manifest.appPath}/immutable/`) && res.statusCode === 200) {
-			res.setHeader('cache-control', 'private,max-age=31536000,immutable');
 		}
 	}
 });

@@ -6,6 +6,18 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends nginx-extras ca-certificates
 
+mkdir -p /var/www/penni-static
+cat > /var/www/penni-static/sitemap.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://penni-ai.com/</loc></url>
+  <url><loc>https://penni-ai.com/sign-in</loc></url>
+  <url><loc>https://penni-ai.com/sign-up</loc></url>
+  <url><loc>https://penni-ai.com/privacy</loc></url>
+  <url><loc>https://penni-ai.com/terms</loc></url>
+</urlset>
+XML
+
 mkdir -p /var/cache/nginx/penni
 chown -R www-data:www-data /var/cache/nginx
 
@@ -81,14 +93,7 @@ server {
 	location = /sitemap.xml {
 		more_set_headers "Cache-Control: public, max-age=3600";
 		more_set_headers "Vary: Accept-Encoding";
-		include /etc/nginx/snippets/penni-proxy-common.conf;
-		proxy_set_header Cookie "";
-		proxy_set_header User-Agent "PenniAI-Edge/1.0";
-		proxy_cache penni_cache;
-		proxy_cache_valid 200 1h;
-		proxy_cache_use_stale error timeout invalid_header updating http_500 http_502 http_503 http_504;
-		proxy_ignore_headers Cache-Control Expires Set-Cookie;
-		proxy_pass https://35.219.200.8;
+		alias /var/www/penni-static/sitemap.xml;
 	}
 
 	location / {

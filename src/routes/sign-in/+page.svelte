@@ -2,7 +2,8 @@
 import { goto } from '$app/navigation';
 import Logo from '$lib/components/Logo.svelte';
 import { FirebaseError } from 'firebase/app';
-import { GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
+import { onMount } from 'svelte';
+import { GoogleAuthProvider, getRedirectResult, signInWithEmailAndPassword, signInWithRedirect, signOut } from 'firebase/auth';
 import { firebaseAuth } from '$lib/firebase/client';
 
 let { data } = $props();
@@ -14,6 +15,7 @@ let loading = $state(false);
 let errorMessage = $state<string | null>(null);
 
 const verifiedNotice = data.verifiedNotice;
+const REMEMBER_STORAGE_KEY = 'penni_remember_choice';
 
 const TEST_USER = {
 	email: 'search-tester@example.com',
@@ -41,6 +43,34 @@ async function createSession(idToken: string, rememberChoice: boolean) {
 	}
 
 	await goto('/dashboard', { invalidateAll: true });
+}
+
+async function handleGoogleRedirectResult() {
+	if (typeof window === 'undefined') return;
+
+	errorMessage = null;
+	loading = true;
+
+	try {
+		const result = await getRedirectResult(firebaseAuth);
+		if (!result?.user) return;
+		const rememberChoice = window.sessionStorage.getItem(REMEMBER_STORAGE_KEY) !== '0';
+		window.sessionStorage.removeItem(REMEMBER_STORAGE_KEY);
+		const idToken = await result.user.getIdToken(true);
+		await createSession(idToken, rememberChoice);
+	} catch (error) {
+		console.error('[auth] google redirect sign-in failed', error);
+		await signOut(firebaseAuth);
+		if (error instanceof FirebaseError) {
+			errorMessage = error.message;
+		} else if (error instanceof Error) {
+			errorMessage = error.message;
+		} else {
+			errorMessage = 'Unexpected error completing Google sign-in.';
+		}
+	} finally {
+		loading = false;
+	}
 }
 
 async function authenticate() {
@@ -78,19 +108,14 @@ async function signInWithGoogle() {
 	loading = true;
 
 	try {
+		window.sessionStorage.setItem(REMEMBER_STORAGE_KEY, remember ? '1' : '0');
 		const provider = buildGoogleProvider();
-		const result = await signInWithPopup(firebaseAuth, provider);
-		const idToken = await result.user.getIdToken(true);
-		await createSession(idToken, remember);
+		await signInWithRedirect(firebaseAuth, provider);
 	} catch (error) {
 		console.error('[auth] google sign-in failed', error);
 		await signOut(firebaseAuth);
 		if (error instanceof FirebaseError) {
-			if (error.code === 'auth/popup-closed-by-user') {
-				errorMessage = 'Google sign-in was closed before completion. Please try again.';
-			} else {
-				errorMessage = error.message;
-			}
+			errorMessage = error.message;
 		} else if (error instanceof Error) {
 			errorMessage = error.message;
 		} else {
@@ -112,6 +137,10 @@ async function loginAsTestUser() {
 	remember = true;
 	await authenticate();
 }
+
+onMount(() => {
+	void handleGoogleRedirectResult();
+});
 </script>
 
 <svelte:head>

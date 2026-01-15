@@ -1,0 +1,963 @@
+<?xml version="1.0"?>
+<OWASPZAPReport programName="ZAP" version="2.17.0" generated="Wed, 14 Jan 2026 22:13:39" created="2026-01-14T22:13:39.827698505Z">
+	
+		<site name="https://penni-ai.com" host="penni-ai.com" port="443" ssl="true">
+			<alerts>
+				
+					<alertitem>
+						<pluginid>10055</pluginid>
+						<alertRef>10055-4</alertRef>
+						<alert>CSP: Wildcard Directive</alert>
+						<name>CSP: Wildcard Directive</name>
+						<riskcode>2</riskcode>
+						<confidence>3</confidence>
+						<riskdesc>Medium (High)</riskdesc>
+						<confidencedesc>High</confidencedesc>
+						<desc>&lt;p&gt;Content Security Policy (CSP) is an added layer of security that helps to detect and mitigate certain types of attacks. Including (but not limited to) Cross Site Scripting (XSS), and data injection attacks. These attacks are used for everything from data theft to site defacement or distribution of malware. CSP provides a set of standard HTTP headers that allow website owners to declare approved sources of content that browsers should be allowed to load on that page &#x2014; covered types are JavaScript, CSS, HTML frames, fonts, images and embeddable objects such as Java applets, ActiveX, audio and video files.&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/</uri>
+									<nodeName>https://penni-ai.com/</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>The following directives either allow wildcard sources (or ancestors), are not defined, or are overly broadly defined:
+img-src, connect-src, font-src</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/privacy</uri>
+									<nodeName>https://penni-ai.com/privacy</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>The following directives either allow wildcard sources (or ancestors), are not defined, or are overly broadly defined:
+img-src, connect-src, font-src</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/sign-in</uri>
+									<nodeName>https://penni-ai.com/sign-in</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>The following directives either allow wildcard sources (or ancestors), are not defined, or are overly broadly defined:
+img-src, connect-src, font-src</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/sign-up</uri>
+									<nodeName>https://penni-ai.com/sign-up</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>The following directives either allow wildcard sources (or ancestors), are not defined, or are overly broadly defined:
+img-src, connect-src, font-src</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/terms</uri>
+									<nodeName>https://penni-ai.com/terms</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>The following directives either allow wildcard sources (or ancestors), are not defined, or are overly broadly defined:
+img-src, connect-src, font-src</otherinfo>
+								</instance>
+							
+						</instances>
+						<count>5</count>
+						<systemic>true</systemic>
+						<solution>&lt;p&gt;Ensure that your web server, application server, load balancer, etc. is properly configured to set the Content-Security-Policy header.&lt;/p&gt;</solution>
+						<otherinfo>&lt;p&gt;The following directives either allow wildcard sources (or ancestors), are not defined, or are overly broadly defined:&lt;/p&gt;&lt;p&gt;img-src, connect-src, font-src&lt;/p&gt;</otherinfo>
+						<reference>&lt;p&gt;https://www.w3.org/TR/CSP/&lt;/p&gt;&lt;p&gt;https://caniuse.com/#search=content+security+policy&lt;/p&gt;&lt;p&gt;https://content-security-policy.com/&lt;/p&gt;&lt;p&gt;https://github.com/HtmlUnit/htmlunit-csp&lt;/p&gt;&lt;p&gt;https://web.dev/articles/csp#resource-options&lt;/p&gt;</reference>
+						<cweid>693</cweid>
+						<wascid>15</wascid>
+						<sourceid>1</sourceid>
+					</alertitem>
+				
+				
+					<alertitem>
+						<pluginid>10055</pluginid>
+						<alertRef>10055-6</alertRef>
+						<alert>CSP: style-src unsafe-inline</alert>
+						<name>CSP: style-src unsafe-inline</name>
+						<riskcode>2</riskcode>
+						<confidence>3</confidence>
+						<riskdesc>Medium (High)</riskdesc>
+						<confidencedesc>High</confidencedesc>
+						<desc>&lt;p&gt;Content Security Policy (CSP) is an added layer of security that helps to detect and mitigate certain types of attacks. Including (but not limited to) Cross Site Scripting (XSS), and data injection attacks. These attacks are used for everything from data theft to site defacement or distribution of malware. CSP provides a set of standard HTTP headers that allow website owners to declare approved sources of content that browsers should be allowed to load on that page &#x2014; covered types are JavaScript, CSS, HTML frames, fonts, images and embeddable objects such as Java applets, ActiveX, audio and video files.&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/</uri>
+									<nodeName>https://penni-ai.com/</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>style-src includes unsafe-inline.</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/privacy</uri>
+									<nodeName>https://penni-ai.com/privacy</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>style-src includes unsafe-inline.</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/sign-in</uri>
+									<nodeName>https://penni-ai.com/sign-in</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>style-src includes unsafe-inline.</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/sign-up</uri>
+									<nodeName>https://penni-ai.com/sign-up</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>style-src includes unsafe-inline.</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/terms</uri>
+									<nodeName>https://penni-ai.com/terms</nodeName>
+									<method>GET</method>
+									<param>content-security-policy</param>
+									<attack></attack>
+									<evidence>default-src &apos;self&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;; object-src &apos;none&apos;; form-action &apos;self&apos;; img-src &apos;self&apos; data: https:; script-src &apos;self&apos;; style-src &apos;self&apos; &apos;unsafe-inline&apos;; connect-src &apos;self&apos; https: wss:; font-src &apos;self&apos; data: https:; upgrade-insecure-requests</evidence>
+									<otherinfo>style-src includes unsafe-inline.</otherinfo>
+								</instance>
+							
+						</instances>
+						<count>5</count>
+						<systemic>true</systemic>
+						<solution>&lt;p&gt;Ensure that your web server, application server, load balancer, etc. is properly configured to set the Content-Security-Policy header.&lt;/p&gt;</solution>
+						<otherinfo>&lt;p&gt;style-src includes unsafe-inline.&lt;/p&gt;</otherinfo>
+						<reference>&lt;p&gt;https://www.w3.org/TR/CSP/&lt;/p&gt;&lt;p&gt;https://caniuse.com/#search=content+security+policy&lt;/p&gt;&lt;p&gt;https://content-security-policy.com/&lt;/p&gt;&lt;p&gt;https://github.com/HtmlUnit/htmlunit-csp&lt;/p&gt;&lt;p&gt;https://web.dev/articles/csp#resource-options&lt;/p&gt;</reference>
+						<cweid>693</cweid>
+						<wascid>15</wascid>
+						<sourceid>1</sourceid>
+					</alertitem>
+				
+				
+					<alertitem>
+						<pluginid>90004</pluginid>
+						<alertRef>90004-1</alertRef>
+						<alert>Insufficient Site Isolation Against Spectre Vulnerability</alert>
+						<name>Insufficient Site Isolation Against Spectre Vulnerability</name>
+						<riskcode>1</riskcode>
+						<confidence>2</confidence>
+						<riskdesc>Low (Medium)</riskdesc>
+						<confidencedesc>Medium</confidencedesc>
+						<desc>&lt;p&gt;Cross-Origin-Resource-Policy header is an opt-in header designed to counter side-channels attacks like Spectre. Resource should be specifically set as shareable amongst different origins.&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</nodeName>
+									<method>GET</method>
+									<param>Cross-Origin-Resource-Policy</param>
+									<attack></attack>
+									<evidence>same-site</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</nodeName>
+									<method>GET</method>
+									<param>Cross-Origin-Resource-Policy</param>
+									<attack></attack>
+									<evidence>same-site</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/Bh3ly4VY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/Bh3ly4VY.js</nodeName>
+									<method>GET</method>
+									<param>Cross-Origin-Resource-Policy</param>
+									<attack></attack>
+									<evidence>same-site</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</nodeName>
+									<method>GET</method>
+									<param>Cross-Origin-Resource-Policy</param>
+									<attack></attack>
+									<evidence>same-site</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/robots.txt</uri>
+									<nodeName>https://penni-ai.com/robots.txt</nodeName>
+									<method>GET</method>
+									<param>Cross-Origin-Resource-Policy</param>
+									<attack></attack>
+									<evidence>same-site</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/</uri>
+									<nodeName>https://penni-ai.com/</nodeName>
+									<method>GET</method>
+									<param>Cross-Origin-Opener-Policy</param>
+									<attack></attack>
+									<evidence>same-origin-allow-popups</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+						</instances>
+						<count>6</count>
+						<systemic>true</systemic>
+						<solution>&lt;p&gt;Ensure that the application/web server sets the Cross-Origin-Resource-Policy header appropriately, and that it sets the Cross-Origin-Resource-Policy header to &apos;same-origin&apos; for all web pages.&lt;/p&gt;&lt;p&gt;&apos;same-site&apos; is considered as less secured and should be avoided.&lt;/p&gt;&lt;p&gt;If resources must be shared, set the header to &apos;cross-origin&apos;.&lt;/p&gt;&lt;p&gt;If possible, ensure that the end user uses a standards-compliant and modern web browser that supports the Cross-Origin-Resource-Policy header (https://caniuse.com/mdn-http_headers_cross-origin-resource-policy).&lt;/p&gt;</solution>
+						<otherinfo></otherinfo>
+						<reference>&lt;p&gt;https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Embedder-Policy&lt;/p&gt;</reference>
+						<cweid>693</cweid>
+						<wascid>14</wascid>
+						<sourceid>45</sourceid>
+					</alertitem>
+				
+				
+					<alertitem>
+						<pluginid>10094</pluginid>
+						<alertRef>10094-3</alertRef>
+						<alert>Base64 Disclosure</alert>
+						<name>Base64 Disclosure</name>
+						<riskcode>0</riskcode>
+						<confidence>2</confidence>
+						<riskdesc>Informational (Medium)</riskdesc>
+						<confidencedesc>Medium</confidencedesc>
+						<desc>&lt;p&gt;Base64 encoded data was disclosed by the application/web server. Note: in the interests of performance not all base64 strings in the response were analyzed individually, the entire response should be looked at by the analyst/security team/developer(s).&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/</uri>
+									<nodeName>https://penni-ai.com/</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>/_app/immutable/chunks/8wBkxxVE</evidence>
+									<otherinfo>&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;ZnW&#xfffd;r&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;1&#xfffd;Q</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/%5C/developers.google.com/terms/api-services-user-data-policy</uri>
+									<nodeName>https://penni-ai.com/\/developers.google.com/terms/api-services-user-data-policy</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>/_app/immutable/chunks/8wBkxxVE</evidence>
+									<otherinfo>&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;ZnW&#xfffd;r&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;1&#xfffd;Q</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/8PxbFwz_.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/8PxbFwz_.js</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>AIzaSyC1cwbO_aXWxtu1tMTOZUHHwhgP3_v-YsY</evidence>
+									<otherinfo>&#xfffd;&#xfffd;K &#xfffd;s&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#x6f5;&#xfffd;&#xfffd;&#xfffd;eA&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;b&#xfffd;</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/8wBkxxVE.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/8wBkxxVE.js</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/</evidence>
+									<otherinfo>&#xfffd;Q&#xfffd; &#xfffd;&#xfffd;0&#x4cf;A&#xfffd;QU&#xfffd;a&#xfffd;&#xfffd;q&#x5df;&#xfffd;&#xfffd;&#xfffd;Y&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#x6ef;&#xfffd;&#xfffd;&#xfffd;]&#xfffd;&#x37bb;&#xfffd;&#x7ff;</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/forgot-password</uri>
+									<nodeName>https://penni-ai.com/forgot-password</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>/_app/immutable/chunks/8wBkxxVE</evidence>
+									<otherinfo>&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;ZnW&#xfffd;r&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;1&#xfffd;Q</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/privacy</uri>
+									<nodeName>https://penni-ai.com/privacy</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>/_app/immutable/chunks/8wBkxxVE</evidence>
+									<otherinfo>&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;ZnW&#xfffd;r&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;1&#xfffd;Q</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/sign-in</uri>
+									<nodeName>https://penni-ai.com/sign-in</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>/_app/immutable/chunks/8wBkxxVE</evidence>
+									<otherinfo>&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;ZnW&#xfffd;r&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;1&#xfffd;Q</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/sign-up</uri>
+									<nodeName>https://penni-ai.com/sign-up</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>/_app/immutable/chunks/8wBkxxVE</evidence>
+									<otherinfo>&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;ZnW&#xfffd;r&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;1&#xfffd;Q</otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/terms</uri>
+									<nodeName>https://penni-ai.com/terms</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>/_app/immutable/chunks/8wBkxxVE</evidence>
+									<otherinfo>&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;ZnW&#xfffd;r&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;1&#xfffd;Q</otherinfo>
+								</instance>
+							
+						</instances>
+						<count>9</count>
+						<systemic>false</systemic>
+						<solution>&lt;p&gt;Manually confirm that the Base64 data does not leak sensitive information, and that the data cannot be aggregated/used to exploit other vulnerabilities.&lt;/p&gt;</solution>
+						<otherinfo>&lt;p&gt;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;ZnW&#xfffd;r\x001b&#xfffd;&#xfffd;&#xfffd;&#xfffd;&#xfffd;\x00191&#xfffd;Q&lt;/p&gt;</otherinfo>
+						<reference>&lt;p&gt;https://projects.webappsec.org/w/page/13246936/Information%20Leakage&lt;/p&gt;</reference>
+						<cweid>319</cweid>
+						<wascid>13</wascid>
+						<sourceid>1</sourceid>
+					</alertitem>
+				
+				
+					<alertitem>
+						<pluginid>10049</pluginid>
+						<alertRef>10049-1</alertRef>
+						<alert>Non-Storable Content</alert>
+						<name>Non-Storable Content</name>
+						<riskcode>0</riskcode>
+						<confidence>2</confidence>
+						<riskdesc>Informational (Medium)</riskdesc>
+						<confidencedesc>Medium</confidencedesc>
+						<desc>&lt;p&gt;The response contents are not storable by caching components such as proxy servers. If the response does not contain sensitive, personal or user-specific information, it may benefit from being stored and cached, to improve performance.&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>no-store</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>no-store</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/Bh3ly4VY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/Bh3ly4VY.js</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>no-store</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>no-store</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/robots.txt</uri>
+									<nodeName>https://penni-ai.com/robots.txt</nodeName>
+									<method>GET</method>
+									<param></param>
+									<attack></attack>
+									<evidence>no-store</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+						</instances>
+						<count>5</count>
+						<systemic>true</systemic>
+						<solution>&lt;p&gt;The content may be marked as storable by ensuring that the following conditions are satisfied:&lt;/p&gt;&lt;p&gt;The request method must be understood by the cache and defined as being cacheable (&quot;GET&quot;, &quot;HEAD&quot;, and &quot;POST&quot; are currently defined as cacheable)&lt;/p&gt;&lt;p&gt;The response status code must be understood by the cache (one of the 1XX, 2XX, 3XX, 4XX, or 5XX response classes are generally understood)&lt;/p&gt;&lt;p&gt;The &quot;no-store&quot; cache directive must not appear in the request or response header fields&lt;/p&gt;&lt;p&gt;For caching by &quot;shared&quot; caches such as &quot;proxy&quot; caches, the &quot;private&quot; response directive must not appear in the response&lt;/p&gt;&lt;p&gt;For caching by &quot;shared&quot; caches such as &quot;proxy&quot; caches, the &quot;Authorization&quot; header field must not appear in the request, unless the response explicitly allows it (using one of the &quot;must-revalidate&quot;, &quot;public&quot;, or &quot;s-maxage&quot; Cache-Control response directives)&lt;/p&gt;&lt;p&gt;In addition to the conditions above, at least one of the following conditions must also be satisfied by the response:&lt;/p&gt;&lt;p&gt;It must contain an &quot;Expires&quot; header field&lt;/p&gt;&lt;p&gt;It must contain a &quot;max-age&quot; response directive&lt;/p&gt;&lt;p&gt;For &quot;shared&quot; caches such as &quot;proxy&quot; caches, it must contain a &quot;s-maxage&quot; response directive&lt;/p&gt;&lt;p&gt;It must contain a &quot;Cache Control Extension&quot; that allows it to be cached&lt;/p&gt;&lt;p&gt;It must have a status code that is defined as cacheable by default (200, 203, 204, 206, 300, 301, 404, 405, 410, 414, 501).&lt;/p&gt;</solution>
+						<otherinfo></otherinfo>
+						<reference>&lt;p&gt;https://datatracker.ietf.org/doc/html/rfc7234&lt;/p&gt;&lt;p&gt;https://datatracker.ietf.org/doc/html/rfc7231&lt;/p&gt;&lt;p&gt;https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html&lt;/p&gt;</reference>
+						<cweid>524</cweid>
+						<wascid>13</wascid>
+						<sourceid>45</sourceid>
+					</alertitem>
+				
+				
+					<alertitem>
+						<pluginid>10015</pluginid>
+						<alertRef>10015</alertRef>
+						<alert>Re-examine Cache-control Directives</alert>
+						<name>Re-examine Cache-control Directives</name>
+						<riskcode>0</riskcode>
+						<confidence>1</confidence>
+						<riskdesc>Informational (Low)</riskdesc>
+						<confidencedesc>Low</confidencedesc>
+						<desc>&lt;p&gt;The cache-control header has not been set properly or is missing, allowing the browser and proxies to cache content. For static assets like css, js, or image files this might be intended, however, the resources should be reviewed to ensure that no sensitive content will be cached.&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/</uri>
+									<nodeName>https://penni-ai.com/</nodeName>
+									<method>GET</method>
+									<param>cache-control</param>
+									<attack></attack>
+									<evidence>no-store, max-age=0</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/robots.txt</uri>
+									<nodeName>https://penni-ai.com/robots.txt</nodeName>
+									<method>GET</method>
+									<param>cache-control</param>
+									<attack></attack>
+									<evidence>no-store, max-age=0</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/sign-in</uri>
+									<nodeName>https://penni-ai.com/sign-in</nodeName>
+									<method>GET</method>
+									<param>cache-control</param>
+									<attack></attack>
+									<evidence>no-store, max-age=0</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/sign-up</uri>
+									<nodeName>https://penni-ai.com/sign-up</nodeName>
+									<method>GET</method>
+									<param>cache-control</param>
+									<attack></attack>
+									<evidence>no-store, max-age=0</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/terms</uri>
+									<nodeName>https://penni-ai.com/terms</nodeName>
+									<method>GET</method>
+									<param>cache-control</param>
+									<attack></attack>
+									<evidence>no-store, max-age=0</evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+						</instances>
+						<count>5</count>
+						<systemic>true</systemic>
+						<solution>&lt;p&gt;For secure content, ensure the cache-control HTTP header is set with &quot;no-cache, no-store, must-revalidate&quot;. If an asset should be cached consider setting the directives &quot;public, max-age, immutable&quot;.&lt;/p&gt;</solution>
+						<otherinfo></otherinfo>
+						<reference>&lt;p&gt;https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#web-content-caching&lt;/p&gt;&lt;p&gt;https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cache-Control&lt;/p&gt;&lt;p&gt;https://grayduck.mn/2021/09/13/cache-control-recommendations/&lt;/p&gt;</reference>
+						<cweid>525</cweid>
+						<wascid>13</wascid>
+						<sourceid>1</sourceid>
+					</alertitem>
+				
+				
+					<alertitem>
+						<pluginid>90005</pluginid>
+						<alertRef>90005-3</alertRef>
+						<alert>Sec-Fetch-Dest Header is Missing</alert>
+						<name>Sec-Fetch-Dest Header is Missing</name>
+						<riskcode>0</riskcode>
+						<confidence>3</confidence>
+						<riskdesc>Informational (High)</riskdesc>
+						<confidencedesc>High</confidencedesc>
+						<desc>&lt;p&gt;Specifies how and where the data would be used. For instance, if the value is audio, then the requested resource must be audio data and not any other type of resource.&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Dest</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Dest</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Dest</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/LEDZXfOD.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/LEDZXfOD.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Dest</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/robots.txt</uri>
+									<nodeName>https://penni-ai.com/robots.txt</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Dest</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+						</instances>
+						<count>5</count>
+						<systemic>true</systemic>
+						<solution>&lt;p&gt;Ensure that Sec-Fetch-Dest header is included in request headers.&lt;/p&gt;</solution>
+						<otherinfo></otherinfo>
+						<reference>&lt;p&gt;https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Sec-Fetch-Dest&lt;/p&gt;</reference>
+						<cweid>352</cweid>
+						<wascid>9</wascid>
+						<sourceid>45</sourceid>
+					</alertitem>
+				
+				
+					<alertitem>
+						<pluginid>90005</pluginid>
+						<alertRef>90005-2</alertRef>
+						<alert>Sec-Fetch-Mode Header is Missing</alert>
+						<name>Sec-Fetch-Mode Header is Missing</name>
+						<riskcode>0</riskcode>
+						<confidence>3</confidence>
+						<riskdesc>Informational (High)</riskdesc>
+						<confidencedesc>High</confidencedesc>
+						<desc>&lt;p&gt;Allows to differentiate between requests for navigating between HTML pages and requests for loading resources like images, audio etc.&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Mode</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Mode</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/Bh3ly4VY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/Bh3ly4VY.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Mode</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Mode</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/robots.txt</uri>
+									<nodeName>https://penni-ai.com/robots.txt</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Mode</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+						</instances>
+						<count>5</count>
+						<systemic>true</systemic>
+						<solution>&lt;p&gt;Ensure that Sec-Fetch-Mode header is included in request headers.&lt;/p&gt;</solution>
+						<otherinfo></otherinfo>
+						<reference>&lt;p&gt;https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Sec-Fetch-Mode&lt;/p&gt;</reference>
+						<cweid>352</cweid>
+						<wascid>9</wascid>
+						<sourceid>45</sourceid>
+					</alertitem>
+				
+				
+					<alertitem>
+						<pluginid>90005</pluginid>
+						<alertRef>90005-1</alertRef>
+						<alert>Sec-Fetch-Site Header is Missing</alert>
+						<name>Sec-Fetch-Site Header is Missing</name>
+						<riskcode>0</riskcode>
+						<confidence>3</confidence>
+						<riskdesc>Informational (High)</riskdesc>
+						<confidencedesc>High</confidencedesc>
+						<desc>&lt;p&gt;Specifies the relationship between request initiator&apos;s origin and target&apos;s origin.&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Site</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Site</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/Bh3ly4VY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/Bh3ly4VY.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Site</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Site</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/robots.txt</uri>
+									<nodeName>https://penni-ai.com/robots.txt</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-Site</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+						</instances>
+						<count>5</count>
+						<systemic>true</systemic>
+						<solution>&lt;p&gt;Ensure that Sec-Fetch-Site header is included in request headers.&lt;/p&gt;</solution>
+						<otherinfo></otherinfo>
+						<reference>&lt;p&gt;https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Sec-Fetch-Site&lt;/p&gt;</reference>
+						<cweid>352</cweid>
+						<wascid>9</wascid>
+						<sourceid>45</sourceid>
+					</alertitem>
+				
+				
+					<alertitem>
+						<pluginid>90005</pluginid>
+						<alertRef>90005-4</alertRef>
+						<alert>Sec-Fetch-User Header is Missing</alert>
+						<name>Sec-Fetch-User Header is Missing</name>
+						<riskcode>0</riskcode>
+						<confidence>3</confidence>
+						<riskdesc>Informational (High)</riskdesc>
+						<confidencedesc>High</confidencedesc>
+						<desc>&lt;p&gt;Specifies if a navigation request was initiated by a user.&lt;/p&gt;</desc>
+						<instances>
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/assets/Button.D9SmLkMf.css</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-User</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/-EqheHxY.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-User</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/D0iwhpLH.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-User</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/_app/immutable/chunks/LEDZXfOD.js</uri>
+									<nodeName>https://penni-ai.com/_app/immutable/chunks/LEDZXfOD.js</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-User</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+							
+								<instance>
+									<uri>https://penni-ai.com/robots.txt</uri>
+									<nodeName>https://penni-ai.com/robots.txt</nodeName>
+									<method>GET</method>
+									<param>Sec-Fetch-User</param>
+									<attack></attack>
+									<evidence></evidence>
+									<otherinfo></otherinfo>
+								</instance>
+							
+						</instances>
+						<count>5</count>
+						<systemic>true</systemic>
+						<solution>&lt;p&gt;Ensure that Sec-Fetch-User header is included in user initiated requests.&lt;/p&gt;</solution>
+						<otherinfo></otherinfo>
+						<reference>&lt;p&gt;https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Sec-Fetch-User&lt;/p&gt;</reference>
+						<cweid>352</cweid>
+						<wascid>9</wascid>
+						<sourceid>45</sourceid>
+					</alertitem>
+				
+			</alerts>
+		</site>
+	
+	
+		<insights>
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.code.2xx</key>
+					<description>Percentage of responses with status code 2xx</description>
+					<statistic>96</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.code.4xx</key>
+					<description>Percentage of responses with status code 4xx</description>
+					<statistic>3</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.endpoint.ctype.application/xml</key>
+					<description>Percentage of endpoints with content type application/xml</description>
+					<statistic>1</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.endpoint.ctype.image/png</key>
+					<description>Percentage of endpoints with content type image/png</description>
+					<statistic>1</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.endpoint.ctype.text/css</key>
+					<description>Percentage of endpoints with content type text/css</description>
+					<statistic>13</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.endpoint.ctype.text/html</key>
+					<description>Percentage of endpoints with content type text/html</description>
+					<statistic>13</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.endpoint.ctype.text/javascript</key>
+					<description>Percentage of endpoints with content type text/javascript</description>
+					<statistic>67</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.endpoint.ctype.text/plain</key>
+					<description>Percentage of endpoints with content type text/plain</description>
+					<statistic>1</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.endpoint.method.GET</key>
+					<description>Percentage of endpoints with method GET</description>
+					<statistic>100</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.endpoint.total</key>
+					<description>Count of total endpoints</description>
+					<statistic>53</statistic>
+				</insight>
+			
+			
+				<insight>
+					<level>Info</level>
+					<reason>Informational</reason>
+					<site>https://penni-ai.com</site>
+					<key>insight.response.slow</key>
+					<description>Percentage of slow responses</description>
+					<statistic>51</statistic>
+				</insight>
+			
+		</insights>
+	
+</OWASPZAPReport>

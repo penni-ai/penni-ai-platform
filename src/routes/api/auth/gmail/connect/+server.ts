@@ -1,11 +1,10 @@
 import { randomBytes } from 'crypto';
-import { redirect } from '@sveltejs/kit';
-import { handleApiRoute } from '$lib/server/core';
-import { requireUser } from '$lib/server/core';
+import { serialize } from 'cookie';
+import { handleApiRoute, requireUser } from '$lib/server/core';
 import { getAuthUrl } from '$lib/server/gmail';
 
 export const GET = handleApiRoute(async (event) => {
-	const user = requireUser(event);
+	requireUser(event);
 	const connectionId = event.url.searchParams.get('connectionId');
 	const makePrimary = event.url.searchParams.get('makePrimary') === '1';
 	const accountType = (event.url.searchParams.get('accountType') || 'send') as 'draft' | 'send';
@@ -15,8 +14,7 @@ export const GET = handleApiRoute(async (event) => {
 	const state = randomBytes(32).toString('hex');
 	const statePayload = JSON.stringify({ csrf: state, connectionId, makePrimary, accountType, returnCampaignId });
 
-	// Store state in session/cookie for verification in callback
-	event.cookies.set('gmail_oauth_state', statePayload, {
+	const stateCookie = serialize('gmail_oauth_state', statePayload, {
 		httpOnly: true,
 		secure: process.env.NODE_ENV === 'production',
 		path: '/',
@@ -27,6 +25,12 @@ export const GET = handleApiRoute(async (event) => {
 	// Generate OAuth URL with account type
 	const authUrl = getAuthUrl(state, accountType);
 	
-	// Redirect to Google OAuth consent screen
-	throw redirect(302, authUrl);
+	// Redirect to Google OAuth consent screen + set state cookie
+	return new Response(null, {
+		status: 302,
+		headers: {
+			location: authUrl,
+			'set-cookie': stateCookie
+		}
+	});
 }, { component: 'gmail_oauth' });

@@ -404,93 +404,93 @@ function reconnectGmail(connectionId: string) {
 						</div>
 					</div>
 				</div>
-			</section>
-		</div>
-	</div>
-</div>
-
-<!-- Account Type Modal -->
-{#if showAccountTypeModal}
-	<div class="modal-backdrop">
-		<button
-			type="button"
-			class="backdrop-close"
-			aria-label="Close dialog"
-			onclick={closeAccountTypeModal}
-		></button>
-		<div class="modal-content">
-			<h2 class="modal-title">Choose Account Type</h2>
-			<p class="modal-description">
-				Select how you want to use this Gmail account with Penny.
-			</p>
-
-			<div class="account-options">
-				<label class="account-option" class:account-option-selected={selectedAccountType === 'draft'}>
-					<input
-						type="radio"
-						name="accountType"
-						value="draft"
-						bind:group={selectedAccountType}
-						class="option-radio"
-					/>
-					<div class="option-content">
-						<div class="option-header">
-							<span class="option-title">Draft Only</span>
-							<span class="option-badge badge-draft">Recommended for review</span>
-						</div>
-						<p class="option-description">
-							Creates drafts in Gmail for you to review and send manually. Best if you want to approve each email before sending.
-						</p>
-					</div>
-				</label>
-
-				<label class="account-option" class:account-option-selected={selectedAccountType === 'send'}>
-					<input
-						type="radio"
-						name="accountType"
-						value="send"
-						bind:group={selectedAccountType}
-						class="option-radio"
-					/>
-					<div class="option-content">
-						<div class="option-header">
-							<span class="option-title">Send & Draft</span>
-							<span class="option-badge badge-send">Full automation</span>
-						</div>
-						<p class="option-description">
-							Can both create drafts and send emails directly. Use this for automated outreach campaigns.
-						</p>
-					</div>
-				</label>
-			</div>
-
-			<div class="modal-actions">
-				<button type="button" class="btn btn-secondary" onclick={closeAccountTypeModal}>
-					Cancel
-				</button>
-				<button type="button" class="btn btn-primary" onclick={confirmConnectGmail}>
-					Connect Gmail
-				</button>
+				</section>
 			</div>
 		</div>
+
+		<!-- Account Type Modal -->
+		{#if showAccountTypeModal}
+			<div class="modal-backdrop">
+				<button
+					type="button"
+					class="backdrop-close"
+					aria-label="Close dialog"
+					onclick={closeAccountTypeModal}
+				></button>
+				<div class="modal-content">
+					<h2 class="modal-title">Choose Account Type</h2>
+					<p class="modal-description">
+						Select how you want to use this Gmail account with Penny.
+					</p>
+
+					<div class="account-options">
+						<label class="account-option" class:account-option-selected={selectedAccountType === 'draft'}>
+							<input
+								type="radio"
+								name="accountType"
+								value="draft"
+								bind:group={selectedAccountType}
+								class="option-radio"
+							/>
+							<div class="option-content">
+								<div class="option-header">
+									<span class="option-title">Draft Only</span>
+									<span class="option-badge badge-draft">Recommended for review</span>
+								</div>
+								<p class="option-description">
+									Creates drafts in Gmail for you to review and send manually. Best if you want to approve each email before sending.
+								</p>
+							</div>
+						</label>
+
+						<label class="account-option" class:account-option-selected={selectedAccountType === 'send'}>
+							<input
+								type="radio"
+								name="accountType"
+								value="send"
+								bind:group={selectedAccountType}
+								class="option-radio"
+							/>
+							<div class="option-content">
+								<div class="option-header">
+									<span class="option-title">Send & Draft</span>
+									<span class="option-badge badge-send">Full automation</span>
+								</div>
+								<p class="option-description">
+									Can both create drafts and send emails directly. Use this for automated outreach campaigns.
+								</p>
+							</div>
+						</label>
+					</div>
+
+					<div class="modal-actions">
+						<button type="button" class="btn btn-secondary" onclick={closeAccountTypeModal}>
+							Cancel
+						</button>
+						<button type="button" class="btn btn-primary" onclick={confirmConnectGmail}>
+							Connect Gmail
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 	</div>
-{/if}
 
-<style>
-	.gmail-page {
-		--coral: #FF6F61;
-		--coral-dark: #e85d50;
-		--ink: var(--color-text, #1a1a1a);
-		--ink-light: var(--color-text-secondary, #4a4a4a);
-		--ink-muted: var(--color-text-muted, #8a8a8a);
-		--paper: var(--color-bg, #fafaf9);
-		--paper-elevated: var(--color-bg-elevated, #ffffff);
-		--border: var(--color-border, #e8e6e3);
-		--success: #059669;
-		--error: #dc2626;
+		<style>
+			.gmail-page {
+				--coral: #FF6F61;
+				--coral-dark: #e85d50;
+				--ink: var(--color-text, #1a1a1a);
+				--ink-light: var(--color-text-secondary, #4a4a4a);
+				--ink-muted: var(--color-text-muted, #8a8a8a);
+				--paper: var(--color-bg, #fafaf9);
+				--paper-elevated: var(--color-bg-elevated, #ffffff);
+				--border: var(--color-border, #e8e6e3);
+				--success: #059669;
+				--error: #dc2626;
 
-		font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
-	}
+				font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+			}
 
 	/* Page Header */
 	.page-header {
@@ -968,34 +968,37 @@ function reconnectGmail(connectionId: string) {
 	}
 
 	/* Modal */
-	.modal-backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 100;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 1.5rem;
-	}
+		.modal-backdrop {
+			position: fixed;
+			inset: 0;
+			z-index: 100;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: 1.5rem;
+		}
 
-	.backdrop-close {
-		position: absolute;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.4);
-		backdrop-filter: blur(4px);
-		border: none;
-		cursor: pointer;
-	}
+		.backdrop-close {
+			position: absolute;
+			inset: 0;
+			background: rgba(0, 0, 0, 0.4);
+			backdrop-filter: blur(4px);
+			border: none;
+			cursor: pointer;
+			z-index: 0;
+		}
 
-	.modal-content {
-		position: relative;
-		width: 100%;
-		max-width: 480px;
-		background: var(--paper-elevated);
-		border-radius: 12px;
-		padding: 2rem;
-		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-	}
+		.modal-content {
+			position: relative;
+			z-index: 1;
+			width: 100%;
+			max-width: 480px;
+			background: var(--paper-elevated);
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			padding: 2rem;
+			box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+		}
 
 	.modal-title {
 		font-family: 'Instrument Serif', Georgia, serif;
@@ -1019,24 +1022,31 @@ function reconnectGmail(connectionId: string) {
 		margin-bottom: 2rem;
 	}
 
-	.account-option {
-		display: flex;
-		gap: 1rem;
-		padding: 1.25rem;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		cursor: pointer;
-		transition: all 0.2s ease;
-	}
+		.account-option {
+			display: flex;
+			gap: 1rem;
+			width: 100%;
+			padding: 1.25rem;
+			border: 1px solid var(--border);
+			border-radius: 8px;
+			background: var(--paper);
+			cursor: pointer;
+			transition: all 0.2s ease;
+		}
 
 	.account-option:hover {
 		border-color: var(--ink-muted);
 	}
 
-	.account-option-selected {
-		border-color: var(--coral);
-		background: #fff7f6;
-	}
+		.account-option-selected {
+			border-color: var(--coral);
+			background: linear-gradient(
+					0deg,
+					rgba(255, 111, 97, 0.08),
+					rgba(255, 111, 97, 0.08)
+				),
+				var(--paper);
+		}
 
 	.option-radio {
 		margin-top: 0.25rem;

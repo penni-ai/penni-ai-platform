@@ -58,7 +58,7 @@
 		"gsap": "^3.13.0",
 		"html-to-text": "^9.0.5",
 		"jsdom": "^24.0.0",
-		"openai": "^5.23.2",
+		"openai": "^6.16.0",
 		"patch-package": "^8.0.1",
 		"picomatch": "^4.0.3",
 		"stripe": "^19.2.0",

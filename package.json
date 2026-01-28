@@ -57,7 +57,7 @@
 		"googleapis": "^166.0.0",
 		"gsap": "^3.13.0",
 		"html-to-text": "^9.0.5",
-		"jsdom": "^24.0.0",
+		"jsdom": "^27.4.0",
 		"openai": "^5.23.2",
 		"patch-package": "^8.0.1",
 		"picomatch": "^4.0.3",

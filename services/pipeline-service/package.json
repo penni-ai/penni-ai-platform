@@ -36,7 +36,7 @@
     "google-auth-library": "^10.5.0",
     "googleapis": "^144.0.0",
     "openai": "^6.8.1",
-    "weaviate-client": "^3.9.0",
+    "weaviate-client": "^3.10.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

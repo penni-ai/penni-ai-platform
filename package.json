@@ -32,7 +32,7 @@
 		"@sveltejs/adapter-node": "^5.5.0",
 		"@sveltejs/kit": "^2.47.1",
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
-		"@tailwindcss/vite": "^4.1.14",
+		"@tailwindcss/vite": "^4.1.18",
 		"@vitest/coverage-v8": "^3.2.4",
 		"svelte": "^5.41.0",
 		"svelte-check": "^4.3.3",
